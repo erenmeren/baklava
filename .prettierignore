@@ -35,4 +35,24 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# Ignore all HTML files:
+**/*.html
+
+# Ignoreall cypress files:
+/cypress/
+
 .swc
+
+/.husky/
+
+tsconfig.json
+tailwind.config.js
+jest.config.mjs
+jest.setup.ts
+next.config.js
+postcss.config.js
+components.json
+.eslintrc.json
+.lintstagedrc.js
+.prettierrc.json
+
