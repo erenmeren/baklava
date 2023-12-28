@@ -15,7 +15,8 @@ npm run test ||
 npm run format:check ||
 (
     echo '🤢🤮🤢🤮 Its F**KING RAW - Your styling looks disgusting. 🤢🤮🤢🤮
-            Prettier Check Failed. Run npm run format, add changes and try commit again.';
+            🛑 Prettier Check Failed.
+            👉 npm run format:fix ';
     false;
 )
 
