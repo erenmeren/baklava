@@ -10,16 +10,16 @@ export const applications = [
     name: "Databases",
     items: [
       {
+        name: "PostgreSQL",
+        form: <PostreSQLForm />,
+      },
+      {
         name: "MongoDB",
         form: <MongoDBForm />,
       },
       {
         name: "Redis",
         form: <RedisForm />,
-      },
-      {
-        name: "PostgreSQL",
-        form: <PostreSQLForm />,
       },
     ],
   },
