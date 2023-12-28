@@ -1,7 +1,7 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import PostgreSQL from "@/assets/images/logos/postgreSql2.svg";
-import MongoDB from "@/assets/images/logos/mongo.svg";
-import Redis from "@/assets/images/logos/redis.svg";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import PostgreSQL from "@/assets/images/logos/postgreSql2.svg"
+import MongoDB from "@/assets/images/logos/mongo.svg"
+import Redis from "@/assets/images/logos/redis.svg"
 
 export default function Home() {
   return (
@@ -61,5 +61,5 @@ export default function Home() {
         </div>
       </div>
     </main>
-  );
+  )
 }

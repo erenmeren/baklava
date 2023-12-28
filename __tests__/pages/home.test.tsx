@@ -3,8 +3,8 @@
 
 describe("Home", () => {
   it("Should ok", () => {
-    expect(1).toBeLessThan(2);
-  });
+    expect(1).toBeLessThan(2)
+  })
 
   // it("Should Have Databases Text", () => {
   //   // Arrange
@@ -30,4 +30,4 @@ describe("Home", () => {
   //   // Assert
   //   expect(container).toBeInTheDocument();
   // });
-});
+})
