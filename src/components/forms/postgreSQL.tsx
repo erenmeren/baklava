@@ -2,12 +2,9 @@
 
 import Template from "./template"
 import PostgreSQL from "@/assets/images/logos/postgreSQL.svg"
-
-import * as z from "zod"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
 import { toast } from "sonner"
-
 import {
   Form,
   FormControl,
@@ -19,40 +16,25 @@ import {
 
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-
-const PostgreSQLFormSchema = z.object({
-  host: z
-    .string({
-      required_error: "Host is requreid",
-    })
-    .min(1, "Host is requreid"),
-  port: z
-    .number({
-      required_error: "Port is requreid",
-      invalid_type_error: "Port must be a number",
-    })
-    .positive(),
-  database: z.string().min(1, "Database is requreid"),
-  user: z.string().optional(),
-  password: z.string().optional(),
-})
+import { ConnectionResult, PostgreSQLForm, PostgreSQLFormSchema } from "@/lib/schemas"
+import { checkConnection } from "@/lib/connections/postgreSQL"
 
 export default function PostreSQLForm() {
-  const form = useForm<z.infer<typeof PostgreSQLFormSchema>>({
+  const form = useForm<PostgreSQLForm>({
     resolver: zodResolver(PostgreSQLFormSchema),
     defaultValues: {
       host: "localhost",
       port: 5432,
+      user: "admin",
+      password: "admin",
+      database: "test",
     },
   })
 
-  function onSubmit(data: z.infer<typeof PostgreSQLFormSchema>) {
-    console.log(data)
-    toast(
-      <pre className="mt-2 w-[340px] rounded-md bg-slate-950 p-4">
-        <code className="text-white">{JSON.stringify(data, null, 2)}</code>
-      </pre>
-    )
+  function onSubmit(data: PostgreSQLForm) {
+    checkConnection(data).then((res: ConnectionResult) => {
+      res.isSuccessful ? toast.success(res.message) : toast.error(res.message)
+    })
   }
 
   return (
@@ -62,10 +44,7 @@ export default function PostreSQLForm() {
         logo={<PostgreSQL width="100" height="120" alt="PostgreSQL" />}
         form={
           <Form {...form}>
-            <form
-              onSubmit={form.handleSubmit(onSubmit)}
-              className="w-full space-y-6"
-            >
+            <form onSubmit={form.handleSubmit(onSubmit)} className="w-full space-y-6">
               <FormField
                 control={form.control}
                 name="host"
@@ -91,9 +70,7 @@ export default function PostreSQLForm() {
                         type="number"
                         placeholder="5432"
                         {...field}
-                        onChange={(e) =>
-                          field.onChange(parseInt(e.target.value))
-                        }
+                        onChange={(e) => field.onChange(parseInt(e.target.value))}
                       />
                     </FormControl>
                     <FormMessage />
@@ -136,18 +113,14 @@ export default function PostreSQLForm() {
                   <FormItem>
                     <FormLabel>Password</FormLabel>
                     <FormControl>
-                      <Input
-                        type="password"
-                        placeholder="********"
-                        {...field}
-                      />
+                      <Input type="password" placeholder="********" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
 
-              <Button type="submit">Submit</Button>
+              <Button type="submit">Connect</Button>
             </form>
           </Form>
         }
