@@ -1,14 +1,15 @@
 "use server"
 
 import { Client } from "pg"
-import { ConnectionResult, PostgreSQLForm } from "@/lib/schemas"
+import { PrismaClient } from "@prisma/client"
+import { OperationResult, PostgreSQLForm } from "@/lib/schemas"
 
-export async function checkConnection(data: PostgreSQLForm): Promise<ConnectionResult> {
+const prisma = new PrismaClient()
+
+export async function checkConnection(data: PostgreSQLForm): Promise<OperationResult> {
   let message = "Connected successfully!"
   let isSuccessful = true
   const client = createClient(data)
-
-  console.log(client)
 
   try {
     await client.connect()
@@ -18,6 +19,23 @@ export async function checkConnection(data: PostgreSQLForm): Promise<ConnectionR
   } finally {
     await client.end()
   }
+
+  return { message, isSuccessful }
+}
+
+export async function saveConnection(data: PostgreSQLForm): Promise<OperationResult> {
+  const message = "Saved successfully!"
+  const isSuccessful = true
+
+  await prisma.postgreSQL.create({
+    data: {
+      host: data.host,
+      port: data.port,
+      database: data.database,
+      user: data.user || "",
+      password: data.password || "",
+    },
+  })
 
   return { message, isSuccessful }
 }

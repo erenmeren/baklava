@@ -16,8 +16,8 @@ import {
 
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { ConnectionResult, PostgreSQLForm, PostgreSQLFormSchema } from "@/lib/schemas"
-import { checkConnection } from "@/lib/connections/postgreSQL"
+import { OperationResult, PostgreSQLForm, PostgreSQLFormSchema } from "@/lib/schemas"
+import { checkConnection, saveConnection } from "@/lib/connections/postgreSQL"
 
 export default function PostreSQLForm() {
   const form = useForm<PostgreSQLForm>({
@@ -31,10 +31,21 @@ export default function PostreSQLForm() {
     },
   })
 
+  const { trigger } = form
+
   function onSubmit(data: PostgreSQLForm) {
-    checkConnection(data).then((res: ConnectionResult) => {
+    saveConnection(data).then((res: OperationResult) => {
       res.isSuccessful ? toast.success(res.message) : toast.error(res.message)
     })
+  }
+
+  const onTestConnection = async (data: PostgreSQLForm) => {
+    const isValid = await trigger()
+    if (isValid) {
+      checkConnection(data).then((res: OperationResult) => {
+        res.isSuccessful ? toast.success(res.message) : toast.error(res.message)
+      })
+    }
   }
 
   return (
@@ -119,8 +130,12 @@ export default function PostreSQLForm() {
                   </FormItem>
                 )}
               />
-
-              <Button type="submit">Connect</Button>
+              <div className="flex justify-between">
+                <Button type="button" onClick={() => onTestConnection(form.getValues())}>
+                  Test
+                </Button>
+                <Button type="submit">Save</Button>
+              </div>
             </form>
           </Form>
         }

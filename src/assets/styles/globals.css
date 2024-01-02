@@ -74,3 +74,7 @@
     @apply bg-background text-foreground;
   }
 }
+
+.group:hover .shadow-purple-500 {
+  box-shadow: 0 0 15px 5px rgba(147, 51, 234, 0.6); /* Bu, neon mor bir gölge oluşturur */
+}

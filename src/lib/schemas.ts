@@ -19,7 +19,7 @@ export const PostgreSQLFormSchema = z.object({
 
 export type PostgreSQLForm = z.infer<typeof PostgreSQLFormSchema>
 
-export type ConnectionResult = {
+export type OperationResult = {
   isSuccessful: boolean
   message: string
 }
