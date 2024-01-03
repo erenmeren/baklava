@@ -1,6 +1,7 @@
 import * as z from "zod"
 
 export const PostgreSQLFormSchema = z.object({
+  id: z.number().optional(),
   host: z
     .string({
       required_error: "Host is requreid",

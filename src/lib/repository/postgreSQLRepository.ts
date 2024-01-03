@@ -1,5 +1,5 @@
 import { PrismaClient } from "@prisma/client"
-import { PostgreSQLForm } from "../schemas"
+import { PostgreSQLForm } from "@/lib/schemas"
 
 const prisma = new PrismaClient()
 
@@ -16,6 +16,5 @@ export async function save(data: PostgreSQLForm) {
 }
 
 export async function findAll(): Promise<PostgreSQLForm[]> {
-  console.log("girdi")
   return await prisma.postgreSQL.findMany()
 }
