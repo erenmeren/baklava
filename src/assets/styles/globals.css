@@ -73,7 +73,6 @@
   body {
     @apply bg-background text-foreground;
   }
-
 }
 
 /* globals.css */
@@ -83,7 +82,7 @@
 }
 
 .neon-shadow::after {
-  content: '';
+  content: "";
   position: absolute;
   top: -10px;
   left: -10px;
