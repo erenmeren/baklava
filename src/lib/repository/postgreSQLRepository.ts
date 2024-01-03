@@ -14,3 +14,8 @@ export async function save(data: PostgreSQLForm) {
     },
   })
 }
+
+export async function findAll(): Promise<PostgreSQLForm[]> {
+  console.log("girdi")
+  return await prisma.postgreSQL.findMany()
+}
