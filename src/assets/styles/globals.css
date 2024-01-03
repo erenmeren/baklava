@@ -73,8 +73,30 @@
   body {
     @apply bg-background text-foreground;
   }
+
 }
 
-.group:hover .shadow-purple-500 {
-  box-shadow: 0 0 15px 5px rgba(147, 51, 234, 0.6); /* Bu, neon mor bir gölge oluşturur */
+/* globals.css */
+.neon-shadow {
+  position: relative;
+  transition: all 0.3s ease;
+}
+
+.neon-shadow::after {
+  content: '';
+  position: absolute;
+  top: -10px;
+  left: -10px;
+  right: -10px;
+  bottom: -10px;
+  background: linear-gradient(135deg, rgba(255, 0, 0, 0.6), rgba(147, 51, 234, 0.6));
+  border-radius: 16px;
+  z-index: -1;
+  filter: blur(11px);
+  opacity: 0;
+  transition: opacity 0.3s ease-in-out;
+}
+
+.neon-shadow:hover::after {
+  opacity: 1;
 }
