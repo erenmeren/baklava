@@ -9,8 +9,10 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion"
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card"
 import { Icons } from "@/components/icons"
 import { toast } from "sonner"
+import { Button } from "@/components/ui/button"
 
 export default function PostgreSQL() {
   const [databaseInfo, setDatabaseInfo] = useState<DatabaseSchema[]>([])
@@ -85,7 +87,33 @@ export default function PostgreSQL() {
                                     <div key={index} className="ml-3  flex">
                                       <Icons.column size={18} />
                                       <div className="ml-1 flex w-full justify-between">
-                                        <span>{column.name}</span>
+                                        <HoverCard>
+                                          <HoverCardTrigger asChild>
+                                            <span className="hover:cursor-default hover:underline">
+                                              {column.name}
+                                            </span>
+                                          </HoverCardTrigger>
+                                          <HoverCardContent className="w-60">
+                                            <div>
+                                              <h4 className="mb-1 text-sm font-bold">
+                                                @{column.name}
+                                              </h4>
+                                              <p className="text-xs">
+                                                <span className="font-semibold">nullable</span>:
+                                                <span className="ml-1">{column.isNullable}</span>
+                                              </p>
+                                              <p className="text-xs">
+                                                <span className="font-semibold">udt</span>:
+                                                <span className="ml-1">{column.udtName}</span>
+                                              </p>
+                                              <p className="text-xs">
+                                                <span className="font-semibold">default</span>:
+                                                <span className="ml-1">{column.defaultValue}</span>
+                                              </p>
+                                            </div>
+                                          </HoverCardContent>
+                                        </HoverCard>
+
                                         <span className="text-gray-500">{column.udtName}</span>
                                       </div>
                                     </div>
