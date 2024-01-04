@@ -84,9 +84,10 @@ export default function PostgreSQL() {
                                   {table.columns.map((column, index) => (
                                     <div key={index} className="ml-3  flex">
                                       <Icons.column size={18} />
-                                      <span className="mx-1">
-                                        {column.name} - {column.udtName}
-                                      </span>
+                                      <div className="ml-1 flex w-full justify-between">
+                                        <span>{column.name}</span>
+                                        <span className="text-gray-500">{column.udtName}</span>
+                                      </div>
                                     </div>
                                   ))}
                                 </AccordionContent>
