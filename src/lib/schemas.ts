@@ -1,6 +1,6 @@
 import * as z from "zod"
 
-export const PostgreSQLFormSchema = z.object({
+export const PostgreSQLConnectionSchema = z.object({
   id: z.number().optional(),
   host: z
     .string({
@@ -18,7 +18,7 @@ export const PostgreSQLFormSchema = z.object({
   password: z.string().optional(),
 })
 
-export type PostgreSQLForm = z.infer<typeof PostgreSQLFormSchema>
+export type PostgreSQLConnection = z.infer<typeof PostgreSQLConnectionSchema>
 
 export type OperationResult = {
   isSuccessful: boolean

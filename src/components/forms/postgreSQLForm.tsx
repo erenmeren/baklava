@@ -16,12 +16,12 @@ import {
 
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { OperationResult, PostgreSQLForm, PostgreSQLFormSchema } from "@/lib/schemas"
-import { checkConnection, saveConnection } from "@/lib/connections/postgreSQL"
+import { OperationResult, PostgreSQLConnection, PostgreSQLConnectionSchema } from "@/lib/schemas"
+// import { checkConnection, saveConnection } from "@/lib/connections/postgreSQL"
 
 export default function PostreSQLForm() {
-  const form = useForm<PostgreSQLForm>({
-    resolver: zodResolver(PostgreSQLFormSchema),
+  const form = useForm<PostgreSQLConnection>({
+    resolver: zodResolver(PostgreSQLConnectionSchema),
     defaultValues: {
       host: "localhost",
       port: 5432,
@@ -33,18 +33,34 @@ export default function PostreSQLForm() {
 
   const { trigger } = form
 
-  function onSubmit(data: PostgreSQLForm) {
-    saveConnection(data).then((res: OperationResult) => {
-      res.isSuccessful ? toast.success(res.message) : toast.error(res.message)
+  async function onSubmit(data: PostgreSQLConnection) {
+    const result = await fetch("/api/postgresql/connection?check", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(data),
     })
+
+    const res: OperationResult = await result.json()
+
+    res.isSuccessful ? toast.success(res.message) : toast.error(res.message)
   }
 
-  const onTestConnection = async (data: PostgreSQLForm) => {
+  const onTestConnection = async (data: PostgreSQLConnection) => {
     const isValid = await trigger()
     if (isValid) {
-      checkConnection(data).then((res: OperationResult) => {
-        res.isSuccessful ? toast.success(res.message) : toast.error(res.message)
+      const result = await fetch("/api/postgresql/connection?connectionCheck=true", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(data),
       })
+
+      const res: OperationResult = await result.json()
+
+      res.isSuccessful ? toast.success(res.message) : toast.error(res.message)
     }
   }
 

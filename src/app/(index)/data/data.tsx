@@ -1,4 +1,4 @@
-import PostreSQLForm from "@/components/forms/postgreSQL"
+import PostreSQLForm from "@/components/forms/postgreSQLForm"
 import MongoDBForm from "@/components/forms/mongoDB"
 import RedisForm from "@/components/forms/redis"
 import KafkaForm from "@/components/forms/kafka"

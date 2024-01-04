@@ -1,6 +1,6 @@
 "use client"
 
-import { PostgreSQLForm } from "@/lib/schemas"
+import { PostgreSQLConnection } from "@/lib/schemas"
 import { useEffect, useState } from "react"
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable"
 import {
@@ -12,11 +12,11 @@ import {
 import { Icons } from "@/components/icons"
 
 export default function PostgreSQL() {
-  const [postgreConnections, setPostgreConnections] = useState<PostgreSQLForm[]>([])
+  const [postgreConnections, setPostgreConnections] = useState<PostgreSQLConnection[]>([])
 
   useEffect(() => {
     const findAllPostgreSQLData = async () => {
-      const response = await fetch("/api/postgresql")
+      const response = await fetch("/api/postgresql/connection")
       const postgreConnections = await response.json()
       setPostgreConnections(postgreConnections)
     }
