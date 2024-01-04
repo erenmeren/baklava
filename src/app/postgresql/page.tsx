@@ -11,7 +11,6 @@ import {
 } from "@/components/ui/accordion"
 import { Icons } from "@/components/icons"
 import { toast } from "sonner"
-import { Separator } from "@/components/ui/separator"
 
 export default function PostgreSQL() {
   const [databaseInfo, setDatabaseInfo] = useState<DatabaseSchema[]>([])
@@ -55,38 +54,48 @@ export default function PostgreSQL() {
               <AccordionItem key={connection.id} value={`val-${connection.id}`}>
                 <AccordionTrigger onClick={() => fetchPostgreSQLData(connection.id || -1)}>
                   <div className="flex">
-                    <Icons.database /> <span className="ml-1 text-lg">{connection.database}</span>
+                    <Icons.database /> <span className="mx-2 text-lg">{connection.database}</span>
                   </div>
                 </AccordionTrigger>
                 <AccordionContent>
-                  {databaseInfo.map((db) => (
-                    <>
-                      <div className="flex">
-                        <Icons.folder /> {db.name}
-                      </div>
-
-                      {/* <ul>
-                        {db.tables?.map((table) => (
-                          <>
-                            <li>
-                              <div className="flex">
-                                <Icons.table /> {table.name}
-                              </div>
-
-                              <ul>
-                                {table.columns.map((column) => (
-                                  <li>
-                                    <div className="flex">
-                                      <Icons.column /> {column.name}
+                  {databaseInfo.map((schema, index) => (
+                    <Accordion key={index} type="single" collapsible className="ml-3">
+                      <AccordionItem value={`val-schema-${index}`}>
+                        <AccordionTrigger>
+                          <div className="flex">
+                            <Icons.folder size={18} />
+                            <span className="mx-1 ">{schema.name}</span>
+                          </div>
+                        </AccordionTrigger>
+                        <AccordionContent>
+                          {schema.tables?.map((table, index) => (
+                            <Accordion key={index} type="single" collapsible className="ml-3">
+                              <AccordionItem value={`val-table-${index}`}>
+                                <AccordionTrigger>
+                                  <div className="flex">
+                                    <Icons.table
+                                      size={18}
+                                      color={table.type === "VIEW" ? "#94a3b8" : "#111827"}
+                                    />
+                                    <span className="mx-1">{table.name}</span>
+                                  </div>
+                                </AccordionTrigger>
+                                <AccordionContent>
+                                  {table.columns.map((column, index) => (
+                                    <div key={index} className="ml-3  flex">
+                                      <Icons.column size={18} />
+                                      <span className="mx-1">
+                                        {column.name} - {column.udtName}
+                                      </span>
                                     </div>
-                                  </li>
-                                ))}
-                              </ul>
-                            </li>
-                          </>
-                        ))}
-                      </ul> */}
-                    </>
+                                  ))}
+                                </AccordionContent>
+                              </AccordionItem>
+                            </Accordion>
+                          ))}
+                        </AccordionContent>
+                      </AccordionItem>
+                    </Accordion>
                   ))}
                 </AccordionContent>
               </AccordionItem>

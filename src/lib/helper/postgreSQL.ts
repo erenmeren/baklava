@@ -82,7 +82,9 @@ export async function getDatabaseInfoByConnectionId(
     })
 
     schemas.forEach((schema) => {
-      schema.tables = tables.filter((table) => table.schema === schema.name)
+      schema.tables = tables
+        .filter((table) => table.schema === schema.name)
+        .sort((a, b) => a.name.localeCompare(b.name))
     })
 
     return { isSuccessful: true, data: schemas }
@@ -104,14 +106,14 @@ export async function getTableNames(client: Client): Promise<string[]> {
 export async function findAllSchema(client: Client): Promise<DatabaseSchema[]> {
   const schemas = await client.query("SELECT schema_name as name FROM information_schema.schemata")
 
-  return schemas.rows.map((schema: DatabaseSchema) => schema)
+  return schemas.rows
 }
 
 export async function findAllTables(client: Client): Promise<Table[]> {
   const tables = await client.query(
     "SELECT table_schema as schema, table_name as name, table_type as type FROM information_schema.tables"
   )
-  return tables.rows.map((table: Table) => table)
+  return tables.rows
 }
 
 export async function findAllClomuns(client: Client): Promise<Column[]> {
@@ -127,7 +129,25 @@ export async function findAllClomuns(client: Client): Promise<Column[]> {
                                             c.numeric_precision as numericPrecision,
                                             c.datetime_precision as datetimePrecision
                                           FROM
-                                            information_schema.columns c`)
+                                            information_schema.columns c `)
 
-  return columns.rows.map((table: Column) => table)
+  /**
+   * The column names returned from the database were in lowercase,
+   * which caused a mismatch with our TypeScript 'Column' type where the field names start with uppercase letters.
+   * To resolve this issue, a transformation map operation was implemented on the results fetched from the database.
+   * Each column is now mapped to an object that transforms the raw data from the database into the structure compatible with our 'Column' type.
+   * This approach allowed us to achieve the desired data structure without modifying the database query."
+   *  */
+  return columns.rows.map((column) => ({
+    schema: column.schema,
+    table: column.table,
+    name: column.name,
+    position: column.position,
+    defaultValue: column.defaultvalue,
+    isNullable: column.isnullable,
+    udtName: column.udtname,
+    characterMaximumLength: column.charactermaximumlength,
+    numericPrecision: column.numericprecision,
+    datetimePrecision: column.datetimeprecision,
+  }))
 }
