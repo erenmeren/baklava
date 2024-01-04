@@ -1,4 +1,13 @@
-import { LucideProps, Moon, SunMedium, Database, Table, Columns2, LucideIcon } from "lucide-react"
+import {
+  // LucideProps,
+  Moon,
+  SunMedium,
+  Database,
+  Table,
+  Columns2,
+  Folder,
+  LucideIcon,
+} from "lucide-react"
 
 export type Icon = LucideIcon
 
@@ -8,6 +17,7 @@ export const Icons = {
   database: Database,
   table: Table,
   column: Columns2,
+  folder: Folder,
   //   twitter: (props: LucideProps) => (
   //     <svg
   //       {...props}

@@ -7,13 +7,8 @@ export async function GET(request: NextRequest) {
   const connectionId = searchParams.get("connectionId")
 
   if (connectionId) {
-    const connection: PostgreSQLConnection | null = await postgreSQL.getConnectionById(
-      parseInt(connectionId, 10)
-    )
-
-    if (connection) postgreSQL.getDatabaseInfo(connection)
-
-    return Response.json(connection)
+    const info = await postgreSQL.getDatabaseInfoByConnectionId(parseInt(connectionId, 10))
+    return Response.json(info)
   }
 
   return Response.json({})

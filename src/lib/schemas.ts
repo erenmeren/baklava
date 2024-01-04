@@ -20,7 +20,33 @@ export const PostgreSQLConnectionSchema = z.object({
 
 export type PostgreSQLConnection = z.infer<typeof PostgreSQLConnectionSchema>
 
-export type OperationResult = {
+export type OperationResult<T = unknown> = {
   isSuccessful: boolean
-  message: string
+  message?: string
+  data?: T
+}
+
+export type DatabaseSchema = {
+  name: string
+  tables?: Table[]
+}
+
+export type Table = {
+  schema: string
+  name: string
+  type: string
+  columns: Column[]
+}
+
+export type Column = {
+  schema: string
+  table: string
+  name: string
+  position: number
+  defaultValue: string
+  isNullable: string
+  udtName: string
+  characterMaximumLength: number
+  numericPrecision: number
+  datetimePrecision: number
 }
