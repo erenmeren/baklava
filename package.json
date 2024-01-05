@@ -13,7 +13,8 @@
     "test": "jest",
     "test:watch": "jest --watchAll",
     "cypress:open": "cypress open",
-    "test:all": "npm run test && npm run format:check && npm run lint:check && npm run types:check && npm run build"
+    "test:all": "npm run test && npm run format:check && npm run lint:check && npm run types:check && npm run build",
+    "prepare": "husky install"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.3.3",
