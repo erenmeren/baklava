@@ -50,3 +50,7 @@ export type Column = {
   numericPrecision: number
   datetimePrecision: number
 }
+
+export type QueryResult = { fields: string[]; rows: Row[] }
+
+type Row = [number, string, string, null | any]

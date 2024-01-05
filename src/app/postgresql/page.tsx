@@ -1,48 +1,76 @@
 "use client"
 
-import { DatabaseSchema, OperationResult, PostgreSQLConnection } from "@/lib/schemas"
-import { useEffect, useState } from "react"
+import { DatabaseSchema, OperationResult, PostgreSQLConnection, QueryResult } from "@/lib/schemas"
+import { useEffect, useMemo, useState } from "react"
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable"
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion"
-import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card"
-import { Icons } from "@/components/icons"
+
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import { Table } from "@/components/ui/table"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import Menu from "@/components/postgreMenu"
 
 export default function PostgreSQL() {
+  const [queryResult, setQueryResult] = useState<QueryResult>()
+  const [query, setQuery] = useState<string>("")
+  const [connectionId, setConnectionId] = useState<number>()
   const [databaseInfo, setDatabaseInfo] = useState<DatabaseSchema[]>([])
-  const [postgreSQLConnections, setPostgreSQLConnections] = useState<PostgreSQLConnection[]>([])
+  const [connections, setConnections] = useState<PostgreSQLConnection[]>([])
 
   useEffect(() => {
-    const findAllPostgreSQLData = async () => {
+    const findAllPostgreSQLConnections = async () => {
       const response = await fetch("/api/postgresql/connection")
       const postgreSQLConnections: PostgreSQLConnection[] = await response.json()
 
-      setPostgreSQLConnections(postgreSQLConnections)
-      console.log(postgreSQLConnections)
+      setConnections(postgreSQLConnections)
     }
-
-    findAllPostgreSQLData()
+    findAllPostgreSQLConnections()
   }, [])
 
-  async function fetchPostgreSQLData(connectionId: number) {
-    setDatabaseInfo([])
-    if (connectionId === -1) return toast.error("Something worng!")
+  async function getDatabaseInfo(connId: number | undefined) {
+    if (!connId || connId < 1) {
+      toast.error("Something worng!")
+      setDatabaseInfo([])
+      return
+    }
 
-    const response = await fetch(`/api/postgresql/database?connectionId=${connectionId}`)
+    setConnectionId(connId)
+
+    const response = await fetch(`/api/postgresql/database?connectionId=${connId}`)
     const dbInfoResult: OperationResult<DatabaseSchema[]> = await response.json()
 
     if (dbInfoResult.isSuccessful && dbInfoResult.data) {
       setDatabaseInfo(dbInfoResult.data)
     } else {
       toast.error(dbInfoResult.message)
+      setDatabaseInfo([])
+    }
+  }
+
+  async function runQuery() {
+    if (!connectionId) return toast.error("Choose a connection!")
+    if (query === "") return toast.error("Query is empty!")
+
+    const response = await fetch(`/api/postgresql/database?connectionId=${connectionId}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ query }),
+    })
+
+    const queryResult = await response.json()
+    if (!queryResult.isSuccessful) {
+      toast.error(queryResult.message)
+    } else {
+      setQueryResult(queryResult.data)
     }
   }
 
@@ -52,94 +80,18 @@ export default function PostgreSQL() {
       className="min-h-screen min-w-full rounded-lg border"
     >
       <ResizablePanel defaultSize={15}>
-        <div className=" h-full p-6">
-          <Accordion type="single" collapsible className="w-full">
-            {postgreSQLConnections.map((connection) => (
-              <AccordionItem key={connection.id} value={`val-${connection.id}`}>
-                <AccordionTrigger onClick={() => fetchPostgreSQLData(connection.id || -1)}>
-                  <div className="flex">
-                    <Icons.database size={18} /> <span className="mx-1">{connection.database}</span>
-                  </div>
-                </AccordionTrigger>
-                <AccordionContent>
-                  {databaseInfo.map((schema, index) => (
-                    <Accordion key={index} type="single" collapsible className="ml-3">
-                      <AccordionItem value={`val-schema-${index}`}>
-                        <AccordionTrigger>
-                          <div className="flex">
-                            <Icons.folder size={18} />
-                            <span className="mx-1">{schema.name}</span>
-                          </div>
-                        </AccordionTrigger>
-                        <AccordionContent>
-                          {schema.tables?.map((table, index) => (
-                            <Accordion key={index} type="single" collapsible className="ml-3">
-                              <AccordionItem value={`val-table-${index}`}>
-                                <AccordionTrigger>
-                                  <div className="flex">
-                                    <Icons.table
-                                      size={18}
-                                      color={table.type === "VIEW" ? "#94a3b8" : "#111827"}
-                                    />
-                                    <span className="mx-1">{table.name}</span>
-                                  </div>
-                                </AccordionTrigger>
-                                <AccordionContent>
-                                  {table.columns.map((column, index) => (
-                                    <div key={index} className="ml-3 flex">
-                                      <Icons.column size={18} />
-                                      <div className="ml-1 flex w-full justify-between">
-                                        <HoverCard>
-                                          <HoverCardTrigger asChild>
-                                            <span className="hover:cursor-default hover:underline">
-                                              {column.name}
-                                            </span>
-                                          </HoverCardTrigger>
-                                          <HoverCardContent className="w-60">
-                                            <div>
-                                              <h4 className="mb-1 text-sm font-bold">
-                                                @{column.name}
-                                              </h4>
-                                              <p className="text-xs">
-                                                <span className="font-semibold">nullable</span>:
-                                                <span className="ml-1">{column.isNullable}</span>
-                                              </p>
-                                              <p className="text-xs">
-                                                <span className="font-semibold">udt</span>:
-                                                <span className="ml-1">{column.udtName}</span>
-                                              </p>
-                                              <p className="text-xs">
-                                                <span className="font-semibold">default</span>:
-                                                <span className="ml-1">{column.defaultValue}</span>
-                                              </p>
-                                            </div>
-                                          </HoverCardContent>
-                                        </HoverCard>
-
-                                        <span className="text-gray-500">{column.udtName}</span>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </AccordionContent>
-                              </AccordionItem>
-                            </Accordion>
-                          ))}
-                        </AccordionContent>
-                      </AccordionItem>
-                    </Accordion>
-                  ))}
-                </AccordionContent>
-              </AccordionItem>
-            ))}
-          </Accordion>
-        </div>
+        <Menu
+          connections={connections}
+          getDatabaseInfo={getDatabaseInfo}
+          databaseInfo={databaseInfo}
+        />
       </ResizablePanel>
       <ResizableHandle withHandle />
       <ResizablePanel defaultSize={85}>
         <div className="hidden flex-col md:flex">
           <div className="border-b">
             <div className="flex h-16 items-center px-4">
-              <Button variant="secondary" className="justify-start">
+              <Button variant="secondary" className="justify-start" onClick={runQuery}>
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
                   viewBox="0 0 24 24"
@@ -161,13 +113,33 @@ export default function PostgreSQL() {
             <ResizablePanelGroup direction="vertical" className="min-h-screen min-w-full">
               <ResizablePanel defaultSize={40}>
                 <Textarea
+                  onChange={(e) => setQuery(e.target.value)}
                   placeholder="select * from users"
                   className="min-h-full w-full resize-none rounded-none font-semibold"
                 />
               </ResizablePanel>
               <ResizableHandle withHandle />
               <ResizablePanel defaultSize={60}>
-                <Table className="min-w-full"></Table>
+                {queryResult && (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        {queryResult.fields.map((field, index) => (
+                          <TableHead key={index}>{field}</TableHead>
+                        ))}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {queryResult.rows.map((row, index) => (
+                        <TableRow key={index}>
+                          {row.map((column, idx) => (
+                            <TableCell key={idx}>{column}</TableCell>
+                          ))}
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
               </ResizablePanel>
             </ResizablePanelGroup>
           </div>

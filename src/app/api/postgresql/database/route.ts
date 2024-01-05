@@ -13,3 +13,16 @@ export async function GET(request: NextRequest) {
 
   return Response.json({})
 }
+
+export async function POST(request: NextRequest) {
+  let result: any
+
+  const { query } = await request.json()
+
+  const searchParams = request.nextUrl.searchParams
+  const connectionId = searchParams.get("connectionId")
+
+  if (connectionId) result = await postgreSQL.runQuery(parseInt(connectionId, 10), query)
+
+  return Response.json(result)
+}

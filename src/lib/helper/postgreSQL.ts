@@ -1,6 +1,13 @@
 import { Client } from "pg"
 import { PrismaClient } from "@prisma/client"
-import { Column, DatabaseSchema, OperationResult, PostgreSQLConnection, Table } from "@/lib/schemas"
+import {
+  Column,
+  DatabaseSchema,
+  OperationResult,
+  PostgreSQLConnection,
+  Table,
+  QueryResult,
+} from "@/lib/schemas"
 
 const prisma = new PrismaClient()
 
@@ -99,13 +106,11 @@ export async function getTableNames(client: Client): Promise<string[]> {
   const tables = await client.query(
     "SELECT table_name as name FROM information_schema.tables WHERE table_schema = 'public'"
   )
-
   return tables.rows.map((table) => table.name)
 }
 
 export async function findAllSchema(client: Client): Promise<DatabaseSchema[]> {
   const schemas = await client.query("SELECT schema_name as name FROM information_schema.schemata")
-
   return schemas.rows
 }
 
@@ -150,4 +155,28 @@ export async function findAllClomuns(client: Client): Promise<Column[]> {
     numericPrecision: column.numericprecision,
     datetimePrecision: column.datetimeprecision,
   }))
+}
+
+export async function runQuery(
+  connectionId: number,
+  query: string
+): Promise<OperationResult<QueryResult>> {
+  const connection: PostgreSQLConnection | null = await getConnectionById(connectionId)
+
+  if (!connection) return { message: "Connection not found!", isSuccessful: false }
+  const client = createClient(connection)
+
+  try {
+    await client.connect()
+    const result = await client.query(query)
+
+    const fields: string[] = result.fields.map((field) => field.name)
+    const rows: any[] = result.rows.map((row) => Object.values(row))
+
+    return { isSuccessful: true, data: { fields, rows } }
+  } catch (err: any) {
+    return { isSuccessful: false, message: err.message }
+  } finally {
+    await client.end()
+  }
 }
