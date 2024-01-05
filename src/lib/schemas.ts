@@ -12,8 +12,8 @@ export const PostgreSQLConnectionSchema = z.object({
       required_error: "Port is requreid",
       invalid_type_error: "Port must be a number",
     })
-    .positive(),
-  database: z.string().min(1, "Database is requreid"),
+    .positive("Port must be a positive number"),
+  database: z.string({ required_error: "Database is requreid" }).min(1, "Database is requreid"),
   user: z.string().optional(),
   password: z.string().optional(),
 })
