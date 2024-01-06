@@ -1,4 +1,4 @@
-import { applications } from "@/app/(index)/data/data"
+import { applications } from "@/app/(index)/data"
 import { Separator } from "@/components/ui/separator"
 
 export default function Home() {
