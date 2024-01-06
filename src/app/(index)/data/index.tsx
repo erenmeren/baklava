@@ -1,4 +1,4 @@
-import PostreSQLForm from "@/components/forms/postgreSQLForm"
+import PostgreSQL from "@/assets/images/logos/postgreSQL.svg"
 
 export const applications = [
   {
@@ -6,7 +6,7 @@ export const applications = [
     items: [
       {
         name: "PostgreSQL",
-        form: <PostreSQLForm />,
+        icon: <PostgreSQL width="100" height="120" alt="PostgreSQL" />,
       },
     ],
   },

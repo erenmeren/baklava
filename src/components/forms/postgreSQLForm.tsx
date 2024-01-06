@@ -1,7 +1,7 @@
 "use client"
 
 import Template from "./template"
-import PostgreSQL from "@/assets/images/logos/postgreSQL.svg"
+
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
 import { toast } from "sonner"
@@ -17,8 +17,9 @@ import {
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { OperationResult, PostgreSQLConnection, PostgreSQLConnectionSchema } from "@/lib/schemas"
+import { Icons } from "../icons"
 
-export default function PostreSQLForm() {
+export default function PostreSQLForm({ formTrigger }: any) {
   const form = useForm<PostgreSQLConnection>({
     resolver: zodResolver(PostgreSQLConnectionSchema),
     defaultValues: {
@@ -67,7 +68,7 @@ export default function PostreSQLForm() {
     <>
       <Template
         title={"PostgreSQL"}
-        logo={<PostgreSQL width="100" height="120" alt="PostgreSQL" />}
+        formTrigger={formTrigger}
         form={
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="w-full space-y-6">

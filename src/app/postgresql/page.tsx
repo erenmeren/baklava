@@ -16,12 +16,13 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import Menu from "@/components/postgreSQLMenu"
+import { Icons } from "@/components/icons"
+import PostreSQLForm from "@/components/forms/postgreSQLForm"
+import Link from "next/link"
 
 const MemorizedMenu = memo(Menu)
 
 export default function PostgreSQL() {
-  console.log("App render")
-
   const [queryResult, setQueryResult] = useState<QueryResult>()
   const [query, setQuery] = useState<string>("")
   const [connectionId, setConnectionId] = useState<number>()
@@ -56,6 +57,13 @@ export default function PostgreSQL() {
     } else {
       setQueryResult(queryResult.data)
     }
+  }
+
+  const refreshMenu = async () => {
+    const response = await fetch("/api/postgresql/connection")
+    const postgreSQLConnections: PostgreSQLConnection[] = await response.json()
+
+    setConnections(postgreSQLConnections)
   }
 
   const getDatabaseInfo = useCallback(async (connId: number | undefined) => {
@@ -94,6 +102,26 @@ export default function PostgreSQL() {
         className="min-h-screen min-w-full rounded-lg border"
       >
         <ResizablePanel defaultSize={15}>
+          <div className="flex justify-between  px-6 pt-4">
+            <Link href="/">
+              <Button size="sm" variant="secondary">
+                <Icons.left />
+              </Button>
+            </Link>
+            <div className="flex gap-2">
+              <PostreSQLForm
+                formTrigger={
+                  <Button size="sm">
+                    <Icons.plus />
+                  </Button>
+                }
+              />
+
+              <Button size="sm" onClick={refreshMenu}>
+                <Icons.refresh />
+              </Button>
+            </div>
+          </div>
           <MemorizedMenu {...memoizedMenuProps} />
         </ResizablePanel>
         <ResizableHandle />
@@ -101,20 +129,8 @@ export default function PostgreSQL() {
           <div className="hidden flex-col md:flex">
             <div className="border-b">
               <div className="flex h-16 items-center px-4">
-                <Button variant="secondary" className="justify-start" onClick={runQuery}>
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="mr-2 h-4 w-4"
-                  >
-                    <circle cx="12" cy="12" r="10" />
-                    <polygon points="10 8 16 12 10 16 10 8" />
-                  </svg>
+                <Button onClick={runQuery}>
+                  <Icons.play className="mr-2 h-4 w-4" />
                   Run
                 </Button>
               </div>
