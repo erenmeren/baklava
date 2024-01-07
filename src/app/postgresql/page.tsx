@@ -19,6 +19,7 @@ import Menu from "@/components/postgreSQLMenu"
 import { Icons } from "@/components/icons"
 import PostreSQLForm from "@/components/forms/postgreSQLForm"
 import Link from "next/link"
+import TabContainer from "@/components/tab"
 
 const MemorizedMenu = memo(Menu)
 
@@ -97,10 +98,7 @@ export default function PostgreSQL() {
 
   return (
     <>
-      <ResizablePanelGroup
-        direction="horizontal"
-        className="min-h-screen min-w-full rounded-lg border"
-      >
+      <ResizablePanelGroup direction="horizontal" className="min-h-screen min-w-full ">
         <ResizablePanel defaultSize={15}>
           <div className="flex justify-between  px-6 pt-4">
             <Link href="/">

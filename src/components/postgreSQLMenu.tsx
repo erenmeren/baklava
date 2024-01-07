@@ -40,7 +40,7 @@ export default function Menu({ connections, getDatabaseInfo, databaseInfo }: Pro
                         <Accordion key={index} type="single" collapsible className="ml-3">
                           <AccordionItem value={`val-table-${index}`}>
                             <AccordionTrigger>
-                              <div className="flex">
+                              <div className="flex ">
                                 <Icons.table
                                   size={18}
                                   color={table.type === "VIEW" ? "#94a3b8" : "#111827"}
@@ -50,7 +50,7 @@ export default function Menu({ connections, getDatabaseInfo, databaseInfo }: Pro
                             </AccordionTrigger>
                             <AccordionContent>
                               {table.columns.map((column, index) => (
-                                <div key={index} className="ml-3 flex">
+                                <div key={index} className="ml-5 flex">
                                   <Icons.column size={18} />
                                   <div className="ml-1 flex w-full justify-between">
                                     <HoverCard>

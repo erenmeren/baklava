@@ -11,6 +11,7 @@ import {
   RefreshCcw,
   PlayCircle,
   ArrowLeft,
+  X,
 } from "lucide-react"
 
 export type Icon = LucideIcon
@@ -26,4 +27,5 @@ export const Icons = {
   refresh: RefreshCcw,
   play: PlayCircle,
   left: ArrowLeft,
+  x: X,
 }
