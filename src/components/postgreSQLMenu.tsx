@@ -7,6 +7,12 @@ import {
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card"
 import { Icons } from "@/components/icons"
 import { DatabaseSchema, PostgreSQLConnection } from "@/lib/schemas"
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu"
 
 interface Props {
   connections: PostgreSQLConnection[]
@@ -20,11 +26,25 @@ export default function Menu({ connections, getDatabaseInfo, databaseInfo }: Pro
       <Accordion type="single" collapsible className="w-full">
         {connections.map((conn) => (
           <AccordionItem key={conn.id} value={`val-${conn.id}`}>
-            <AccordionTrigger onClick={() => getDatabaseInfo(conn.id)}>
-              <div className="flex">
-                <Icons.database size={18} /> <span className="mx-1">{conn.database}</span>
-              </div>
-            </AccordionTrigger>
+            <ContextMenu>
+              <ContextMenuTrigger>
+                <AccordionTrigger onClick={() => getDatabaseInfo(conn.id)}>
+                  <div className="flex">
+                    <Icons.database size={18} /> <span className="mx-1">{conn.database}</span>
+                  </div>
+                </AccordionTrigger>
+              </ContextMenuTrigger>
+              <ContextMenuContent>
+                <ContextMenuItem>
+                  <Icons.trash size={18} className="mr-1" />
+                  Delete
+                </ContextMenuItem>
+                <ContextMenuItem>
+                  <Icons.edit size={18} className="mr-1" />
+                  Edit
+                </ContextMenuItem>
+              </ContextMenuContent>
+            </ContextMenu>
             <AccordionContent>
               {databaseInfo.map((schema, index) => (
                 <Accordion key={index} type="single" collapsible className="ml-3">

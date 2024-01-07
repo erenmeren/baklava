@@ -12,6 +12,8 @@ import {
   PlayCircle,
   ArrowLeft,
   X,
+  Trash2,
+  Pencil,
 } from "lucide-react"
 
 export type Icon = LucideIcon
@@ -28,4 +30,6 @@ export const Icons = {
   play: PlayCircle,
   left: ArrowLeft,
   x: X,
+  trash: Trash2,
+  edit: Pencil,
 }
