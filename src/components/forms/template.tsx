@@ -28,11 +28,6 @@ export default function Template({ title, formTrigger, form }: Props) {
           <SheetDescription>Make changes. Click save when you&apos;re done.</SheetDescription>
         </SheetHeader>
         <div className="py-4">{form}</div>
-        {/* <SheetFooter>
-          <SheetClose asChild>
-            <Button type="submit">Save changes</Button>
-          </SheetClose>
-        </SheetFooter> */}
       </SheetContent>
     </Sheet>
   )

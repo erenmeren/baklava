@@ -19,8 +19,9 @@ import Menu from "@/components/postgreSQLMenu"
 import { Icons } from "@/components/icons"
 import PostreSQLForm from "@/components/forms/postgreSQLForm"
 import Link from "next/link"
-import TabContainer from "@/components/tab"
+import { format } from "sql-formatter"
 
+const DB_NAME = "postgresql"
 const MemorizedMenu = memo(Menu)
 
 export default function PostgreSQL() {
@@ -58,6 +59,17 @@ export default function PostgreSQL() {
     } else {
       setQueryResult(queryResult.data)
     }
+  }
+
+  function formatQuery() {
+    setQuery(
+      format(query, {
+        language: DB_NAME,
+        tabWidth: 2,
+        keywordCase: "upper",
+        linesBetweenQueries: 2,
+      })
+    )
   }
 
   const refreshMenu = async () => {
@@ -102,14 +114,14 @@ export default function PostgreSQL() {
         <ResizablePanel defaultSize={15}>
           <div className="flex justify-between  px-6 pt-4">
             <Link href="/">
-              <Button size="sm" variant="secondary">
+              <Button size="sm">
                 <Icons.left />
               </Button>
             </Link>
             <div className="flex gap-2">
               <PostreSQLForm
                 formTrigger={
-                  <Button size="sm">
+                  <Button variant="secondary" size="sm">
                     <Icons.plus />
                   </Button>
                 }
@@ -131,12 +143,16 @@ export default function PostgreSQL() {
                   <Icons.play className="mr-2 h-4 w-4" />
                   Run
                 </Button>
+                <Button onClick={formatQuery} className="ml-2">
+                  Format
+                </Button>
               </div>
             </div>
             <div className="flex-1">
               <ResizablePanelGroup direction="vertical" className="min-h-screen min-w-full">
                 <ResizablePanel defaultSize={40}>
                   <Textarea
+                    value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     placeholder="select * from users"
                     className="min-h-full w-full resize-none rounded-none font-semibold"
