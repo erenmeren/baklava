@@ -9,11 +9,12 @@ import {
   LucideIcon,
   Plus,
   RefreshCcw,
-  PlayCircle,
+  Play,
   ArrowLeft,
   X,
   Trash2,
   Pencil,
+  Text,
 } from "lucide-react"
 
 export type Icon = LucideIcon
@@ -27,9 +28,10 @@ export const Icons = {
   folder: Folder,
   plus: Plus,
   refresh: RefreshCcw,
-  play: PlayCircle,
+  play: Play,
   left: ArrowLeft,
   x: X,
   trash: Trash2,
   edit: Pencil,
+  text: Text,
 }

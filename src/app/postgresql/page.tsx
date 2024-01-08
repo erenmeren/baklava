@@ -1,7 +1,7 @@
 "use client"
 
 import { DatabaseSchema, OperationResult, QueryResult } from "@/lib/schemas"
-import { memo, useCallback, useMemo, useState } from "react"
+import { memo, useCallback, useEffect, useMemo, useState } from "react"
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable"
 
 import { toast } from "sonner"
@@ -24,17 +24,27 @@ import { format } from "sql-formatter"
 import { trpc } from "@/utils/trpc"
 import { useQueryClient } from "@tanstack/react-query"
 
+import {
+  CommandDialog,
+  CommandEmpty,
+  CommandInput,
+  CommandItem,
+  CommandList,
+  CommandShortcut,
+} from "@/components/ui/command"
+
 const DB_NAME = "postgresql"
 const MemorizedMenu = memo(Menu)
 
 export default function PostgreSQL() {
-  const queryClient = useQueryClient()
-  let { data: connections, isLoading, isFetching } = trpc.postgresql.getConnections.useQuery()
-
   const [queryResult, setQueryResult] = useState<QueryResult>()
   const [query, setQuery] = useState<string>("")
   const [connectionId, setConnectionId] = useState<number>()
   const [databaseInfo, setDatabaseInfo] = useState<DatabaseSchema[]>([])
+  const [openCommand, setOpenCommand] = useState(false)
+
+  const queryClient = useQueryClient()
+  let { data: connections, isLoading, isFetching } = trpc.postgresql.getConnections.useQuery()
 
   async function runQuery() {
     if (!connectionId) return toast.error("Choose a connection!")
@@ -69,7 +79,7 @@ export default function PostgreSQL() {
 
   const refreshMenu = async () => {
     queryClient.refetchQueries([
-      ["postgresql", "getConnections"],
+      [DB_NAME, "getConnections"],
       {
         type: "query",
       },
@@ -105,44 +115,94 @@ export default function PostgreSQL() {
     [connections, getDatabaseInfo, databaseInfo]
   )
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault()
+        setOpenCommand((open) => !open)
+      }
+    }
+    document.addEventListener("keydown", handleKeyDown)
+    return () => document.removeEventListener("keydown", handleKeyDown)
+  }, [])
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "r" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault()
+        runQuery()
+      }
+    }
+    document.addEventListener("keydown", handleKeyDown)
+    return () => document.removeEventListener("keydown", handleKeyDown)
+  }, [])
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "f" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault()
+        formatQuery()
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown)
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown)
+    }
+  }, [query])
+
   return (
     <>
+      <CommandDialog open={openCommand} onOpenChange={setOpenCommand}>
+        <CommandInput placeholder="Type a command or search..." />
+        <CommandList>
+          <CommandEmpty>No results found.</CommandEmpty>
+          <CommandItem>
+            <Icons.play className="mr-2 h-4 w-4" />
+            <span>Run</span>
+            <CommandShortcut>⌘R</CommandShortcut>
+          </CommandItem>
+          <CommandItem>
+            <Icons.text className="mr-2 h-4 w-4" />
+            <span>Format</span>
+            <CommandShortcut>⌘F</CommandShortcut>
+          </CommandItem>
+        </CommandList>
+      </CommandDialog>
       <ResizablePanelGroup direction="horizontal" className="min-h-screen min-w-full ">
         <ResizablePanel defaultSize={15}>
           <div className="flex justify-between  px-6 pt-4">
             <Link href="/">
-              <Button size="sm">
+              <Button variant="secondary" size="icon">
                 <Icons.left />
               </Button>
             </Link>
             <div className="flex gap-2">
               <PostreSQLForm
                 formTrigger={
-                  <Button variant="secondary" size="sm">
+                  <Button size="icon">
                     <Icons.plus />
                   </Button>
                 }
               />
 
-              <Button size="sm" onClick={refreshMenu}>
+              <Button size="icon" onClick={refreshMenu}>
                 <Icons.refresh />
               </Button>
             </div>
           </div>
           {isLoading && isFetching ? <SkeletonOfMenu /> : <MemorizedMenu {...memoizedMenuProps} />}
-          {/* {true ? <SkeletonOfMenu /> : <MemorizedMenu {...memoizedMenuProps} />} */}
         </ResizablePanel>
         <ResizableHandle />
         <ResizablePanel defaultSize={85}>
           <div className="hidden flex-col md:flex">
             <div className="border-b">
-              <div className="flex h-16 items-center px-4">
-                <Button onClick={runQuery}>
-                  <Icons.play className="mr-2 h-4 w-4" />
-                  Run
+              <div className="flex h-16 items-center justify-end px-4">
+                <Button size="icon" variant="secondary" onClick={runQuery}>
+                  <Icons.play />
                 </Button>
-                <Button onClick={formatQuery} className="ml-2">
-                  Format
+                <Button size="icon" variant="secondary" onClick={formatQuery} className="ml-2">
+                  <Icons.text />
                 </Button>
               </div>
             </div>
