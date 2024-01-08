@@ -1,7 +1,7 @@
 "use client"
 
-import { DatabaseSchema, OperationResult, PostgreSQLConnection, QueryResult } from "@/lib/schemas"
-import { memo, useCallback, useEffect, useMemo, useState } from "react"
+import { DatabaseSchema, OperationResult, QueryResult } from "@/lib/schemas"
+import { memo, useCallback, useMemo, useState } from "react"
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable"
 
 import { toast } from "sonner"
@@ -16,30 +16,25 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import Menu from "@/components/postgreSQLMenu"
+import SkeletonOfMenu from "@/components/postgreSQLMenu.skeleton"
 import { Icons } from "@/components/icons"
 import PostreSQLForm from "@/components/forms/postgreSQLForm"
 import Link from "next/link"
 import { format } from "sql-formatter"
+import { trpc } from "@/utils/trpc"
+import { useQueryClient } from "@tanstack/react-query"
 
 const DB_NAME = "postgresql"
 const MemorizedMenu = memo(Menu)
 
 export default function PostgreSQL() {
+  const queryClient = useQueryClient()
+  let { data: connections, isLoading, isFetching } = trpc.postgresql.getConnections.useQuery()
+
   const [queryResult, setQueryResult] = useState<QueryResult>()
   const [query, setQuery] = useState<string>("")
   const [connectionId, setConnectionId] = useState<number>()
   const [databaseInfo, setDatabaseInfo] = useState<DatabaseSchema[]>([])
-  const [connections, setConnections] = useState<PostgreSQLConnection[]>([])
-
-  useEffect(() => {
-    const findAllPostgreSQLConnections = async () => {
-      const response = await fetch("/api/postgresql/connection")
-      const postgreSQLConnections: PostgreSQLConnection[] = await response.json()
-
-      setConnections(postgreSQLConnections)
-    }
-    findAllPostgreSQLConnections()
-  }, [])
 
   async function runQuery() {
     if (!connectionId) return toast.error("Choose a connection!")
@@ -73,10 +68,12 @@ export default function PostgreSQL() {
   }
 
   const refreshMenu = async () => {
-    const response = await fetch("/api/postgresql/connection")
-    const postgreSQLConnections: PostgreSQLConnection[] = await response.json()
-
-    setConnections(postgreSQLConnections)
+    queryClient.refetchQueries([
+      ["postgresql", "getConnections"],
+      {
+        type: "query",
+      },
+    ])
   }
 
   const getDatabaseInfo = useCallback(async (connId: number | undefined) => {
@@ -101,7 +98,7 @@ export default function PostgreSQL() {
 
   const memoizedMenuProps = useMemo(
     () => ({
-      connections,
+      connections: connections || [],
       getDatabaseInfo,
       databaseInfo,
     }),
@@ -132,7 +129,8 @@ export default function PostgreSQL() {
               </Button>
             </div>
           </div>
-          <MemorizedMenu {...memoizedMenuProps} />
+          {isLoading && isFetching ? <SkeletonOfMenu /> : <MemorizedMenu {...memoizedMenuProps} />}
+          {/* {true ? <SkeletonOfMenu /> : <MemorizedMenu {...memoizedMenuProps} />} */}
         </ResizablePanel>
         <ResizableHandle />
         <ResizablePanel defaultSize={85}>
