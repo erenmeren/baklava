@@ -24,6 +24,8 @@ import { format } from "sql-formatter"
 import { trpc } from "@/utils/trpc"
 import { useQueryClient } from "@tanstack/react-query"
 
+// import CodeMirror from "@uiw/react-codemirror"
+
 import {
   CommandDialog,
   CommandEmpty,
@@ -209,6 +211,11 @@ export default function PostgreSQL() {
             <div className="flex-1">
               <ResizablePanelGroup direction="vertical" className="min-h-screen min-w-full">
                 <ResizablePanel defaultSize={40}>
+                  {/* <CodeMirror
+                    value={query}
+                    className="min-h-full w-full resize-none rounded-none font-semibold"
+                  /> */}
+
                   <Textarea
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
