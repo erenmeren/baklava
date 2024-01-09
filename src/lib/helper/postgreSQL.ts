@@ -7,7 +7,7 @@ import {
   PostgreSQLConnection,
   Table,
   QueryResult,
-} from "@/lib/schemas"
+} from "@/lib/types"
 
 const prisma = new PrismaClient()
 

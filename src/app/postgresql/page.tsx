@@ -1,6 +1,6 @@
 "use client"
 
-import { DatabaseSchema, OperationResult, QueryResult } from "@/lib/schemas"
+import { DatabaseSchema, OperationResult, QueryResult } from "@/lib/types"
 import { memo, useCallback, useEffect, useMemo, useState } from "react"
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable"
 
@@ -38,7 +38,7 @@ import {
 const DB_NAME = "postgresql"
 const MemorizedMenu = memo(Menu)
 
-export default function PostgreSQL() {
+export default function PostgreSQLHome() {
   const [queryResult, setQueryResult] = useState<QueryResult>()
   const [query, setQuery] = useState<string>("")
   const [connectionId, setConnectionId] = useState<number>()

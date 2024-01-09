@@ -1,12 +1,25 @@
 import PostgreSQL from "@/assets/images/logos/postgreSQL.svg"
+import Docker from "@/assets/images/logos/docker.svg"
+import { Applications } from "@/lib/types"
 
-export const applications = [
+export const applications: Applications = [
   {
     name: "Databases",
     items: [
       {
         name: "PostgreSQL",
+        link: "/postgresql",
         icon: <PostgreSQL width="100" height="120" alt="PostgreSQL" />,
+      },
+    ],
+  },
+  {
+    name: "Container",
+    items: [
+      {
+        name: "Docker",
+        link: "/docker",
+        icon: <Docker width="100" height="120" alt="Docker" />,
       },
     ],
   },

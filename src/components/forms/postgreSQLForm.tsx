@@ -16,8 +16,7 @@ import {
 
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { OperationResult, PostgreSQLConnection, PostgreSQLConnectionSchema } from "@/lib/schemas"
-import { Icons } from "../icons"
+import { OperationResult, PostgreSQLConnection, PostgreSQLConnectionSchema } from "@/lib/types"
 
 export default function PostreSQLForm({ formTrigger }: any) {
   const form = useForm<PostgreSQLConnection>({

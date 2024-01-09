@@ -1,4 +1,4 @@
-import { PostgreSQLConnection } from "@/lib/schemas"
+import { PostgreSQLConnection } from "@/lib/types"
 import { prisma } from "@/server/prisma"
 import { procedure, router } from "@/server/trpc"
 

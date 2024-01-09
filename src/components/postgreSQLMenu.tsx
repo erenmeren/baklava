@@ -6,7 +6,7 @@ import {
 } from "@/components/ui/accordion"
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card"
 import { Icons } from "@/components/icons"
-import { DatabaseSchema, PostgreSQLConnection } from "@/lib/schemas"
+import { DatabaseSchema, PostgreSQLConnection } from "@/lib/types"
 import {
   ContextMenu,
   ContextMenuContent,

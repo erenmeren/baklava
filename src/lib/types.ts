@@ -20,12 +20,14 @@ export const PostgreSQLConnectionSchema = z.object({
 
 export type PostgreSQLConnection = z.infer<typeof PostgreSQLConnectionSchema>
 
+//
 export type OperationResult<T = unknown> = {
   isSuccessful: boolean
   message?: string
   data?: T
 }
 
+//
 export type DatabaseSchema = {
   name: string
   tables?: Table[]
@@ -54,3 +56,17 @@ export type Column = {
 export type QueryResult = { fields: string[]; rows: Row[] }
 
 type Row = [number, string, string, null | any]
+
+//
+type ApplicationItem = {
+  name: string
+  link: string
+  icon: JSX.Element
+}
+
+type ApplicationCategory = {
+  name: string
+  items: ApplicationItem[]
+}
+
+export type Applications = ApplicationCategory[]

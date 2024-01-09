@@ -1,5 +1,4 @@
-import { PostgreSQLConnectionSchema } from "@/lib/schemas"
-import { resolveSoa } from "dns"
+import { PostgreSQLConnectionSchema } from "@/lib/types"
 
 describe("PostgreSQLConnectionSchema", () => {
   it("should validate valid connection data", () => {
