@@ -155,30 +155,27 @@ export default function PostgreSQLHome() {
 
   return (
     <>
-      <CommandDialog open={openCommand} onOpenChange={setOpenCommand}>
-        <CommandInput placeholder="Type a command or search..." />
-        <CommandList>
-          <CommandEmpty>No results found.</CommandEmpty>
-          <CommandItem>
-            <Icons.play className="mr-2 h-4 w-4" />
-            <span>Run</span>
-            <CommandShortcut>⌘R</CommandShortcut>
-          </CommandItem>
-          <CommandItem>
-            <Icons.text className="mr-2 h-4 w-4" />
-            <span>Format</span>
-            <CommandShortcut>⌘F</CommandShortcut>
-          </CommandItem>
-        </CommandList>
-      </CommandDialog>
+      <div className="border-b ">
+        <div className="flex h-16 items-center justify-between px-4">
+          <Link href="/">
+            <Button variant="secondary" size="icon">
+              <Icons.left />
+            </Button>
+          </Link>
+          <div>
+            <Button size="icon" variant="secondary" onClick={runQuery}>
+              <Icons.play />
+            </Button>
+            <Button size="icon" variant="secondary" onClick={formatQuery} className="ml-2">
+              <Icons.text />
+            </Button>
+          </div>
+        </div>
+      </div>
+
       <ResizablePanelGroup direction="horizontal" className="min-h-screen min-w-full ">
         <ResizablePanel defaultSize={15}>
           <div className="flex justify-between  px-6 pt-4">
-            <Link href="/">
-              <Button variant="secondary" size="icon">
-                <Icons.left />
-              </Button>
-            </Link>
             <div className="flex gap-2">
               <PostreSQLForm
                 formTrigger={
@@ -198,16 +195,6 @@ export default function PostgreSQLHome() {
         <ResizableHandle />
         <ResizablePanel defaultSize={85}>
           <div className="hidden flex-col md:flex">
-            <div className="border-b">
-              <div className="flex h-16 items-center justify-end px-4">
-                <Button size="icon" variant="secondary" onClick={runQuery}>
-                  <Icons.play />
-                </Button>
-                <Button size="icon" variant="secondary" onClick={formatQuery} className="ml-2">
-                  <Icons.text />
-                </Button>
-              </div>
-            </div>
             <div className="flex-1">
               <ResizablePanelGroup direction="vertical" className="min-h-screen min-w-full">
                 <ResizablePanel defaultSize={40}>
@@ -251,6 +238,22 @@ export default function PostgreSQLHome() {
           </div>
         </ResizablePanel>
       </ResizablePanelGroup>
+      <CommandDialog open={openCommand} onOpenChange={setOpenCommand}>
+        <CommandInput placeholder="Type a command or search..." />
+        <CommandList>
+          <CommandEmpty>No results found.</CommandEmpty>
+          <CommandItem>
+            <Icons.play className="mr-2 h-4 w-4" />
+            <span>Run</span>
+            <CommandShortcut>⌘R</CommandShortcut>
+          </CommandItem>
+          <CommandItem>
+            <Icons.text className="mr-2 h-4 w-4" />
+            <span>Format</span>
+            <CommandShortcut>⌘F</CommandShortcut>
+          </CommandItem>
+        </CommandList>
+      </CommandDialog>
     </>
   )
 }
