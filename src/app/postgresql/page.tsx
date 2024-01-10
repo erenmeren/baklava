@@ -34,6 +34,7 @@ import {
   CommandList,
   CommandShortcut,
 } from "@/components/ui/command"
+import { Separator } from "@/components/ui/separator"
 
 const DB_NAME = "postgresql"
 const MemorizedMenu = memo(Menu)
@@ -155,42 +156,49 @@ export default function PostgreSQLHome() {
 
   return (
     <>
-      <div className="border-b ">
-        <div className="flex h-16 items-center justify-between px-4">
-          <Link href="/">
-            <Button variant="secondary" size="icon">
-              <Icons.left />
-            </Button>
-          </Link>
-          <div>
-            <Button size="icon" variant="secondary" onClick={runQuery}>
-              <Icons.play />
-            </Button>
-            <Button size="icon" variant="secondary" onClick={formatQuery} className="ml-2">
-              <Icons.text />
-            </Button>
-          </div>
+      <nav className="flex h-16  items-center justify-between border-b px-4">
+        <Link href="/">
+          <Button variant="secondary" size="icon">
+            <Icons.left />
+          </Button>
+        </Link>
+        <div>
+          <Button size="icon" variant="secondary" onClick={runQuery}>
+            <Icons.play />
+          </Button>
+          <Button size="icon" variant="secondary" onClick={formatQuery} className="ml-2">
+            <Icons.text />
+          </Button>
         </div>
-      </div>
+      </nav>
 
-      <ResizablePanelGroup direction="horizontal" className="min-h-screen min-w-full ">
+      <ResizablePanelGroup direction="horizontal" className="min-h-screen min-w-full">
         <ResizablePanel defaultSize={15}>
-          <div className="flex justify-between  px-6 pt-4">
-            <div className="flex gap-2">
-              <PostreSQLForm
-                formTrigger={
-                  <Button size="icon">
-                    <Icons.plus />
-                  </Button>
-                }
-              />
+          <div className="px-6">
+            <div className="flex justify-between pt-4 ">
+              <span className="mt-2 font-semibold">Connections</span>
 
-              <Button size="icon" onClick={refreshMenu}>
-                <Icons.refresh />
-              </Button>
+              <div className="flex">
+                <PostreSQLForm
+                  formTrigger={
+                    <Button variant="ghost" size="icon">
+                      <Icons.plus className="h-4 w-4" />
+                    </Button>
+                  }
+                />
+                <Button variant="ghost" size="icon" onClick={refreshMenu}>
+                  <Icons.refresh className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+            <div className="">
+              {isLoading && isFetching ? (
+                <SkeletonOfMenu />
+              ) : (
+                <MemorizedMenu {...memoizedMenuProps} />
+              )}
             </div>
           </div>
-          {isLoading && isFetching ? <SkeletonOfMenu /> : <MemorizedMenu {...memoizedMenuProps} />}
         </ResizablePanel>
         <ResizableHandle />
         <ResizablePanel defaultSize={85}>

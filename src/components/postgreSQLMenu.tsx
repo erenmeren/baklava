@@ -22,7 +22,7 @@ interface Props {
 
 export default function Menu({ connections, getDatabaseInfo, databaseInfo }: Props) {
   return (
-    <div className="p-6">
+    <div className="pt-4">
       <Accordion type="single" collapsible className="w-full">
         {connections.map((conn) => (
           <AccordionItem key={conn.id} value={`val-${conn.id}`}>
