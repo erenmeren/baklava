@@ -156,7 +156,7 @@ export default function PostgreSQLHome() {
 
   return (
     <>
-      <nav className="flex h-16  items-center justify-between border-b px-4">
+      <nav className="flex h-16 w-full items-center justify-between border-b px-4">
         <Link href="/">
           <Button variant="secondary" size="icon">
             <Icons.left />
@@ -172,7 +172,11 @@ export default function PostgreSQLHome() {
         </div>
       </nav>
 
-      <ResizablePanelGroup direction="horizontal" className="min-h-screen min-w-full">
+      {/* <nav className="h-16 w-full bg-gray-800"></nav> */}
+
+      {/* <div className="h-full w-full flex-grow bg-blue-500"></div> */}
+
+      <ResizablePanelGroup direction="horizontal" className="h-full w-full flex-grow">
         <ResizablePanel defaultSize={15}>
           <div className="px-6">
             <div className="flex justify-between pt-4 ">
@@ -202,48 +206,42 @@ export default function PostgreSQLHome() {
         </ResizablePanel>
         <ResizableHandle />
         <ResizablePanel defaultSize={85}>
-          <div className="hidden flex-col md:flex">
-            <div className="flex-1">
-              <ResizablePanelGroup direction="vertical" className="min-h-screen min-w-full">
-                <ResizablePanel defaultSize={40}>
-                  {/* <CodeMirror
-                    value={query}
-                    className="min-h-full w-full resize-none rounded-none font-semibold"
-                  /> */}
-
-                  <Textarea
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    placeholder="select * from users"
-                    className="min-h-full w-full resize-none rounded-none font-semibold"
-                  />
-                </ResizablePanel>
-                <ResizableHandle withHandle />
-                <ResizablePanel defaultSize={60}>
-                  {queryResult && (
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          {queryResult.fields.map((field, index) => (
-                            <TableHead key={index}>{field}</TableHead>
+          <>
+            <ResizablePanelGroup direction="vertical" className="">
+              <ResizablePanel defaultSize={40}>
+                <Textarea
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="select * from users"
+                  className="min-h-full w-full resize-none rounded-none font-semibold"
+                />
+              </ResizablePanel>
+              <ResizableHandle withHandle />
+              <ResizablePanel defaultSize={60}>
+                {queryResult && (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        {queryResult.fields.map((field, index) => (
+                          <TableHead key={index}>{field}</TableHead>
+                        ))}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {queryResult.rows.map((row, index) => (
+                        <TableRow key={index}>
+                          {row.map((column, idx) => (
+                            <TableCell key={idx}>{column}</TableCell>
                           ))}
                         </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {queryResult.rows.map((row, index) => (
-                          <TableRow key={index}>
-                            {row.map((column, idx) => (
-                              <TableCell key={idx}>{column}</TableCell>
-                            ))}
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  )}
-                </ResizablePanel>
-              </ResizablePanelGroup>
-            </div>
-          </div>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </ResizablePanel>
+              {/* <footer className="h-10 w-full border">asd</footer> */}
+            </ResizablePanelGroup>
+          </>
         </ResizablePanel>
       </ResizablePanelGroup>
       <CommandDialog open={openCommand} onOpenChange={setOpenCommand}>

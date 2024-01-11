@@ -12,7 +12,12 @@ const fontSans = FontSans({
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className={cn("min-h-screen bg-background font-sans antialiased", fontSans.variable)}>
+      <body
+        className={cn(
+          "flex min-h-screen flex-col bg-background font-sans antialiased",
+          fontSans.variable
+        )}
+      >
         <TrpcProvider>{children}</TrpcProvider>
         <Toaster />
       </body>
