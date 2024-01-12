@@ -16,9 +16,28 @@ import {
 
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { OperationResult, PostgreSQLConnection, PostgreSQLConnectionSchema } from "@/lib/types"
+import { PostgreSQLConnection, PostgreSQLConnectionSchema } from "@/lib/types"
+import { trpc } from "@/utils/trpc"
 
 export default function PostreSQLForm({ formTrigger }: any) {
+  const { mutate: saveConnection } = trpc.postgresql.saveConnection.useMutation({
+    onSuccess: () => {
+      toast.success("Connection saved!")
+    },
+    onError: (error) => {
+      toast.error(`Error: ${error.message || "Failed to save connection."}`)
+    },
+  })
+
+  const { mutate: checkConnection } = trpc.postgresql.checkConnection.useMutation({
+    onSuccess: () => {
+      toast.success("Connected successfully!")
+    },
+    onError: (error) => {
+      toast.error(`Error: ${error.message || "Failed to check connection."}`)
+    },
+  })
+
   const form = useForm<PostgreSQLConnection>({
     resolver: zodResolver(PostgreSQLConnectionSchema),
     defaultValues: {
@@ -33,33 +52,13 @@ export default function PostreSQLForm({ formTrigger }: any) {
   const { trigger } = form
 
   async function onSubmit(data: PostgreSQLConnection) {
-    const result = await fetch("/api/postgresql/connection?check", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(data),
-    })
-
-    const res: OperationResult = await result.json()
-
-    res.isSuccessful ? toast.success(res.message) : toast.error(res.message)
+    saveConnection(data)
   }
 
   const onTestConnection = async (data: PostgreSQLConnection) => {
     const isValid = await trigger()
     if (isValid) {
-      const result = await fetch("/api/postgresql/connection?connectionCheck=true", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(data),
-      })
-
-      const res: OperationResult = await result.json()
-
-      res.isSuccessful ? toast.success(res.message) : toast.error(res.message)
+      await checkConnection(data)
     }
   }
 
