@@ -6,6 +6,15 @@ type Props = {
 }
 
 const ResultOfQuery: React.FC<Props> = ({ queryResult }) => {
+  const renderCell = (cell: any) => {
+    if (cell instanceof Date) {
+      return cell.toLocaleString() // Veya başka bir format kullanabilirsiniz
+    }
+    if (cell === null) {
+      return <em>Null</em> // Null değerler için özel bir görünüm
+    }
+    return cell.toString() // Diğer tüm değerleri string olarak render edin
+  }
   return (
     queryResult && (
       <Table>
@@ -20,7 +29,7 @@ const ResultOfQuery: React.FC<Props> = ({ queryResult }) => {
           {queryResult.rows.map((row, index) => (
             <TableRow key={index}>
               {row.map((column, idx) => (
-                <TableCell key={idx}>{column}</TableCell>
+                <TableCell key={idx}>{renderCell(column)}</TableCell>
               ))}
             </TableRow>
           ))}
