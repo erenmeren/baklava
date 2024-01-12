@@ -1,52 +1,85 @@
-import DatabaseMenu from "./databaseMenu"
-import EditorNavbar from "./navbar"
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable"
-import QueryEditor from "./queryEditor"
-import ResultOfQuery from "./resultOfQuery"
-import CommandBar from "./commandBar"
+import { useEffect, useState } from "react"
+
 import { QueryResult } from "@/lib/types"
+import { trpc } from "@/utils/trpc"
+import { toast } from "sonner"
+import { format } from "sql-formatter"
+
+import SideMenu from "./sideMenu"
+import EditorNavbar from "./navbar"
+import QueryEditor from "./queryEditor"
+import ResultOfQuery from "./queryResult"
+import CommandBar from "./commandBar"
+
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "../../ui/resizable"
 
 type Props = {
-  openCommand: boolean
-  setOpenCommand: (openCommand: boolean) => void
-  query: string
-  setQuery: (query: string) => void
-  queryResult: QueryResult | undefined
-  runQuery: () => void
-  formatQuery: () => void
-  refreshMenu: () => void
-  isLoading: boolean
-  isFetching: boolean
-  memoizedMenuProps: any
-  MemorizedMenu: any
+  databaseManagementSystem: "postgresql" | "mysql"
 }
 
-const DatabaseEditor: React.FC<Props> = ({
-  openCommand,
-  setOpenCommand,
-  query,
-  setQuery,
-  queryResult,
-  runQuery,
-  formatQuery,
-  refreshMenu,
-  isLoading,
-  isFetching,
-  memoizedMenuProps,
-  MemorizedMenu,
-}) => {
+const DatabaseEditor: React.FC<Props> = ({ databaseManagementSystem }) => {
+  const [openCommand, setOpenCommand] = useState(false)
+  const [queryResult, setQueryResult] = useState<QueryResult>()
+  const [query, setQuery] = useState<string>("")
+  const [connectionId, setConnectionId] = useState<number>(0)
+
+  const { mutate: _runQuery } = trpc.postgresql.runQuery.useMutation({
+    onSuccess: (result) => {
+      setQueryResult(result)
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+
+  async function runQuery() {
+    if (!connectionId) return toast.error("Choose a connection!")
+    if (query === "") return toast.error("Query is empty!")
+
+    _runQuery({ connectionId, query })
+  }
+
+  function formatQuery() {
+    setQuery(
+      format(query, {
+        language: databaseManagementSystem,
+        tabWidth: 2,
+        keywordCase: "upper",
+        linesBetweenQueries: 2,
+      })
+    )
+  }
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault()
+        setOpenCommand((open) => !open)
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === "r") {
+        e.preventDefault()
+        runQuery()
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === "f") {
+        e.preventDefault()
+        formatQuery()
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [query])
+
   return (
     <>
       <EditorNavbar runQuery={runQuery} formatQuery={formatQuery} />
 
       <ResizablePanelGroup direction="horizontal" className="h-full w-full flex-grow">
         <ResizablePanel defaultSize={15}>
-          <DatabaseMenu
-            refreshMenu={refreshMenu}
-            isLoading={isLoading}
-            isFetching={isFetching}
-            memoizedMenuProps={memoizedMenuProps}
-            MemorizedMenu={MemorizedMenu}
+          <SideMenu
+            databaseManagementSystem={databaseManagementSystem}
+            connectionId={connectionId}
+            setConnectionId={setConnectionId}
           />
         </ResizablePanel>
         <ResizableHandle />

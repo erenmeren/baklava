@@ -69,6 +69,10 @@ export const postgresqlRouter = router({
       }
     }),
 
+  deleteConnection: procedure.input(z.number()).mutation(async ({ input }): Promise<void> => {
+    prisma.postgreSQL.delete({ where: { id: input } })
+  }),
+
   checkConnection: procedure
     .input(PostgreSQLConnectionSchema)
     .mutation(async ({ input }): Promise<void> => {

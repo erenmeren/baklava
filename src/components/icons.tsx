@@ -15,6 +15,7 @@ import {
   Trash2,
   Pencil,
   Text,
+  Loader2,
 } from "lucide-react"
 
 export type Icon = LucideIcon
@@ -34,4 +35,5 @@ export const Icons = {
   trash: Trash2,
   edit: Pencil,
   text: Text,
+  loader: Loader2,
 }
