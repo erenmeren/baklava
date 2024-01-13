@@ -1,3 +1,6 @@
+import { procedure, router } from "@/server/trpc"
+import { TRPCError } from "@trpc/server"
+
 import {
   Column,
   DatabaseSchema,
@@ -7,8 +10,6 @@ import {
   Table,
 } from "@/lib/types"
 import { prisma } from "@/server/prisma"
-import { procedure, router } from "@/server/trpc"
-import { TRPCError } from "@trpc/server"
 import { Client } from "pg"
 import { z } from "zod"
 
@@ -69,8 +70,8 @@ export const postgresqlRouter = router({
       }
     }),
 
-  deleteConnection: procedure.input(z.number()).mutation(async ({ input }): Promise<void> => {
-    prisma.postgreSQL.delete({ where: { id: input } })
+  deleteConnectionById: procedure.input(z.number()).mutation(async ({ input }): Promise<void> => {
+    await prisma.postgreSQL.delete({ where: { id: input } })
   }),
 
   checkConnection: procedure
@@ -89,7 +90,7 @@ export const postgresqlRouter = router({
       }
     }),
 
-  getDatabaseInfoByConnectionId: procedure
+  getSchemasByConnectionId: procedure
     .input(z.number())
     .query(async ({ input }): Promise<DatabaseSchema[]> => {
       const connection = await getConnectionById(input)

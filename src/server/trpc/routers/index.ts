@@ -1,13 +1,10 @@
-import { procedure, router } from "@/server/trpc"
+import { router } from "@/server/trpc"
 import { postgresqlRouter } from "./postgresql"
+import { dockerRouter } from "./docker"
 
 export const appRouter = router({
-  hello: procedure.query(() => {
-    return {
-      greeting: `hello world`,
-    }
-  }),
   postgresql: postgresqlRouter,
+  docker: dockerRouter,
 })
 
 export type AppRouter = typeof appRouter

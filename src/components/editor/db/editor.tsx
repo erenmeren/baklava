@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import React, { useEffect, useState } from "react"
 
 import { QueryResult } from "@/lib/types"
 import { trpc } from "@/utils/trpc"
@@ -12,6 +12,10 @@ import ResultOfQuery from "./queryResult"
 import CommandBar from "./commandBar"
 
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "../../ui/resizable"
+
+const SideMenuMemo = React.memo(SideMenu)
+// const QueryEditorMemo = React.memo(QueryEditor)
+// const ResultOfQueryMemo = React.memo(ResultOfQuery)
 
 type Props = {
   databaseManagementSystem: "postgresql" | "mysql"
@@ -76,7 +80,7 @@ const DatabaseEditor: React.FC<Props> = ({ databaseManagementSystem }) => {
 
       <ResizablePanelGroup direction="horizontal" className="h-full w-full flex-grow">
         <ResizablePanel defaultSize={15}>
-          <SideMenu
+          <SideMenuMemo
             databaseManagementSystem={databaseManagementSystem}
             connectionId={connectionId}
             setConnectionId={setConnectionId}

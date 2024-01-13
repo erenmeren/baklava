@@ -1,21 +1,20 @@
-import { useEffect, useState } from "react"
-
+import { useEffect } from "react"
+import { useQueryClient } from "@tanstack/react-query"
 import { trpc } from "@/utils/trpc"
+
+import { toast } from "sonner"
 import PostreSQLForm from "../../forms/postgreSQLForm"
 import { Icons } from "../../icons"
 import { Button } from "../../ui/button"
-import { useQueryClient } from "@tanstack/react-query"
-import { toast } from "sonner"
-import { DatabaseSchema } from "@/lib/types"
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "../../ui/accordion"
+import Loader from "../../loader"
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "../../ui/hover-card"
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "../../ui/accordion"
 import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuTrigger,
 } from "../../ui/context-menu"
-import Loader from "@/components/loader"
 
 type Props = {
   databaseManagementSystem: string
@@ -24,24 +23,16 @@ type Props = {
 }
 
 const SideMenu: React.FC<Props> = ({ databaseManagementSystem, connectionId, setConnectionId }) => {
-  const [databaseInfo, setDatabaseInfo] = useState<DatabaseSchema[]>([])
-
   const queryClient = useQueryClient()
 
-  let {
-    data: connections,
-    isLoading: isConnectionsLoading,
-    isFetching: isConnectionsFetching,
-  } = trpc.postgresql.findAllConnections.useQuery()
+  let { data: connections, isLoading: isConnectionsLoading } =
+    trpc.postgresql.findAllConnections.useQuery()
 
   let {
-    data: dbInfo,
-    isLoading: isDbInfoLoading,
-    isFetching: isDbInfoFetching,
-  } = trpc.postgresql.getDatabaseInfoByConnectionId.useQuery(connectionId, {
-    onSuccess: (data) => {
-      setDatabaseInfo(data)
-    },
+    data: databaseSchemas,
+    isLoading: isDatabaseSchemasLoading,
+    isFetching: isDatabaseSchemasFetching,
+  } = trpc.postgresql.getSchemasByConnectionId.useQuery(connectionId, {
     onError: (error) => {
       setConnectionId(0)
       toast.error(error.message)
@@ -50,9 +41,22 @@ const SideMenu: React.FC<Props> = ({ databaseManagementSystem, connectionId, set
     retry: false,
   })
 
+  const { mutate: deleteConnection } = trpc.postgresql.deleteConnectionById.useMutation({
+    onSuccess: (result) => {
+      toast.success("Connection deleted!")
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+
   useEffect(() => {
     if (connectionId > 0) {
-      queryClient.invalidateQueries(["getDatabaseInfoByConnectionId", connectionId])
+      queryClient.invalidateQueries([
+        databaseManagementSystem,
+        "getDatabaseInfoByConnectionId",
+        connectionId,
+      ])
     }
   }, [connectionId])
 
@@ -65,16 +69,7 @@ const SideMenu: React.FC<Props> = ({ databaseManagementSystem, connectionId, set
     ])
   }
 
-  const getDatabaseInfo = async (connId: number) => {
-    setDatabaseInfo([])
-
-    if (!connId || connId < 1) {
-      toast.error("Something worng!")
-      return
-    }
-
-    setConnectionId(connId)
-  }
+  const deleteConnectionById = async (connId: number) => deleteConnection(connId)
 
   return (
     <div className="px-6">
@@ -95,18 +90,18 @@ const SideMenu: React.FC<Props> = ({ databaseManagementSystem, connectionId, set
         </div>
       </div>
       <div className="">
-        {isConnectionsLoading && isConnectionsFetching ? (
+        {isConnectionsLoading ? (
           <Loader />
         ) : (
-          <div className="">
-            {connections && connections.length === 0 && <>No connection</>}
+          <div>
+            {connections && connections.length === 0 && <em>No connection</em>}
             <Accordion type="single" collapsible className="w-full">
               {connections &&
                 connections.map((conn) => (
                   <AccordionItem key={conn.id} value={`val-${conn.id}`}>
                     <ContextMenu>
                       <ContextMenuTrigger className="text-sm">
-                        <AccordionTrigger onClick={() => conn.id && getDatabaseInfo(conn.id)}>
+                        <AccordionTrigger onClick={() => conn.id && setConnectionId(conn.id)}>
                           <div className="flex">
                             <Icons.database size={18} />{" "}
                             <span className="mx-1">{conn.database}</span>
@@ -114,17 +109,22 @@ const SideMenu: React.FC<Props> = ({ databaseManagementSystem, connectionId, set
                         </AccordionTrigger>
                       </ContextMenuTrigger>
                       <ContextMenuContent className="w-64">
-                        <ContextMenuItem inset>Delete</ContextMenuItem>
+                        <ContextMenuItem
+                          inset
+                          onClick={() => deleteConnectionById(conn.id as number)}
+                        >
+                          Delete
+                        </ContextMenuItem>
                         <ContextMenuItem inset disabled>
                           Reload
                         </ContextMenuItem>
                       </ContextMenuContent>
                     </ContextMenu>
                     <AccordionContent>
-                      {isDbInfoFetching || isDbInfoLoading ? (
+                      {isDatabaseSchemasLoading || isDatabaseSchemasFetching ? (
                         <Loader className="ml-4" />
                       ) : (
-                        databaseInfo.map((schema, index) => (
+                        databaseSchemas?.map((schema, index) => (
                           <Accordion key={index} type="single" collapsible className="ml-3">
                             <AccordionItem value={`val-schema-${index}`}>
                               <AccordionTrigger>
