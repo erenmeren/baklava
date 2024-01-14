@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react"
+import React, { useCallback, useEffect, useState } from "react"
 
 import { QueryResult } from "@/lib/types"
 import { trpc } from "@/utils/trpc"
@@ -36,14 +36,14 @@ const DatabaseEditor: React.FC<Props> = ({ databaseManagementSystem }) => {
     },
   })
 
-  async function runQuery() {
+  const runQuery = useCallback(() => {
     if (!connectionId) return toast.error("Choose a connection!")
     if (query === "") return toast.error("Query is empty!")
 
     _runQuery({ connectionId, query })
-  }
+  }, [connectionId, query, _runQuery]) // Bağımlılıkları ekleyin
 
-  function formatQuery() {
+  const formatQuery = useCallback(() => {
     setQuery(
       format(query, {
         language: databaseManagementSystem,
@@ -52,7 +52,7 @@ const DatabaseEditor: React.FC<Props> = ({ databaseManagementSystem }) => {
         linesBetweenQueries: 2,
       })
     )
-  }
+  }, [query, databaseManagementSystem])
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -72,7 +72,7 @@ const DatabaseEditor: React.FC<Props> = ({ databaseManagementSystem }) => {
 
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [query])
+  }, [runQuery, formatQuery])
 
   return (
     <>

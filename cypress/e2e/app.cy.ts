@@ -1,15 +1,22 @@
-describe("Navigation", () => {
-  it("should navigate to the about page", () => {
-    // Start from the index page
+/// <reference types="cypress" />
+
+
+describe("Check pages", () => {
+  it("should open the home page", () => {
     cy.visit("http://localhost:3000");
+    cy.get('h1').contains('Databases'); 
+  });
 
-    // Find a link with an href attribute containing "about" and click it
-    cy.get('a[href*="about"]').click();
+  it("should open the postgreSQL", () => {
+    cy.visit("http://localhost:3000/postgresql");
+    // cy.get('h1').contains('PostgreSQL'); 
+  });
 
-    // The new url should include "/about"
-    cy.url().should("include", "/about");
-
-    // The new page should contain an h1 with "About"
-    cy.get("h1").contains("About");
+  it("should open the docker page", () => {
+    cy.visit("http://localhost:3000/docker");
+    // cy.get('.error').should('not.exist'); 
   });
 });
+
+
+

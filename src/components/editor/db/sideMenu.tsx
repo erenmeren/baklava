@@ -1,4 +1,4 @@
-import { useEffect } from "react"
+import { useCallback, useEffect } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { trpc } from "@/utils/trpc"
 
@@ -15,6 +15,7 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from "../../ui/context-menu"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 
 type Props = {
   databaseManagementSystem: string
@@ -50,7 +51,7 @@ const SideMenu: React.FC<Props> = ({ databaseManagementSystem, connectionId, set
     },
   })
 
-  useEffect(() => {
+  const reloadSchema = useCallback(() => {
     if (connectionId > 0) {
       queryClient.invalidateQueries([
         databaseManagementSystem,
@@ -58,7 +59,11 @@ const SideMenu: React.FC<Props> = ({ databaseManagementSystem, connectionId, set
         connectionId,
       ])
     }
-  }, [connectionId])
+  }, [connectionId, queryClient, databaseManagementSystem])
+
+  useEffect(() => {
+    reloadSchema()
+  }, [reloadSchema])
 
   const refreshMenu = async () => {
     queryClient.refetchQueries([
@@ -111,12 +116,17 @@ const SideMenu: React.FC<Props> = ({ databaseManagementSystem, connectionId, set
                       <ContextMenuContent className="w-64">
                         <ContextMenuItem
                           inset
+                          disabled={conn.id != connectionId}
+                          onClick={reloadSchema}
+                        >
+                          Reload
+                        </ContextMenuItem>
+                        <ContextMenuItem
+                          inset
                           onClick={() => deleteConnectionById(conn.id as number)}
+                          className="text-red-500"
                         >
                           Delete
-                        </ContextMenuItem>
-                        <ContextMenuItem inset disabled>
-                          Reload
                         </ContextMenuItem>
                       </ContextMenuContent>
                     </ContextMenu>
@@ -133,23 +143,38 @@ const SideMenu: React.FC<Props> = ({ databaseManagementSystem, connectionId, set
                                   <span className="mx-1">{schema.name}</span>
                                 </div>
                               </AccordionTrigger>
+
                               <AccordionContent>
                                 {schema.tables?.map((table, index) => (
                                   <Accordion key={index} type="single" collapsible className="ml-3">
                                     <AccordionItem value={`val-table-${index}`}>
-                                      <AccordionTrigger>
-                                        <div className="flex ">
-                                          <Icons.table
-                                            size={18}
-                                            color={table.type === "VIEW" ? "#94a3b8" : "#111827"}
-                                          />
+                                      <div className="flex">
+                                        <AccordionTrigger></AccordionTrigger>
+                                        <div className="mt-0.5 flex">
+                                          <TooltipProvider>
+                                            <Tooltip>
+                                              <TooltipTrigger>
+                                                <Icons.table
+                                                  size={18}
+                                                  color={
+                                                    table.type === "VIEW" ? "#94a3b8" : "#111827"
+                                                  }
+                                                />
+                                              </TooltipTrigger>
+                                              <TooltipContent>
+                                                <p>{table.type === "VIEW" ? "View" : "Table"}</p>
+                                              </TooltipContent>
+                                            </Tooltip>
+                                          </TooltipProvider>
+
                                           <span className="mx-1">{table.name}</span>
                                         </div>
-                                      </AccordionTrigger>
-                                      <AccordionContent>
+                                      </div>
+
+                                      <AccordionContent className="mt-1">
                                         {table.columns.map((column, index) => (
-                                          <div key={index} className="ml-5 flex">
-                                            <Icons.column size={18} />
+                                          <div key={index} className="ml-3.5 flex">
+                                            {/* <Icons.column size={18} /> */}
                                             <div className="ml-1 flex w-full justify-between">
                                               <HoverCard>
                                                 <HoverCardTrigger asChild>
