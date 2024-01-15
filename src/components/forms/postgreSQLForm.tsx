@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { PostgreSQLConnection, PostgreSQLConnectionSchema } from "@/lib/types"
 import { trpc } from "@/utils/trpc"
+import { SheetClose } from "../ui/sheet"
 
 export default function PostreSQLForm({ formTrigger }: any) {
   const { mutate: saveConnection } = trpc.postgresql.saveConnection.useMutation({
@@ -148,7 +149,9 @@ export default function PostreSQLForm({ formTrigger }: any) {
                 <Button type="button" onClick={() => onTestConnection(form.getValues())}>
                   Test
                 </Button>
-                <Button type="submit">Save</Button>
+                <SheetClose asChild>
+                  <Button type="submit">Save</Button>
+                </SheetClose>
               </div>
             </form>
           </Form>
