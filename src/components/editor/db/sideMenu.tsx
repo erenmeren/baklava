@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query"
 import { trpc } from "@/utils/trpc"
 
 import { toast } from "sonner"
-import PostreSQLForm from "../../forms/postgreSQLForm"
+import PostreSQLForm from "../../forms/postgreSqlForm"
 import { Icons } from "../../icons"
 import { Button } from "../../ui/button"
 import Loader from "../../loader"
@@ -16,6 +16,8 @@ import {
   ContextMenuTrigger,
 } from "../../ui/context-menu"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import usePostgreSqlStore from "@/store/postgreSql"
+import { usePostgreSQLConnections } from "@/hooks/usePostgreSQLConnections"
 
 type Props = {
   databaseManagementSystem: string
@@ -26,8 +28,9 @@ type Props = {
 const SideMenu: React.FC<Props> = ({ databaseManagementSystem, connectionId, setConnectionId }) => {
   const queryClient = useQueryClient()
 
-  let { data: connections, isLoading: isConnectionsLoading } =
-    trpc.postgresql.findAllConnections.useQuery()
+  const { deleteConnection, setConnections } = usePostgreSqlStore()
+
+  const { connections, isLoading: isConnectionsLoading } = usePostgreSQLConnections()
 
   let {
     data: databaseSchemas,
@@ -42,9 +45,10 @@ const SideMenu: React.FC<Props> = ({ databaseManagementSystem, connectionId, set
     retry: false,
   })
 
-  const { mutate: deleteConnection } = trpc.postgresql.deleteConnectionById.useMutation({
+  const { mutate: deleteConnection_ } = trpc.postgresql.deleteConnectionById.useMutation({
     onSuccess: (result) => {
       toast.success("Connection deleted!")
+      deleteConnection(result)
     },
     onError: (error) => {
       toast.error(error.message)
@@ -65,16 +69,7 @@ const SideMenu: React.FC<Props> = ({ databaseManagementSystem, connectionId, set
     reloadSchema()
   }, [reloadSchema])
 
-  const refreshMenu = async () => {
-    queryClient.refetchQueries([
-      [databaseManagementSystem, "findAllConnections"],
-      {
-        type: "query",
-      },
-    ])
-  }
-
-  const deleteConnectionById = async (connId: number) => deleteConnection(connId)
+  const deleteConnectionById = async (connId: number) => deleteConnection_(connId)
 
   return (
     <div className="px-6">
@@ -89,9 +84,6 @@ const SideMenu: React.FC<Props> = ({ databaseManagementSystem, connectionId, set
               </Button>
             }
           />
-          <Button variant="ghost" size="icon" onClick={refreshMenu}>
-            <Icons.refresh className="h-4 w-4" />
-          </Button>
         </div>
       </div>
       <div className="">

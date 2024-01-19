@@ -1,5 +1,5 @@
 import { router } from "@/server/trpc"
-import { postgresqlRouter } from "./postgresql"
+import { postgresqlRouter } from "./postgreSql"
 import { dockerRouter } from "./docker"
 
 export const appRouter = router({

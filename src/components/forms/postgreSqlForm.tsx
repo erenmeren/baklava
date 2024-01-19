@@ -19,10 +19,14 @@ import { Button } from "@/components/ui/button"
 import { PostgreSQLConnection, PostgreSQLConnectionSchema } from "@/lib/types"
 import { trpc } from "@/utils/trpc"
 import { SheetClose } from "../ui/sheet"
+import usePostgreSqlStore from "@/store/postgreSql"
 
 export default function PostreSQLForm({ formTrigger }: any) {
+  const { addConnection } = usePostgreSqlStore()
+
   const { mutate: saveConnection } = trpc.postgresql.saveConnection.useMutation({
-    onSuccess: () => {
+    onSuccess: (result) => {
+      addConnection(result)
       toast.success("Connection saved!")
     },
     onError: (error) => {
