@@ -12,10 +12,9 @@ import ResultOfQuery from "./queryResult"
 import CommandBar from "./commandBar"
 
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "../../ui/resizable"
+import usePostgreSqlStore from "@/store/postgreSql"
 
 const SideMenuMemo = React.memo(SideMenu)
-// const QueryEditorMemo = React.memo(QueryEditor)
-// const ResultOfQueryMemo = React.memo(ResultOfQuery)
 
 type Props = {
   databaseManagementSystem: "postgresql" | "mysql"
@@ -23,9 +22,8 @@ type Props = {
 
 const DatabaseEditor: React.FC<Props> = ({ databaseManagementSystem }) => {
   const [openCommand, setOpenCommand] = useState(false)
-  const [queryResult, setQueryResult] = useState<QueryResult>()
-  const [query, setQuery] = useState<string>("")
-  const [connectionId, setConnectionId] = useState<number>(0)
+
+  const { connectionId, query, setQuery, setQueryResult } = usePostgreSqlStore()
 
   const { mutate: _runQuery } = trpc.postgresql.runQuery.useMutation({
     onSuccess: (result) => {
@@ -80,22 +78,18 @@ const DatabaseEditor: React.FC<Props> = ({ databaseManagementSystem }) => {
 
       <ResizablePanelGroup direction="horizontal" className="h-full w-full flex-grow">
         <ResizablePanel defaultSize={15}>
-          <SideMenuMemo
-            databaseManagementSystem={databaseManagementSystem}
-            connectionId={connectionId}
-            setConnectionId={setConnectionId}
-          />
+          <SideMenuMemo />
         </ResizablePanel>
         <ResizableHandle />
         <ResizablePanel defaultSize={85}>
           <>
             <ResizablePanelGroup direction="vertical">
               <ResizablePanel defaultSize={40}>
-                <QueryEditor query={query} setQuery={setQuery} />
+                <QueryEditor />
               </ResizablePanel>
               <ResizableHandle withHandle />
               <ResizablePanel defaultSize={60}>
-                <ResultOfQuery queryResult={queryResult} />
+                <ResultOfQuery />
               </ResizablePanel>
             </ResizablePanelGroup>
           </>

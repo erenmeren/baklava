@@ -93,7 +93,7 @@ export const postgresqlRouter = router({
 
   getSchemasByConnectionId: procedure
     .input(z.number())
-    .query(async ({ input }): Promise<DatabaseSchema[]> => {
+    .mutation(async ({ input }): Promise<DatabaseSchema[]> => {
       const connection = await getConnectionById(input)
 
       if (!connection) {

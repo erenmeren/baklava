@@ -1,19 +1,16 @@
+import usePostgreSqlStore from "@/store/postgreSql"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../ui/table"
-import { QueryResult } from "@/lib/types"
 
-type Props = {
-  queryResult: QueryResult | undefined
-}
-
-const ResultOfQuery: React.FC<Props> = ({ queryResult }) => {
+const ResultOfQuery = () => {
+  const { queryResult } = usePostgreSqlStore()
   const renderCell = (cell: any) => {
     if (cell instanceof Date) {
-      return cell.toLocaleString() // Veya başka bir format kullanabilirsiniz
+      return cell.toLocaleString()
     }
     if (cell === null) {
-      return <em>Null</em> // Null değerler için özel bir görünüm
+      return <em>Null</em>
     }
-    return cell.toString() // Diğer tüm değerleri string olarak render edin
+    return cell.toString()
   }
   return (
     queryResult && (

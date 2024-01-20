@@ -1,11 +1,8 @@
+import usePostgreSqlStore from "@/store/postgreSql"
 import { Textarea } from "../../ui/textarea"
 
-type Props = {
-  query: string
-  setQuery: (query: string) => void
-}
-
-const QueryEditor: React.FC<Props> = ({ query, setQuery }) => {
+const QueryEditor = () => {
+  const { query, setQuery } = usePostgreSqlStore()
   return (
     <Textarea
       value={query}

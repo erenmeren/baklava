@@ -2,7 +2,7 @@ import { useEffect } from "react"
 import { trpc } from "@/utils/trpc"
 import usePostgreSqlStore from "@/store/postgreSql"
 
-export const usePostgreSQLConnections = () => {
+export const usePostgreSqlConnections = () => {
   const { connections, setConnections } = usePostgreSqlStore()
 
   const { data, isLoading } = trpc.postgresql.findAllConnections.useQuery(undefined, {

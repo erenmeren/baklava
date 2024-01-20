@@ -1,7 +1,4 @@
-import { useCallback, useEffect } from "react"
-import { useQueryClient } from "@tanstack/react-query"
 import { trpc } from "@/utils/trpc"
-
 import { toast } from "sonner"
 import PostreSQLForm from "../../forms/postgreSqlForm"
 import { Icons } from "../../icons"
@@ -17,33 +14,23 @@ import {
 } from "../../ui/context-menu"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import usePostgreSqlStore from "@/store/postgreSql"
-import { usePostgreSQLConnections } from "@/hooks/usePostgreSQLConnections"
+import { usePostgreSqlConnections } from "@/hooks/usePostgreSqlConnections"
 
-type Props = {
-  databaseManagementSystem: string
-  connectionId: number
-  setConnectionId: (connectionId: number) => void
-}
+const SideMenu = () => {
+  const { deleteConnection, schemas, setSchemas, connectionId, setConnectionId } =
+    usePostgreSqlStore()
 
-const SideMenu: React.FC<Props> = ({ databaseManagementSystem, connectionId, setConnectionId }) => {
-  const queryClient = useQueryClient()
+  const { connections, isLoading: isConnectionsLoading } = usePostgreSqlConnections()
 
-  const { deleteConnection, setConnections } = usePostgreSqlStore()
-
-  const { connections, isLoading: isConnectionsLoading } = usePostgreSQLConnections()
-
-  let {
-    data: databaseSchemas,
-    isLoading: isDatabaseSchemasLoading,
-    isFetching: isDatabaseSchemasFetching,
-  } = trpc.postgresql.getSchemasByConnectionId.useQuery(connectionId, {
-    onError: (error) => {
-      setConnectionId(0)
-      toast.error(error.message)
-    },
-    enabled: connectionId > 0,
-    retry: false,
-  })
+  const { mutate: getSchemasByConnectionId, isLoading: isDatabaseSchemasLoading } =
+    trpc.postgresql.getSchemasByConnectionId.useMutation({
+      onSuccess: (result) => {
+        setSchemas(result)
+      },
+      onError: (error) => {
+        toast.error(error.message)
+      },
+    })
 
   const { mutate: deleteConnection_ } = trpc.postgresql.deleteConnectionById.useMutation({
     onSuccess: (result) => {
@@ -55,19 +42,12 @@ const SideMenu: React.FC<Props> = ({ databaseManagementSystem, connectionId, set
     },
   })
 
-  const reloadSchema = useCallback(() => {
-    if (connectionId > 0) {
-      queryClient.invalidateQueries([
-        databaseManagementSystem,
-        "getDatabaseInfoByConnectionId",
-        connectionId,
-      ])
+  function getSchemas(connId: number) {
+    if (connId !== connectionId) {
+      getSchemasByConnectionId(connId)
+      setConnectionId(connId)
     }
-  }, [connectionId, queryClient, databaseManagementSystem])
-
-  useEffect(() => {
-    reloadSchema()
-  }, [reloadSchema])
+  }
 
   const deleteConnectionById = async (connId: number) => deleteConnection_(connId)
 
@@ -98,7 +78,7 @@ const SideMenu: React.FC<Props> = ({ databaseManagementSystem, connectionId, set
                   <AccordionItem key={conn.id} value={`val-${conn.id}`}>
                     <ContextMenu>
                       <ContextMenuTrigger className="text-sm">
-                        <AccordionTrigger onClick={() => conn.id && setConnectionId(conn.id)}>
+                        <AccordionTrigger onClick={() => conn.id && getSchemas(conn.id)}>
                           <div className="flex">
                             <Icons.database size={18} />{" "}
                             <span className="mx-1">{conn.database}</span>
@@ -109,7 +89,7 @@ const SideMenu: React.FC<Props> = ({ databaseManagementSystem, connectionId, set
                         <ContextMenuItem
                           inset
                           disabled={conn.id != connectionId}
-                          onClick={reloadSchema}
+                          onClick={() => getSchemas(conn.id as number)}
                         >
                           Reload
                         </ContextMenuItem>
@@ -123,10 +103,10 @@ const SideMenu: React.FC<Props> = ({ databaseManagementSystem, connectionId, set
                       </ContextMenuContent>
                     </ContextMenu>
                     <AccordionContent>
-                      {isDatabaseSchemasLoading || isDatabaseSchemasFetching ? (
+                      {isDatabaseSchemasLoading ? (
                         <Loader className="ml-4" />
                       ) : (
-                        databaseSchemas?.map((schema, index) => (
+                        schemas?.map((schema, index) => (
                           <Accordion key={index} type="single" collapsible className="ml-3">
                             <AccordionItem value={`val-schema-${index}`}>
                               <AccordionTrigger>
