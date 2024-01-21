@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react"
 
-import { QueryResult } from "@/lib/types"
 import { trpc } from "@/utils/trpc"
 import { toast } from "sonner"
 import { format } from "sql-formatter"
