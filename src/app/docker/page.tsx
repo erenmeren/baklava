@@ -1,5 +1,8 @@
 "use client"
 
+import { trpc } from "@/utils/trpc"
+
+import { DataTable } from "@/components/ui/datatable/data-table"
 import {
   Table,
   TableBody,
@@ -11,7 +14,7 @@ import {
 } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
-import { trpc } from "@/utils/trpc"
+import { containersColumns } from "./_data/columns"
 
 export default function DockerHome() {
   const { data: containers, isLoading: isContainerLoading } = trpc.docker.getContainers.useQuery()
@@ -30,39 +33,7 @@ export default function DockerHome() {
           <TabsTrigger value="volumes">volumes</TabsTrigger>
         </TabsList>
         <TabsContent value="containers">
-          <Table>
-            <TableCaption>Containers</TableCaption>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Id</TableHead>
-                <TableHead>Image</TableHead>
-                <TableHead>Ports</TableHead>
-                <TableHead>Command</TableHead>
-                <TableHead>Created</TableHead>
-                <TableHead>Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {containers?.map((container, index) => (
-                <TableRow key={index}>
-                  <TableCell>{container.Id.substring(0, 12)}</TableCell>
-                  <TableCell>{container.Image.substring(0, 12)}</TableCell>
-                  <TableCell>
-                    {container.Ports.map((port, index) => {
-                      return (
-                        <div key={port.PrivatePort + "-" + index}>
-                          {`${port.IP}:${port.PrivatePort} -> ${port.PublicPort}/${port.Type},  `}
-                        </div>
-                      )
-                    })}
-                  </TableCell>
-                  <TableCell>{container.Command}</TableCell>
-                  <TableCell>{container.Created}</TableCell>
-                  <TableCell>{container.Status}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <DataTable columns={containersColumns} data={containers || []} />
         </TabsContent>
         <TabsContent value="images">
           <Table>
@@ -89,6 +60,8 @@ export default function DockerHome() {
             </TableBody>
           </Table>
         </TabsContent>
+        <TabsContent value="network">networks</TabsContent>
+        <TabsContent value="volumes">volumes</TabsContent>
       </Tabs>
     </main>
   )

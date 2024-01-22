@@ -21,3 +21,14 @@ export function getBaseUrl() {
   // assume localhost
   return `http://localhost:${process.env.PORT ?? 3000}`
 }
+
+export function convertTimestampToDate(timestamp: number) {
+  const date = new Date(timestamp * 1000)
+  return new Intl.DateTimeFormat(undefined, {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date)
+}

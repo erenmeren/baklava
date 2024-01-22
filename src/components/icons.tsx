@@ -1,5 +1,4 @@
 import {
-  // LucideProps,
   Moon,
   SunMedium,
   Database,
@@ -16,6 +15,7 @@ import {
   Pencil,
   Text,
   Loader2,
+  ArrowDownUp,
 } from "lucide-react"
 
 export type Icon = LucideIcon
@@ -36,4 +36,5 @@ export const Icons = {
   edit: Pencil,
   text: Text,
   loader: Loader2,
+  sort: ArrowDownUp,
 }
