@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
-import { containersColumns } from "./_data/columns"
+import { containerColumns, imageColumns } from "./_data/columns"
 
 export default function DockerHome() {
   const { data: containers, isLoading: isContainerLoading } = trpc.docker.getContainers.useQuery()
@@ -33,32 +33,10 @@ export default function DockerHome() {
           <TabsTrigger value="volumes">volumes</TabsTrigger>
         </TabsList>
         <TabsContent value="containers">
-          <DataTable columns={containersColumns} data={containers || []} />
+          <DataTable columns={containerColumns} data={containers || []} />
         </TabsContent>
         <TabsContent value="images">
-          <Table>
-            <TableCaption>Images</TableCaption>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Id</TableHead>
-                <TableHead>Repository</TableHead>
-                <TableHead>Tag</TableHead>
-                <TableHead>Size</TableHead>
-                <TableHead>Created</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {images?.map((image, index) => (
-                <TableRow key={index}>
-                  <TableCell>{image.Id.substring(0, 12)}</TableCell>
-                  <TableCell>{image.RepoDigests}</TableCell>
-                  <TableCell>{image.RepoTags}</TableCell>
-                  <TableCell>{image.Size} byte</TableCell>
-                  <TableCell>{image.Created}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <DataTable columns={imageColumns} data={images || []} />
         </TabsContent>
         <TabsContent value="network">networks</TabsContent>
         <TabsContent value="volumes">volumes</TabsContent>

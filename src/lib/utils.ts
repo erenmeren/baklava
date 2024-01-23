@@ -32,3 +32,28 @@ export function convertTimestampToDate(timestamp: number) {
     minute: "2-digit",
   }).format(date)
 }
+
+export function formatBytes(bytes: number) {
+  const KB = 1024
+  const MB = KB * 1024
+  const GB = MB * 1024
+
+  let formattedSize
+  let unit
+
+  if (bytes >= GB) {
+    formattedSize = (bytes / GB).toFixed(2)
+    unit = "GB"
+  } else if (bytes >= MB) {
+    formattedSize = (bytes / MB).toFixed(2)
+    unit = "MB"
+  } else if (bytes >= KB) {
+    formattedSize = (bytes / KB).toFixed(2)
+    unit = "KB"
+  } else {
+    formattedSize = bytes
+    unit = "bytes"
+  }
+
+  return `${formattedSize} ${unit}`
+}

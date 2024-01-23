@@ -1,10 +1,10 @@
-import { convertTimestampToDate } from "@/lib/utils"
+import { convertTimestampToDate, formatBytes } from "@/lib/utils"
 import { Icons } from "@/components/icons"
 import { Button } from "@/components/ui/button"
 import { ColumnDef } from "@tanstack/react-table"
-import { ContainerInfo, Port } from "dockerode"
+import { ContainerInfo, ImageInfo, Port } from "dockerode"
 
-export const containersColumns: ColumnDef<ContainerInfo, any>[] = [
+export const containerColumns: ColumnDef<ContainerInfo, any>[] = [
   {
     accessorKey: "Id",
     header: "id",
@@ -27,7 +27,6 @@ export const containersColumns: ColumnDef<ContainerInfo, any>[] = [
     },
     cell: ({ row }) => {
       const prefix = "sha256:"
-
       if (row.original.Image.startsWith(prefix)) {
         return row.original.Image.substring(prefix.length, prefix.length + 12)
       } else {
@@ -70,5 +69,42 @@ export const containersColumns: ColumnDef<ContainerInfo, any>[] = [
   {
     accessorKey: "Status",
     header: "status",
+  },
+]
+
+export const imageColumns: ColumnDef<ImageInfo, any>[] = [
+  {
+    accessorKey: "Id",
+    header: "id",
+    cell: ({ row }) => {
+      const prefix = "sha256:"
+      if (row.original.Id.startsWith(prefix)) {
+        return row.original.Id.substring(prefix.length, prefix.length + 12)
+      } else {
+        return row.original.Id
+      }
+    },
+  },
+  {
+    accessorKey: "Repository",
+    header: "repository",
+  },
+  {
+    accessorKey: "Tag",
+    header: "tag",
+  },
+  {
+    accessorKey: "Size",
+    header: "size",
+    cell: ({ row }) => {
+      return formatBytes(row.original.Size)
+    },
+  },
+  {
+    accessorKey: "Created",
+    header: "created at",
+    cell: ({ row }) => {
+      return convertTimestampToDate(row.original.Created)
+    },
   },
 ]
