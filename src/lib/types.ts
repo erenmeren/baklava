@@ -1,3 +1,4 @@
+import { ContainerInfo, ImageInfo, NetworkInspectInfo, VolumeInspectInfo } from "dockerode"
 import * as z from "zod"
 
 export const PostgreSQLConnectionSchema = z.object({
@@ -70,3 +71,10 @@ type ApplicationCategory = {
 }
 
 export type Applications = ApplicationCategory[]
+
+export interface DockerInfo {
+  containers: ContainerInfo[]
+  images: ImageInfo[]
+  networks: NetworkInspectInfo[]
+  volumes: VolumeInspectInfo[]
+}

@@ -24,6 +24,13 @@ Follow these steps to install Baklava:
 To use Baklava, follow these steps:
 
 1. Step 1: Launch the application.
+
+```
+npm install
+npm run build
+npm run start
+```
+
 2. Step 2: Select the technology you want to use.
 3. Step 3: Use the GUI of the selected technology.
 

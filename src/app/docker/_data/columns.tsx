@@ -2,7 +2,7 @@ import { convertTimestampToDate, formatBytes } from "@/lib/utils"
 import { Icons } from "@/components/icons"
 import { Button } from "@/components/ui/button"
 import { ColumnDef } from "@tanstack/react-table"
-import { ContainerInfo, ImageInfo, Port } from "dockerode"
+import { ContainerInfo, ImageInfo, NetworkInspectInfo, Port, VolumeInspectInfo } from "dockerode"
 
 export const containerColumns: ColumnDef<ContainerInfo, any>[] = [
   {
@@ -105,6 +105,54 @@ export const imageColumns: ColumnDef<ImageInfo, any>[] = [
     header: "created at",
     cell: ({ row }) => {
       return convertTimestampToDate(row.original.Created)
+    },
+  },
+]
+
+export const networkColumns: ColumnDef<NetworkInspectInfo, any>[] = [
+  {
+    accessorKey: "Id",
+    header: "id",
+    cell: ({ row }) => {
+      return row.original.Id.substring(0, 12)
+    },
+  },
+  {
+    accessorKey: "Name",
+    header: "name",
+  },
+  {
+    accessorKey: "Scope",
+    header: "scope",
+  },
+  {
+    accessorKey: "Driver",
+    header: "driver",
+  },
+]
+
+export const volumesColumns: ColumnDef<VolumeInspectInfo, any>[] = [
+  {
+    accessorKey: "Name",
+    header: "name",
+  },
+  {
+    accessorKey: "Driver",
+    header: "driver",
+  },
+  {
+    accessorKey: "Mountpoint",
+    header: "mount point",
+  },
+  {
+    accessorKey: "UsageData",
+    header: "usage Data",
+    cell: ({ row }) => {
+      return (
+        <div>
+          {row.original.UsageData?.Size} / {row.original.UsageData?.RefCount}
+        </div>
+      )
     },
   },
 ]

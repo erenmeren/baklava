@@ -3,25 +3,12 @@
 import { trpc } from "@/utils/trpc"
 
 import { DataTable } from "@/components/ui/datatable/data-table"
-import {
-  Table,
-  TableBody,
-  TableCaption,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
-import { containerColumns, imageColumns } from "./_data/columns"
+import { containerColumns, imageColumns, networkColumns, volumesColumns } from "./_data/columns"
 
 export default function DockerHome() {
-  const { data: containers, isLoading: isContainerLoading } = trpc.docker.getContainers.useQuery()
-
-  const { data: images, isLoading: isImagesLoading } = trpc.docker.getImages.useQuery()
-
-  const { data: volumes, isLoading: isVolumesLoading } = trpc.docker.getVolumes.useQuery()
+  const { data, isLoading } = trpc.docker.getDockerInfo.useQuery()
 
   return (
     <main className="p-6">
@@ -33,13 +20,17 @@ export default function DockerHome() {
           <TabsTrigger value="volumes">volumes</TabsTrigger>
         </TabsList>
         <TabsContent value="containers">
-          <DataTable columns={containerColumns} data={containers || []} />
+          <DataTable columns={containerColumns} data={data?.containers || []} />
         </TabsContent>
         <TabsContent value="images">
-          <DataTable columns={imageColumns} data={images || []} />
+          <DataTable columns={imageColumns} data={data?.images || []} />
         </TabsContent>
-        <TabsContent value="network">networks</TabsContent>
-        <TabsContent value="volumes">volumes</TabsContent>
+        <TabsContent value="network">
+          <DataTable columns={networkColumns} data={data?.networks || []} />
+        </TabsContent>
+        <TabsContent value="volumes">
+          <DataTable columns={volumesColumns} data={data?.volumes || []} />
+        </TabsContent>
       </Tabs>
     </main>
   )
