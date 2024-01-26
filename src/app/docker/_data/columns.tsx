@@ -73,7 +73,7 @@ export const containerColumns: ColumnDef<ContainerInfo, any>[] = [
     header: "status",
     cell: ({ row }) => {
       return (
-        <TooltipProvider>
+        <TooltipProvider key={row.id}>
           <Tooltip>
             <TooltipTrigger asChild>
               {row.original.Status.includes("Up") ? (
@@ -95,9 +95,10 @@ export const containerColumns: ColumnDef<ContainerInfo, any>[] = [
     },
   },
   {
-    accessorKey: "Status",
+    accessorKey: "Actions",
     header: "",
     cell: ({ row }) => {
+      console.log(row)
       const isStatusUp = row.original.Status.includes("Up")
       return (
         <div className="flex items-center gap-2">
@@ -196,7 +197,7 @@ export const volumesColumns: ColumnDef<VolumeInspectInfo, any>[] = [
     header: "usage Data",
     cell: ({ row }) => {
       return (
-        <div>
+        <div key={row.id}>
           {row.original.UsageData?.Size} / {row.original.UsageData?.RefCount}
         </div>
       )
