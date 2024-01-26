@@ -3,6 +3,8 @@ import { Icons } from "@/components/icons"
 import { Button } from "@/components/ui/button"
 import { ColumnDef } from "@tanstack/react-table"
 import { ContainerInfo, ImageInfo, NetworkInspectInfo, Port, VolumeInspectInfo } from "dockerode"
+import { Badge } from "@/components/ui/badge"
+import { TooltipProvider, Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
 export const containerColumns: ColumnDef<ContainerInfo, any>[] = [
   {
@@ -69,6 +71,51 @@ export const containerColumns: ColumnDef<ContainerInfo, any>[] = [
   {
     accessorKey: "Status",
     header: "status",
+    cell: ({ row }) => {
+      return (
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              {row.original.Status.includes("Up") ? (
+                <div className="cursor-default">
+                  <Badge variant="outline" className=" bg-green-500">
+                    Up
+                  </Badge>
+                </div>
+              ) : (
+                <div className="cursor-default">
+                  <Badge>Down</Badge>
+                </div>
+              )}
+            </TooltipTrigger>
+            <TooltipContent>{row.original.Status}</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      )
+    },
+  },
+  {
+    accessorKey: "Status",
+    header: "",
+    cell: ({ row }) => {
+      const isStatusUp = row.original.Status.includes("Up")
+      return (
+        <div className="flex items-center gap-2">
+          <Button size="icon" variant="ghost" onClick={() => {}} disabled={isStatusUp}>
+            <Icons.playCircle color="green" />
+          </Button>
+          <Button size="icon" variant="ghost" onClick={() => {}} disabled={!isStatusUp}>
+            <Icons.stopCircle />
+          </Button>
+          <Button size="icon" variant="ghost" onClick={() => {}} disabled={!isStatusUp}>
+            <Icons.refresh />
+          </Button>
+          <Button size="icon" variant="ghost" onClick={() => {}}>
+            <Icons.trash color="red" />
+          </Button>
+        </div>
+      )
+    },
   },
 ]
 

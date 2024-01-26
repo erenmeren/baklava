@@ -16,6 +16,8 @@ import {
   Text,
   Loader2,
   ArrowDownUp,
+  StopCircle,
+  PlayCircle,
 } from "lucide-react"
 
 export type Icon = LucideIcon
@@ -30,6 +32,8 @@ export const Icons = {
   plus: Plus,
   refresh: RefreshCcw,
   play: Play,
+  playCircle: PlayCircle,
+  stopCircle: StopCircle,
   left: ArrowLeft,
   x: X,
   trash: Trash2,
