@@ -7,9 +7,17 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 import { containerColumns, imageColumns, networkColumns, volumesColumns } from "./_data/columns"
 import HomeButton from "@/components/homeButton"
+import { toast } from "sonner"
 
 export default function DockerHome() {
   const { data, isLoading } = trpc.docker.getDockerInfo.useQuery()
+
+  const { mutate: containerOperations } = trpc.docker.containerOperations.useMutation({
+    onSuccess: (result) => {},
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
 
   return (
     <>
@@ -26,7 +34,10 @@ export default function DockerHome() {
             <TabsTrigger value="volumes">volumes</TabsTrigger>
           </TabsList>
           <TabsContent value="containers">
-            <DataTable columns={containerColumns} data={data?.containers || []} />
+            <DataTable
+              columns={containerColumns(containerOperations)}
+              data={data?.containers || []}
+            />
           </TabsContent>
           <TabsContent value="images">
             <DataTable columns={imageColumns} data={data?.images || []} />

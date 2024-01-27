@@ -78,3 +78,21 @@ export interface DockerInfo {
   networks: NetworkInspectInfo[]
   volumes: VolumeInspectInfo[]
 }
+
+export enum Operation {
+  DELETE = "DELETE",
+  RESTART = "RESTART",
+  START = "START",
+  STOP = "STOP",
+  UPDATE = "UPDATE",
+  CREATE = "CREATE",
+  PAUSE = "PAUSE",
+  UNPAUSE = "UNPAUSE",
+}
+
+export const DockerOperationSchema = z.object({
+  id: z.string(),
+  type: z.nativeEnum(Operation),
+})
+
+export type DockerOperation = z.infer<typeof DockerOperationSchema>

@@ -1,7 +1,8 @@
-import { DockerInfo } from "@/lib/types"
+import { DockerInfo, DockerOperationSchema, Operation } from "@/lib/types"
 import { procedure, router } from "@/server/trpc"
 
 import Dockerode from "dockerode"
+import { z } from "zod"
 
 const docker: Dockerode = new Dockerode({ socketPath: "/var/run/docker.sock" })
 
@@ -19,6 +20,23 @@ export const dockerRouter = router({
       images,
       networks,
       volumes: volumes.Volumes,
+    }
+  }),
+  containerOperations: procedure.input(DockerOperationSchema).mutation(async ({ input }) => {
+    const container = docker.getContainer(input.id)
+
+    if (input.type === Operation.START) {
+      await container.start()
+    } else if (input.type === Operation.PAUSE) {
+      await container.pause()
+    } else if (input.type === Operation.STOP) {
+      await container.stop()
+    } else if (input.type === Operation.RESTART) {
+      await container.restart()
+    } else if (input.type === Operation.DELETE) {
+      await container.remove()
+    } else if (input.type === Operation.UNPAUSE) {
+      await container.unpause()
     }
   }),
 })

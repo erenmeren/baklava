@@ -5,120 +5,165 @@ import { ColumnDef } from "@tanstack/react-table"
 import { ContainerInfo, ImageInfo, NetworkInspectInfo, Port, VolumeInspectInfo } from "dockerode"
 import { Badge } from "@/components/ui/badge"
 import { TooltipProvider, Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { trpc } from "@/utils/trpc"
+import { Operation } from "@/lib/types"
 
-export const containerColumns: ColumnDef<ContainerInfo, any>[] = [
-  {
-    accessorKey: "Id",
-    header: "id",
-    cell: ({ row }) => {
-      return row.original.Id.substring(0, 12)
+export const containerColumns = (containerOperations: any): ColumnDef<ContainerInfo, any>[] => {
+  return [
+    {
+      accessorKey: "Id",
+      header: "id",
+      cell: ({ row }) => {
+        return row.original.Id.substring(0, 12)
+      },
     },
-  },
-  {
-    accessorKey: "Image",
-    header: ({ column }) => {
-      return (
-        <Button
-          variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-        >
-          image
-          <Icons.sort className="ml-2 h-4 w-4" />
-        </Button>
-      )
-    },
-    cell: ({ row }) => {
-      const prefix = "sha256:"
-      if (row.original.Image.startsWith(prefix)) {
-        return row.original.Image.substring(prefix.length, prefix.length + 12)
-      } else {
-        return row.original.Image
-      }
-    },
-  },
-  {
-    accessorKey: "Ports",
-    header: "ports",
-    cell: ({ row }) => {
-      return row.original.Ports.map((port: Port, index: number) => (
-        <div key={port.PrivatePort + "-" + index}>
-          {`${port.IP}:${port.PrivatePort} -> ${port.PublicPort}/${port.Type}`}
-        </div>
-      ))
-    },
-  },
-  {
-    accessorKey: "Command",
-    header: "command",
-  },
-  {
-    accessorKey: "Created",
-    header: ({ column }) => {
-      return (
-        <Button
-          variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-        >
-          created at
-          <Icons.sort className="ml-2 h-4 w-4" />
-        </Button>
-      )
-    },
-    cell: ({ row }) => {
-      return convertTimestampToDate(row.original.Created)
-    },
-  },
-  {
-    accessorKey: "Status",
-    header: "status",
-    cell: ({ row }) => {
-      return (
-        <TooltipProvider key={row.id}>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              {row.original.Status.includes("Up") ? (
-                <div className="cursor-default">
-                  <Badge variant="outline" className=" bg-green-500">
-                    Up
-                  </Badge>
-                </div>
-              ) : (
-                <div className="cursor-default">
-                  <Badge>Down</Badge>
-                </div>
-              )}
-            </TooltipTrigger>
-            <TooltipContent>{row.original.Status}</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      )
-    },
-  },
-  {
-    accessorKey: "Actions",
-    header: "",
-    cell: ({ row }) => {
-      console.log(row)
-      const isStatusUp = row.original.Status.includes("Up")
-      return (
-        <div className="flex items-center gap-2">
-          <Button size="icon" variant="ghost" onClick={() => {}} disabled={isStatusUp}>
-            <Icons.playCircle color="green" />
+    {
+      accessorKey: "Image",
+      header: ({ column }) => {
+        return (
+          <Button
+            variant="ghost"
+            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+          >
+            image
+            <Icons.sort className="ml-2 h-4 w-4" />
           </Button>
-          <Button size="icon" variant="ghost" onClick={() => {}} disabled={!isStatusUp}>
-            <Icons.stopCircle />
-          </Button>
-          <Button size="icon" variant="ghost" onClick={() => {}} disabled={!isStatusUp}>
-            <Icons.refresh />
-          </Button>
-          <Button size="icon" variant="ghost" onClick={() => {}}>
-            <Icons.trash color="red" />
-          </Button>
-        </div>
-      )
+        )
+      },
+      cell: ({ row }) => {
+        const prefix = "sha256:"
+        if (row.original.Image.startsWith(prefix)) {
+          return row.original.Image.substring(prefix.length, prefix.length + 12)
+        } else {
+          return row.original.Image
+        }
+      },
     },
-  },
-]
+    {
+      accessorKey: "Ports",
+      header: "ports",
+      cell: ({ row }) => {
+        return row.original.Ports.map((port: Port, index: number) => (
+          <div key={port.PrivatePort + "-" + index}>
+            {`${port.IP}:${port.PrivatePort} -> ${port.PublicPort}/${port.Type}`}
+          </div>
+        ))
+      },
+    },
+    {
+      accessorKey: "Command",
+      header: "command",
+    },
+    {
+      accessorKey: "Created",
+      header: ({ column }) => {
+        return (
+          <Button
+            variant="ghost"
+            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+          >
+            created at
+            <Icons.sort className="ml-2 h-4 w-4" />
+          </Button>
+        )
+      },
+      cell: ({ row }) => {
+        return convertTimestampToDate(row.original.Created)
+      },
+    },
+    {
+      accessorKey: "Status",
+      header: "status",
+      cell: ({ row }) => {
+        return (
+          <TooltipProvider key={row.id}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                {row.original.Status.includes("Up") ? (
+                  row.original.Status.includes("Paused") ? (
+                    <div className="cursor-default">
+                      <Badge variant="outline" className=" bg-slate-400">
+                        Paused
+                      </Badge>
+                    </div>
+                  ) : (
+                    <div className="cursor-default">
+                      <Badge variant="outline" className=" bg-green-500">
+                        Up
+                      </Badge>
+                    </div>
+                  )
+                ) : (
+                  <div className="cursor-default">
+                    <Badge>Down</Badge>
+                  </div>
+                )}
+              </TooltipTrigger>
+              <TooltipContent>{row.original.Status}</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        )
+      },
+    },
+    {
+      accessorKey: "Actions",
+      header: "",
+      cell: ({ row }) => {
+        const isStatusUp = row.original.Status.includes("Up")
+        const isPaused = row.original.Status.includes("Paused")
+
+        return (
+          <div className="flex items-center gap-2">
+            <Button
+              size="icon"
+              variant={!isStatusUp || isPaused ? "default" : "ghost"}
+              onClick={() =>
+                containerOperations({
+                  id: row.original.Id,
+                  type: isPaused ? Operation.UNPAUSE : Operation.START,
+                })
+              }
+              disabled={isStatusUp && !isPaused}
+            >
+              <Icons.playCircle color="green" />
+            </Button>
+            <Button
+              size="icon"
+              variant={isStatusUp && !isPaused ? "default" : "ghost"}
+              onClick={() => containerOperations({ id: row.original.Id, type: Operation.PAUSE })}
+              disabled={isPaused}
+            >
+              <Icons.pauseCircle />
+            </Button>
+            <Button
+              size="icon"
+              variant={isStatusUp ? "default" : "ghost"}
+              onClick={() => containerOperations({ id: row.original.Id, type: Operation.STOP })}
+              disabled={!isStatusUp}
+            >
+              <Icons.stopCircle />
+            </Button>
+            <Button
+              size="icon"
+              variant={isStatusUp ? "default" : "ghost"}
+              onClick={() => containerOperations({ id: row.original.Id, type: Operation.RESTART })}
+              disabled={!isStatusUp}
+            >
+              <Icons.refresh />
+            </Button>
+            <Button
+              size="icon"
+              variant="destructive"
+              onClick={() => containerOperations({ id: row.original.Id, type: Operation.DELETE })}
+            >
+              <Icons.trash />
+            </Button>
+          </div>
+        )
+      },
+    },
+  ]
+}
 
 export const imageColumns: ColumnDef<ImageInfo, any>[] = [
   {
