@@ -1,5 +1,6 @@
 import usePostgreSqlStore from "@/store/postgreSql"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../ui/table"
+import { ScrollArea } from "@radix-ui/react-scroll-area"
 
 const ResultOfQuery = () => {
   const { queryResult } = usePostgreSqlStore()
@@ -14,24 +15,26 @@ const ResultOfQuery = () => {
   }
   return (
     queryResult && (
-      <Table>
-        <TableHeader>
-          <TableRow className="bg-secondary">
-            {queryResult.fields.map((field, index) => (
-              <TableHead key={index}>{field}</TableHead>
-            ))}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {queryResult.rows.map((row, index) => (
-            <TableRow key={index}>
-              {row.map((column, idx) => (
-                <TableCell key={idx}>{renderCell(column)}</TableCell>
+      <ScrollArea className="h-full">
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-secondary">
+              {queryResult.fields.map((field, index) => (
+                <TableHead key={index}>{field}</TableHead>
               ))}
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+          </TableHeader>
+          <TableBody>
+            {queryResult.rows.map((row, index) => (
+              <TableRow key={index}>
+                {row.map((column, idx) => (
+                  <TableCell key={idx}>{renderCell(column)}</TableCell>
+                ))}
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </ScrollArea>
     )
   )
 }

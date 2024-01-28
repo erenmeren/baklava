@@ -12,6 +12,7 @@ import CommandBar from "./commandBar"
 
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "../../ui/resizable"
 import usePostgreSqlStore from "@/store/postgreSql"
+import { ScrollArea } from "@radix-ui/react-scroll-area"
 
 const SideMenuMemo = React.memo(SideMenu)
 
@@ -84,7 +85,9 @@ const DatabaseEditor: React.FC<Props> = ({ databaseManagementSystem }) => {
           <>
             <ResizablePanelGroup direction="vertical">
               <ResizablePanel defaultSize={40}>
-                <QueryEditor />
+                <ScrollArea className="h-full">
+                  <QueryEditor />
+                </ScrollArea>
               </ResizablePanel>
               <ResizableHandle withHandle />
               <ResizablePanel defaultSize={60}>

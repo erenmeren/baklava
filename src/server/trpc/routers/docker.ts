@@ -39,4 +39,10 @@ export const dockerRouter = router({
       await container.unpause()
     }
   }),
+  imageOperations: procedure.input(DockerOperationSchema).mutation(async ({ input }) => {
+    const image = docker.getImage(input.id)
+    if (input.type === Operation.DELETE) {
+      await image.remove()
+    }
+  }),
 })
