@@ -5,7 +5,6 @@ import { ColumnDef } from "@tanstack/react-table"
 import { ContainerInfo, ImageInfo, NetworkInspectInfo, Port, VolumeInspectInfo } from "dockerode"
 import { Badge } from "@/components/ui/badge"
 import { TooltipProvider, Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { trpc } from "@/utils/trpc"
 import { Operation } from "@/lib/types"
 
 export const containerColumns = (containerOperations: any): ColumnDef<ContainerInfo, any>[] => {
@@ -165,42 +164,61 @@ export const containerColumns = (containerOperations: any): ColumnDef<ContainerI
   ]
 }
 
-export const imageColumns: ColumnDef<ImageInfo, any>[] = [
-  {
-    accessorKey: "Id",
-    header: "id",
-    cell: ({ row }) => {
-      const prefix = "sha256:"
-      if (row.original.Id.startsWith(prefix)) {
-        return row.original.Id.substring(prefix.length, prefix.length + 12)
-      } else {
-        return row.original.Id
-      }
+export const imageColumns = (imageOperations: any): ColumnDef<ImageInfo, any>[] => {
+  return [
+    {
+      accessorKey: "Id",
+      header: "id",
+      cell: ({ row }) => {
+        const prefix = "sha256:"
+        if (row.original.Id.startsWith(prefix)) {
+          return row.original.Id.substring(prefix.length, prefix.length + 12)
+        } else {
+          return row.original.Id
+        }
+      },
     },
-  },
-  {
-    accessorKey: "Repository",
-    header: "repository",
-  },
-  {
-    accessorKey: "Tag",
-    header: "tag",
-  },
-  {
-    accessorKey: "Size",
-    header: "size",
-    cell: ({ row }) => {
-      return formatBytes(row.original.Size)
+    {
+      accessorKey: "Repository",
+      header: "repository",
     },
-  },
-  {
-    accessorKey: "Created",
-    header: "created at",
-    cell: ({ row }) => {
-      return convertTimestampToDate(row.original.Created)
+    {
+      accessorKey: "Tag",
+      header: "tag",
     },
-  },
-]
+    {
+      accessorKey: "Size",
+      header: "size",
+      cell: ({ row }) => {
+        return formatBytes(row.original.Size)
+      },
+    },
+    {
+      accessorKey: "Created",
+      header: "created at",
+      cell: ({ row }) => {
+        return convertTimestampToDate(row.original.Created)
+      },
+    },
+    {
+      accessorKey: "Actions",
+      header: "",
+      cell: ({ row }) => {
+        return (
+          <div className="flex items-center gap-2">
+            <Button
+              size="icon"
+              variant="destructive"
+              onClick={() => imageOperations({ id: row.original.Id, type: Operation.DELETE })}
+            >
+              <Icons.trash />
+            </Button>
+          </div>
+        )
+      },
+    },
+  ]
+}
 
 export const networkColumns: ColumnDef<NetworkInspectInfo, any>[] = [
   {

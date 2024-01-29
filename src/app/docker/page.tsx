@@ -19,6 +19,13 @@ export default function DockerHome() {
     },
   })
 
+  const { mutate: imageOperations } = trpc.docker.imageOperations.useMutation({
+    onSuccess: (result) => {},
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+
   return (
     <>
       <nav className="flex h-16 w-full items-center justify-between border-b px-4">
@@ -40,7 +47,7 @@ export default function DockerHome() {
             />
           </TabsContent>
           <TabsContent value="images">
-            <DataTable columns={imageColumns} data={data?.images || []} />
+            <DataTable columns={imageColumns(imageOperations)} data={data?.images || []} />
           </TabsContent>
           <TabsContent value="network">
             <DataTable columns={networkColumns} data={data?.networks || []} />
