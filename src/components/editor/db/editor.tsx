@@ -11,7 +11,7 @@ import ResultOfQuery from "./queryResult"
 import CommandBar from "./commandBar"
 
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "../../ui/resizable"
-import usePostgreSqlStore from "@/store/postgreSql"
+import usePostgreSqlStore from "@/store/postgreSqlStore"
 import { ScrollArea } from "@radix-ui/react-scroll-area"
 
 const SideMenuMemo = React.memo(SideMenu)

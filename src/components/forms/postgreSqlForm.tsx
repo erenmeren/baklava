@@ -19,7 +19,7 @@ import { Button } from "@/components/ui/button"
 import { PostgreSQLConnection, PostgreSQLConnectionSchema } from "@/lib/types"
 import { trpc } from "@/utils/trpc"
 import { SheetClose } from "../ui/sheet"
-import usePostgreSqlStore from "@/store/postgreSql"
+import usePostgreSqlStore from "@/store/postgreSqlStore"
 
 export default function PostreSQLForm({ formTrigger }: any) {
   const { addConnection } = usePostgreSqlStore()

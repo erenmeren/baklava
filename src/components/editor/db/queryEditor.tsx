@@ -1,4 +1,4 @@
-import usePostgreSqlStore from "@/store/postgreSql"
+import usePostgreSqlStore from "@/store/postgreSqlStore"
 import { Textarea } from "../../ui/textarea"
 
 const QueryEditor = () => {

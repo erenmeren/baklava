@@ -1,6 +1,6 @@
 import { useEffect } from "react"
 import { trpc } from "@/utils/trpc"
-import usePostgreSqlStore from "@/store/postgreSql"
+import usePostgreSqlStore from "@/store/postgreSqlStore"
 
 export const usePostgreSqlConnections = () => {
   const { connections, setConnections } = usePostgreSqlStore()

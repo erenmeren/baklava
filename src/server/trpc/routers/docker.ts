@@ -2,7 +2,6 @@ import { DockerInfo, DockerOperationSchema, Operation } from "@/lib/types"
 import { procedure, router } from "@/server/trpc"
 
 import Dockerode from "dockerode"
-import { z } from "zod"
 
 const docker: Dockerode = new Dockerode({ socketPath: "/var/run/docker.sock" })
 

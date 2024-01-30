@@ -1,4 +1,4 @@
-import usePostgreSqlStore from "@/store/postgreSql"
+import usePostgreSqlStore from "@/store/postgreSqlStore"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../ui/table"
 import { ScrollArea } from "@radix-ui/react-scroll-area"
 

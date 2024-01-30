@@ -13,8 +13,9 @@ import {
   ContextMenuTrigger,
 } from "../../ui/context-menu"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import usePostgreSqlStore from "@/store/postgreSql"
+import usePostgreSqlStore from "@/store/postgreSqlStore"
 import { usePostgreSqlConnections } from "@/hooks/usePostgreSqlConnections"
+import { PostgreSQLConnection } from "@/lib/types"
 
 const SideMenu = () => {
   const { deleteConnection, schemas, setSchemas, connectionId, setConnectionId } =
@@ -74,7 +75,7 @@ const SideMenu = () => {
             {connections && connections.length === 0 && <em>No connection</em>}
             <Accordion type="single" collapsible className="w-full">
               {connections &&
-                connections.map((conn) => (
+                connections.map((conn: PostgreSQLConnection) => (
                   <AccordionItem key={conn.id} value={`val-${conn.id}`}>
                     <ContextMenu>
                       <ContextMenuTrigger className="text-sm">
