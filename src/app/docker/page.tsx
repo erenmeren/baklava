@@ -10,11 +10,13 @@ import HomeButton from "@/components/homeButton"
 import { toast } from "sonner"
 import useDockerStore from "@/store/dockerStore"
 import { useEffect } from "react"
+import { Operation } from "@/lib/types"
 
 export default function DockerHome() {
   const {
     containers,
     setContainers,
+    updateContainer,
     images,
     setImages,
     networks,
@@ -37,11 +39,20 @@ export default function DockerHome() {
   }, [data, setContainers, setImages, setNetworks, setVolumes])
 
   const { mutate: containerOperations } = trpc.docker.containerOperations.useMutation({
-    onSuccess: (result) => {},
+    onSuccess: (result, input) => {
+      console.log(input)
+      console.log("---------------")
+      console.log(result)
+      if (input.type === Operation.START) {
+        // updateContainer(result)
+        toast.success("Container started")
+      }
+    },
     onError: (error) => {
       toast.error(error.message)
     },
   })
+
   const { mutate: imageOperations } = trpc.docker.imageOperations.useMutation({
     onSuccess: (result) => {},
     onError: (error) => {
