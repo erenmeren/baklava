@@ -56,4 +56,10 @@ export const dockerRouter = router({
       await network.remove()
     }
   }),
+  volumeOperations: procedure.input(DockerOperationSchema).mutation(async ({ input }) => {
+    const volume = docker.getVolume(input.id)
+    if (input.type === Operation.DELETE) {
+      await volume.remove()
+    }
+  }),
 })
