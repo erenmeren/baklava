@@ -220,7 +220,7 @@ export const imageColumns = (imageOperations: any): ColumnDef<ImageInfo, any>[] 
   ]
 }
 
-export const networkColumns: ColumnDef<NetworkInspectInfo, any>[] = [
+export const networkColumns = (networkOperations: any): ColumnDef<NetworkInspectInfo, any>[] => [
   {
     accessorKey: "Id",
     header: "id",
@@ -239,6 +239,23 @@ export const networkColumns: ColumnDef<NetworkInspectInfo, any>[] = [
   {
     accessorKey: "Driver",
     header: "driver",
+  },
+  {
+    accessorKey: "Actions",
+    header: "",
+    cell: ({ row }) => {
+      return (
+        <div className="flex items-center gap-2">
+          <Button
+            size="icon"
+            variant="destructive"
+            onClick={() => networkOperations({ id: row.original.Id, type: Operation.DELETE })}
+          >
+            <Icons.trash />
+          </Button>
+        </div>
+      )
+    },
   },
 ]
 
