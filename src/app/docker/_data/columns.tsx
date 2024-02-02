@@ -259,7 +259,7 @@ export const networkColumns = (networkOperations: any): ColumnDef<NetworkInspect
   },
 ]
 
-export const volumesColumns: ColumnDef<VolumeInspectInfo, any>[] = [
+export const volumesColumns = (volumeOperations: any): ColumnDef<VolumeInspectInfo, any>[] => [
   {
     accessorKey: "Name",
     header: "name",
@@ -279,6 +279,23 @@ export const volumesColumns: ColumnDef<VolumeInspectInfo, any>[] = [
       return (
         <div key={row.id}>
           {row.original.UsageData?.Size} / {row.original.UsageData?.RefCount}
+        </div>
+      )
+    },
+  },
+  {
+    accessorKey: "Actions",
+    header: "",
+    cell: ({ row }) => {
+      return (
+        <div className="flex items-center gap-2">
+          <Button
+            size="icon"
+            variant="destructive"
+            onClick={() => volumeOperations({ id: row.original.Name, type: Operation.DELETE })}
+          >
+            <Icons.trash />
+          </Button>
         </div>
       )
     },

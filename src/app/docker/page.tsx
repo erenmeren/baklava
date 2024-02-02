@@ -64,6 +64,13 @@ export default function DockerHome() {
     },
   })
 
+  const { mutate: volumeOperations } = trpc.docker.volumeOperations.useMutation({
+    onSuccess: (result) => {},
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+
   return (
     <>
       <nav className="flex h-16 w-full items-center justify-between border-b px-4">
@@ -88,7 +95,7 @@ export default function DockerHome() {
             <DataTable columns={networkColumns(networkOperations)} data={networks} />
           </TabsContent>
           <TabsContent value="volumes">
-            <DataTable columns={volumesColumns} data={volumes} />
+            <DataTable columns={volumesColumns(volumeOperations)} data={volumes} />
           </TabsContent>
         </Tabs>
       </main>
