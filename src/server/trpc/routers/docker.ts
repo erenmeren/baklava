@@ -50,4 +50,10 @@ export const dockerRouter = router({
       await image.remove()
     }
   }),
+  networkOperations: procedure.input(DockerOperationSchema).mutation(async ({ input }) => {
+    const network = docker.getNetwork(input.id)
+    if (input.type === Operation.DELETE) {
+      await network.remove()
+    }
+  }),
 })

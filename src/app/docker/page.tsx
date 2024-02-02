@@ -1,6 +1,8 @@
 "use client"
 
+import { useEffect } from "react"
 import { trpc } from "@/utils/trpc"
+import useDockerStore from "@/store/dockerStore"
 
 import { DataTable } from "@/components/ui/datatable/data-table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -8,8 +10,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { containerColumns, imageColumns, networkColumns, volumesColumns } from "./_data/columns"
 import HomeButton from "@/components/homeButton"
 import { toast } from "sonner"
-import useDockerStore from "@/store/dockerStore"
-import { useEffect } from "react"
 import { Operation } from "@/lib/types"
 
 export default function DockerHome() {
@@ -40,9 +40,6 @@ export default function DockerHome() {
 
   const { mutate: containerOperations } = trpc.docker.containerOperations.useMutation({
     onSuccess: (result, input) => {
-      console.log(input)
-      console.log("---------------")
-      console.log(result)
       if (input.type === Operation.START) {
         // updateContainer(result)
         toast.success("Container started")
