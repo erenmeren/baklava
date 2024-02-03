@@ -1,6 +1,5 @@
 import { create } from "zustand"
 
-import { DatabaseSchema, PostgreSQLConnection, QueryResult } from "@/lib/types"
 import { ContainerInfo, ImageInfo, NetworkInspectInfo, VolumeInspectInfo } from "dockerode"
 
 const useDockerStore = create<{
@@ -13,8 +12,10 @@ const useDockerStore = create<{
   deleteImage: (id: string) => void
   networks: NetworkInspectInfo[]
   setNetworks: (networks: NetworkInspectInfo[]) => void
+  deleteNetwork: (id: string) => void
   volumes: VolumeInspectInfo[]
   setVolumes: (volumes: VolumeInspectInfo[]) => void
+  deleteVolume: (id: string) => void
 }>((set) => ({
   containers: [],
   setContainers: (containers) => set({ containers }),
@@ -30,8 +31,10 @@ const useDockerStore = create<{
     set((state) => ({ images: state.images.filter((image) => image.Id !== id) })),
   networks: [],
   setNetworks: (networks) => set({ networks }),
+  deleteNetwork: (id) => set((state) => ({ networks: state.networks.filter((n) => n.Id !== id) })),
   volumes: [],
   setVolumes: (volumes) => set({ volumes }),
+  deleteVolume: (id) => set((state) => ({ volumes: state.volumes.filter((v) => v.Name !== id) })),
 }))
 
 export default useDockerStore

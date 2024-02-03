@@ -1,7 +1,7 @@
 import { DockerInfo, DockerOperationSchema, Operation } from "@/lib/types"
 import { procedure, router } from "@/server/trpc"
 
-import Dockerode, { ContainerInspectInfo } from "dockerode"
+import Dockerode, { ContainerInfo, ContainerInspectInfo } from "dockerode"
 
 const docker: Dockerode = new Dockerode({ socketPath: "/var/run/docker.sock" })
 
@@ -23,10 +23,8 @@ export const dockerRouter = router({
   }),
   containerOperations: procedure
     .input(DockerOperationSchema)
-    .mutation(async ({ input }): Promise<ContainerInspectInfo> => {
+    .mutation(async ({ input }): Promise<ContainerInfo> => {
       const container = docker.getContainer(input.id)
-
-      docker.listContainers()
 
       if (input.type === Operation.START) {
         await container.start()
@@ -42,7 +40,10 @@ export const dockerRouter = router({
         await container.unpause()
       }
 
-      return container.inspect()
+      const containers = await docker.listContainers({ all: true })
+      const result = containers.find((c) => c.Id === input.id)
+
+      return result as ContainerInfo
     }),
   imageOperations: procedure.input(DockerOperationSchema).mutation(async ({ input }) => {
     const image = docker.getImage(input.id)

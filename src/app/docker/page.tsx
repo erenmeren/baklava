@@ -17,12 +17,16 @@ export default function DockerHome() {
     containers,
     setContainers,
     updateContainer,
+    deleteContainer,
     images,
     setImages,
+    deleteImage,
     networks,
     setNetworks,
+    deleteNetwork,
     volumes,
     setVolumes,
+    deleteVolume,
   } = useDockerStore()
 
   const { data, isLoading } = trpc.docker.getDockerInfo.useQuery(undefined, {
@@ -41,8 +45,23 @@ export default function DockerHome() {
   const { mutate: containerOperations } = trpc.docker.containerOperations.useMutation({
     onSuccess: (result, input) => {
       if (input.type === Operation.START) {
-        // updateContainer(result)
+        updateContainer(result)
         toast.success("Container started")
+      } else if (input.type === Operation.STOP) {
+        updateContainer(result)
+        toast.success("Container stopped")
+      } else if (input.type === Operation.RESTART) {
+        updateContainer(result)
+        toast.success("Container restarted")
+      } else if (input.type === Operation.PAUSE) {
+        updateContainer(result)
+        toast.success("Container paused")
+      } else if (input.type === Operation.DELETE) {
+        deleteContainer(input.id)
+        toast.success("Container deleted")
+      } else if (input.type === Operation.UNPAUSE) {
+        updateContainer(result)
+        toast.success("Container unpaused")
       }
     },
     onError: (error) => {
@@ -51,21 +70,36 @@ export default function DockerHome() {
   })
 
   const { mutate: imageOperations } = trpc.docker.imageOperations.useMutation({
-    onSuccess: (result) => {},
+    onSuccess: (result, input) => {
+      if (input.type === Operation.DELETE) {
+        deleteImage(input.id)
+        toast.success("Image deleted")
+      }
+    },
     onError: (error) => {
       toast.error(error.message)
     },
   })
 
   const { mutate: networkOperations } = trpc.docker.networkOperations.useMutation({
-    onSuccess: (result) => {},
+    onSuccess: (result, input) => {
+      if (input.type === Operation.DELETE) {
+        deleteNetwork(input.id)
+        toast.success("Network deleted")
+      }
+    },
     onError: (error) => {
       toast.error(error.message)
     },
   })
 
   const { mutate: volumeOperations } = trpc.docker.volumeOperations.useMutation({
-    onSuccess: (result) => {},
+    onSuccess: (result, input) => {
+      if (input.type === Operation.DELETE) {
+        deleteVolume(input.id)
+        toast.success("Volume deleted")
+      }
+    },
     onError: (error) => {
       toast.error(error.message)
     },

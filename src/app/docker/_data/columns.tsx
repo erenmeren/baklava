@@ -130,7 +130,7 @@ export const containerColumns = (containerOperations: any): ColumnDef<ContainerI
               size="icon"
               variant={isStatusUp && !isPaused ? "default" : "ghost"}
               onClick={() => containerOperations({ id: row.original.Id, type: Operation.PAUSE })}
-              disabled={isPaused}
+              disabled={!isStatusUp || isPaused}
             >
               <Icons.pauseCircle />
             </Button>
@@ -263,15 +263,18 @@ export const volumesColumns = (volumeOperations: any): ColumnDef<VolumeInspectIn
   {
     accessorKey: "Name",
     header: "name",
+    cell: ({ row }) => {
+      return row.original.Name.substring(0, 12)
+    },
   },
   {
     accessorKey: "Driver",
     header: "driver",
   },
-  {
-    accessorKey: "Mountpoint",
-    header: "mount point",
-  },
+  // {
+  //   accessorKey: "Mountpoint",
+  //   header: "mount point",
+  // },
   {
     accessorKey: "UsageData",
     header: "usage Data",
