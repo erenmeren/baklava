@@ -47,7 +47,7 @@ export const postgresqlRouter = router({
       }
     }),
 
-  findAllConnections: procedure.query(async (): Promise<PostgreSQLConnection[]> => {
+  findAllConnections: procedure.mutation(async (): Promise<PostgreSQLConnection[]> => {
     return prisma.postgreSQL.findMany()
   }),
 

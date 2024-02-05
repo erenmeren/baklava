@@ -1,3 +1,5 @@
+import { useEffect } from "react"
+
 import { trpc } from "@/utils/trpc"
 import { toast } from "sonner"
 import PostreSQLForm from "../../forms/postgreSqlForm"
@@ -14,14 +16,38 @@ import {
 } from "../../ui/context-menu"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import usePostgreSqlStore from "@/store/postgreSqlStore"
-import { usePostgreSqlConnections } from "@/hooks/usePostgreSqlConnections"
 import { PostgreSQLConnection } from "@/lib/types"
 
 const SideMenu = () => {
-  const { deleteConnection, schemas, setSchemas, connectionId, setConnectionId } =
-    usePostgreSqlStore()
+  console.log("rendered side menu")
 
-  const { connections, isLoading: isConnectionsLoading } = usePostgreSqlConnections()
+  const {
+    connections,
+    setConnections,
+    connectionId,
+    setConnectionId,
+    schemas,
+    setSchemas,
+    deleteConnection,
+  } = usePostgreSqlStore((state) => ({
+    connections: state.connections,
+    setConnections: state.setConnections,
+    connectionId: state.connectionId,
+    setConnectionId: state.setConnectionId,
+    schemas: state.schemas,
+    setSchemas: state.setSchemas,
+    deleteConnection: state.deleteConnection,
+  }))
+
+  const { mutate: findAllConnections, isLoading: isConnectionsLoading } =
+    trpc.postgresql.findAllConnections.useMutation({
+      onSuccess: (result) => {
+        setConnections(result)
+      },
+      onError: (error) => {
+        toast.error(error.message)
+      },
+    })
 
   const { mutate: getSchemasByConnectionId, isLoading: isDatabaseSchemasLoading } =
     trpc.postgresql.getSchemasByConnectionId.useMutation({
@@ -51,6 +77,10 @@ const SideMenu = () => {
   }
 
   const deleteConnectionById = async (connId: number) => deleteConnection_(connId)
+
+  useEffect(() => {
+    findAllConnections()
+  }, [])
 
   return (
     <div className="px-6">
