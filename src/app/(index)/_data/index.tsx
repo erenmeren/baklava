@@ -1,5 +1,6 @@
 import PostgreSQL from "@/assets/images/logos/postgreSQL.svg"
 import Docker from "@/assets/images/logos/docker.svg"
+import Kafka from "@/assets/images/logos/kafka.svg"
 import { Applications } from "@/lib/types"
 
 export const applications: Applications = [
@@ -20,6 +21,16 @@ export const applications: Applications = [
         name: "Docker",
         link: "/docker",
         icon: <Docker width="100" height="120" alt="Docker" />,
+      },
+    ],
+  },
+  {
+    name: "Queue",
+    items: [
+      {
+        name: "Kafka",
+        link: "/kafka",
+        icon: <Kafka width="100" height="110" alt="Kafka" />,
       },
     ],
   },
