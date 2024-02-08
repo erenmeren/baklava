@@ -19,8 +19,6 @@ import usePostgreSqlStore from "@/store/postgreSql/connectionStore"
 import { PostgreSQLConnection } from "@/lib/types"
 
 const SideMenu = () => {
-  console.log("rendered side menu")
-
   const {
     connections,
     setConnections,
