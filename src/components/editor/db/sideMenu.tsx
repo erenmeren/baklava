@@ -15,7 +15,7 @@ import {
   ContextMenuTrigger,
 } from "../../ui/context-menu"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import usePostgreSqlStore from "@/store/postgreSqlStore"
+import usePostgreSqlStore from "@/store/postgreSql/connectionStore"
 import { PostgreSQLConnection } from "@/lib/types"
 
 const SideMenu = () => {

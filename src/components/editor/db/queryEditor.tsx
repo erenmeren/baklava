@@ -1,9 +1,9 @@
-import usePostgreSqlStore from "@/store/postgreSqlStore"
+import usePostgreSqlQueryStore from "@/store/postgreSql/queryStore"
 import { Textarea } from "../../ui/textarea"
 
 const QueryEditor = () => {
-  const query = usePostgreSqlStore((state) => state.query)
-  const setQuery = usePostgreSqlStore((state) => state.setQuery)
+  const query = usePostgreSqlQueryStore((state) => state.query)
+  const setQuery = usePostgreSqlQueryStore((state) => state.setQuery)
 
   return (
     <Textarea

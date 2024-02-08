@@ -1,12 +1,8 @@
 import { create } from "zustand"
 
-import { DatabaseSchema, PostgreSQLConnection, QueryResult } from "@/lib/types"
+import { DatabaseSchema, PostgreSQLConnection } from "@/lib/types"
 
-const usePostgreSqlStore = create<{
-  query: string
-  setQuery: (query: string) => void
-  queryResult: QueryResult | undefined
-  setQueryResult: (queryResult: QueryResult | undefined) => void
+const usePostgreSqlConnectionStore = create<{
   schemas: DatabaseSchema[] | []
   setSchemas: (schemas: DatabaseSchema[]) => void
   connectionId: number | null
@@ -17,10 +13,6 @@ const usePostgreSqlStore = create<{
   updateConnection: (updatedConnection: PostgreSQLConnection) => void
   deleteConnection: (connectionId: number) => void
 }>((set) => ({
-  query: "",
-  setQuery: (query) => set({ query }),
-  queryResult: undefined,
-  setQueryResult: (queryResult: QueryResult | undefined) => set({ queryResult }),
   connectionId: null,
   setConnectionId: (connectionId) => set({ connectionId }),
   schemas: [],
@@ -43,4 +35,4 @@ const usePostgreSqlStore = create<{
     })),
 }))
 
-export default usePostgreSqlStore
+export default usePostgreSqlConnectionStore

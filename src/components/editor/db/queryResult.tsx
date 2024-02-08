@@ -1,9 +1,9 @@
-import usePostgreSqlStore from "@/store/postgreSqlStore"
+import usePostgreSqlQueryStore from "@/store/postgreSql/queryStore"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../ui/table"
 import { ScrollArea } from "@radix-ui/react-scroll-area"
 
 const ResultOfQuery = () => {
-  const { queryResult } = usePostgreSqlStore()
+  const { queryResult } = usePostgreSqlQueryStore()
   const renderCell = (cell: any) => {
     if (cell instanceof Date) {
       return cell.toLocaleString()

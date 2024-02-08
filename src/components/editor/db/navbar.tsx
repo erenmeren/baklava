@@ -2,7 +2,8 @@ import { Button } from "../../ui/button"
 import { Icons } from "../../icons"
 import HomeButton from "@/components/homeButton"
 import { trpc } from "@/utils/trpc"
-import usePostgreSqlStore from "@/store/postgreSqlStore"
+import usePostgreSqlConnectionStore from "@/store/postgreSql/connectionStore"
+import usePostgreSqlQueryStore from "@/store/postgreSql/queryStore"
 import { toast } from "sonner"
 import { format } from "sql-formatter"
 import CommandBar from "./commandBar"
@@ -14,7 +15,8 @@ type Props = {
 
 const EditorNavbar: React.FC<Props> = ({ databaseManagementSystem }) => {
   const [openCommand, setOpenCommand] = useState(false)
-  const { connectionId, query, setQuery, setQueryResult } = usePostgreSqlStore()
+  const { query, setQuery, setQueryResult } = usePostgreSqlQueryStore()
+  const { connectionId } = usePostgreSqlConnectionStore()
 
   const { mutate } = trpc.postgresql.runQuery.useMutation({
     onSuccess: (result) => {
