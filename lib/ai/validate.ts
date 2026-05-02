@@ -1,6 +1,6 @@
 import { Parser } from "node-sql-parser";
-import { withDuck, allRows } from "../duck.js";
-import { BaklavaException, makeError } from "../errors.js";
+import { withDuck, allRows } from "../duck";
+import { BaklavaException, makeError } from "../errors";
 
 export interface DeclaredColumn {
   name: string;

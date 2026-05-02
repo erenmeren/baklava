@@ -130,9 +130,12 @@ case (TS's `||` discriminator narrowing is unreliable here).
 
 ## Conventions
 
-- **TypeScript modules use `.js` extensions in imports**, not `.ts`. The
-  tsconfig has `moduleResolution: "Bundler"` and `verbatimModuleSyntax: false`.
-  This is required for Node ESM compatibility.
+- **No file extensions in relative imports.** Write
+  `import { x } from "../lib/foo"`, not `"../lib/foo.js"` or `"../lib/foo.ts"`.
+  Reason: Next.js's bundler (Turbopack) won't auto-resolve `.js → .ts` like
+  Vitest's Vite resolver does, and `.ts` extensions are rejected by
+  `allowImportingTsExtensions: false`. Extension-less imports work everywhere
+  (Vitest, tsx, Next.js dev + build).
 - **No emojis in code or commit messages** unless the user explicitly asks.
 - **No `any`. No type assertions** except for the documented FilterClause
   narrowing pattern.

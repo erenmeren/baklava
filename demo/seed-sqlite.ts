@@ -17,7 +17,7 @@ import {
   loadConnections,
   saveConnections,
   type ConnectionsFile,
-} from "../lib/config.js";
+} from "../lib/config";
 import { mkdirSync } from "node:fs";
 
 const APP_DB = "demo-app.db";

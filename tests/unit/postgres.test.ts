@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { postgresPlugin } from "../../lib/sources/postgres.js";
-import type { ConnectionConfig } from "../../lib/sources/types.js";
+import { postgresPlugin } from "../../lib/sources/postgres";
+import type { ConnectionConfig } from "../../lib/sources/types";
 
 const goodConfig: ConnectionConfig = {
   name: "pg-local",

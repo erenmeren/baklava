@@ -1,4 +1,4 @@
-import type { SchemaInfo } from "../sources/types.js";
+import type { SchemaInfo } from "../sources/types";
 
 /**
  * The schema we hand to the AI for one configured connection.

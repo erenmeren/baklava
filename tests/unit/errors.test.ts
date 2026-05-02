@@ -6,7 +6,7 @@ import {
   makeError,
   BaklavaException,
   type BaklavaErrorCode,
-} from "../../lib/errors.js";
+} from "../../lib/errors";
 
 describe("error code registry", () => {
   it("has no duplicate codes", () => {

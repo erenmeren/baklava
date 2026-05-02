@@ -6,8 +6,8 @@
  */
 
 import { NextResponse } from "next/server";
-import { BaklavaException, isBaklavaError, makeError } from "./errors.js";
-import { checkRequestSecurity } from "./security.js";
+import { BaklavaException, isBaklavaError, makeError } from "./errors";
+import { checkRequestSecurity } from "./security";
 
 export const BAKLAVA_PORT = Number(process.env.BAKLAVA_PORT ?? process.env.PORT ?? 3000);
 

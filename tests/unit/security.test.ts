@@ -6,8 +6,8 @@ import {
   checkRequestSecurity,
   getOrCreateInstanceToken,
   throwIfInsecure,
-} from "../../lib/security.js";
-import { instanceKeyPath } from "../../lib/config.js";
+} from "../../lib/security";
+import { instanceKeyPath } from "../../lib/config";
 
 const ORIG = process.env.BAKLAVA_HOME;
 let tmpHome = "";

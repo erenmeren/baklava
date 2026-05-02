@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { getOrCreateInstanceToken } from "../lib/security.js";
+import { getOrCreateInstanceToken } from "../lib/security";
 import "./globals.css";
 
 export const metadata: Metadata = {

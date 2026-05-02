@@ -1,6 +1,6 @@
-import { ok, secured } from "../../../../lib/api.js";
-import { BaklavaException, makeError } from "../../../../lib/errors.js";
-import { loadConfig, saveConfig, CURRENT_SCHEMA_VERSION } from "../../../../lib/config.js";
+import { ok, secured } from "../../../../lib/api";
+import { BaklavaException, makeError } from "../../../../lib/errors";
+import { loadConfig, saveConfig, CURRENT_SCHEMA_VERSION } from "../../../../lib/config";
 
 export const GET = secured(async () => {
   const cfg = loadConfig();

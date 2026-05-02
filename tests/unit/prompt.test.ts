@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildPrompt, tableAliasFor } from "../../lib/ai/prompt.js";
+import { buildPrompt, tableAliasFor } from "../../lib/ai/prompt";
 
 describe("tableAliasFor", () => {
   it("sanitizes special characters and lowercases", () => {

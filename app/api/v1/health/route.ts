@@ -1,5 +1,5 @@
-import { ok, secured } from "../../../../lib/api.js";
-import { loadConnections, getAnthropicApiKey } from "../../../../lib/config.js";
+import { ok, secured } from "../../../../lib/api";
+import { loadConnections, getAnthropicApiKey } from "../../../../lib/config";
 
 export const GET = secured(async () => {
   const connections = loadConnections();

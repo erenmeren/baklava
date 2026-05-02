@@ -1,6 +1,6 @@
-import { BaklavaException, makeError } from "../errors.js";
-import { generatePlan, type GeneratePlanInput, type RawPlan } from "./plan.js";
-import type { ValidationResult } from "./validate.js";
+import { BaklavaException, makeError } from "../errors";
+import { generatePlan, type GeneratePlanInput, type RawPlan } from "./plan";
+import type { ValidationResult } from "./validate";
 
 /**
  * Strategy: ask the AI for a plan. Validate it. If the validator rejects, ask

@@ -1,5 +1,5 @@
 import { Pool, type PoolClient } from "pg";
-import { BaklavaException, makeError } from "../errors.js";
+import { BaklavaException, makeError } from "../errors";
 import {
   type ColumnInfo,
   type ConnectionConfig,
@@ -7,7 +7,7 @@ import {
   type Plugin,
   type SchemaInfo,
   clampLimit,
-} from "./types.js";
+} from "./types";
 
 interface PgConfig {
   host: string;

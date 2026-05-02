@@ -1,12 +1,12 @@
-import { ok, secured } from "../../../../lib/api.js";
-import { BaklavaException, makeError } from "../../../../lib/errors.js";
+import { ok, secured } from "../../../../lib/api";
+import { BaklavaException, makeError } from "../../../../lib/errors";
 import {
   loadConnections,
   saveConnections,
   CURRENT_SCHEMA_VERSION,
   type ConnectionConfig,
-} from "../../../../lib/config.js";
-import { getPlugin } from "../../../../lib/plugins.js";
+} from "../../../../lib/config";
+import { getPlugin } from "../../../../lib/plugins";
 
 export const GET = secured(async () => {
   const file = loadConnections();

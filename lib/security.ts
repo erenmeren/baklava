@@ -1,9 +1,9 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { writeFileSync, chmodSync } from "node:fs";
-import { instanceKeyPath, baklavaDir } from "./config.js";
+import { instanceKeyPath, baklavaDir } from "./config";
 import { mkdirSync } from "node:fs";
-import { BaklavaException, makeError } from "./errors.js";
+import { BaklavaException, makeError } from "./errors";
 
 /**
  * Per-instance shared secret. Generated on first run, stored chmod 600 in

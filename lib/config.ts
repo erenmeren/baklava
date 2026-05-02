@@ -8,7 +8,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { BaklavaException, makeError } from "./errors.js";
+import { BaklavaException, makeError } from "./errors";
 
 export const CURRENT_SCHEMA_VERSION = 1;
 

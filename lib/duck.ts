@@ -1,8 +1,8 @@
 import { Database } from "duckdb";
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { BAKLAVA_DIR } from "./config.js";
-import { BaklavaException, makeError } from "./errors.js";
+import { BAKLAVA_DIR } from "./config";
+import { BaklavaException, makeError } from "./errors";
 
 const TEMP_DIR = join(BAKLAVA_DIR, "duck-tmp");
 const DEFAULT_MEMORY_LIMIT = process.env.BAKLAVA_DUCK_MEMORY_LIMIT ?? "4GB";

@@ -3,9 +3,9 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
-import { runQuery, type RegisteredSource } from "../../lib/pipeline.js";
-import { sqlitePlugin } from "../../lib/sources/sqlite.js";
-import type { PlanGenerator } from "../../lib/ai/plan.js";
+import { runQuery, type RegisteredSource } from "../../lib/pipeline";
+import { sqlitePlugin } from "../../lib/sources/sqlite";
+import type { PlanGenerator } from "../../lib/ai/plan";
 
 let tmpDir = "";
 

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
-import { generatePlanWithRetry } from "../../lib/ai/retry.js";
-import type { PlanGenerator, RawPlan } from "../../lib/ai/plan.js";
+import { generatePlanWithRetry } from "../../lib/ai/retry";
+import type { PlanGenerator, RawPlan } from "../../lib/ai/plan";
 
 const baseInput = {
   nl: "list pro users",

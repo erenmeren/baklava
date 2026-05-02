@@ -18,11 +18,11 @@ import { createRequire } from "node:module";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { seedDemo } from "../demo/seed-sqlite.js";
-import { loadConnections, getAnthropicApiKey, BAKLAVA_DIR } from "../lib/config.js";
-import { listPlugins } from "../lib/plugins.js";
-import { getOrCreateInstanceToken } from "../lib/security.js";
-import { isBaklavaError } from "../lib/errors.js";
+import { seedDemo } from "../demo/seed-sqlite";
+import { loadConnections, getAnthropicApiKey, BAKLAVA_DIR } from "../lib/config";
+import { listPlugins } from "../lib/plugins";
+import { getOrCreateInstanceToken } from "../lib/security";
+import { isBaklavaError } from "../lib/errors";
 
 const require = createRequire(import.meta.url);
 

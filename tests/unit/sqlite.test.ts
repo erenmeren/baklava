@@ -3,8 +3,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
-import { sqlitePlugin, type SqliteHandle } from "../../lib/sources/sqlite.js";
-import type { ConnectionConfig } from "../../lib/sources/types.js";
+import { sqlitePlugin, type SqliteHandle } from "../../lib/sources/sqlite";
+import type { ConnectionConfig } from "../../lib/sources/types";
 
 let tmpDir = "";
 let dbPath = "";

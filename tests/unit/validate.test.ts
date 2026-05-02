@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { validatePlan, type DeclaredSource } from "../../lib/ai/validate.js";
+import { validatePlan, type DeclaredSource } from "../../lib/ai/validate";
 
 const usersSource: DeclaredSource = {
   table: "pg_users",

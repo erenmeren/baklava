@@ -1,22 +1,22 @@
-import { BaklavaException, makeError } from "./errors.js";
-import { allRows, withDuck } from "./duck.js";
+import { BaklavaException, makeError } from "./errors";
+import { allRows, withDuck } from "./duck";
 import {
   validatePlan,
   type DeclaredColumn,
   type DeclaredSource,
-} from "./ai/validate.js";
-import { generatePlanWithRetry } from "./ai/retry.js";
-import type { PlanGenerator, RawPlan } from "./ai/plan.js";
+} from "./ai/validate";
+import { generatePlanWithRetry } from "./ai/retry";
+import type { PlanGenerator, RawPlan } from "./ai/plan";
 import {
   tableAliasFor,
   type ConnectionSchema,
   type ConnectionTableSchema,
-} from "./ai/prompt.js";
+} from "./ai/prompt";
 import {
   clampLimit,
   type Plugin,
   type SchemaInfo,
-} from "./sources/types.js";
+} from "./sources/types";
 
 const RESPONSE_PAGE_SIZE = 1000;
 

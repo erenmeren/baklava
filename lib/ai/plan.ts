@@ -1,8 +1,8 @@
 import { generateText } from "ai";
 import { createAnthropic } from "@ai-sdk/anthropic";
-import { BaklavaException, makeError } from "../errors.js";
-import { getAnthropicApiKey } from "../config.js";
-import { buildPrompt, type BuildPromptInput } from "./prompt.js";
+import { BaklavaException, makeError } from "../errors";
+import { getAnthropicApiKey } from "../config";
+import { buildPrompt, type BuildPromptInput } from "./prompt";
 
 export interface RawPlan {
   plan_english: string;

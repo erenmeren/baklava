@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { generatePlan, type PlanGenerator } from "../../lib/ai/plan.js";
+import { generatePlan, type PlanGenerator } from "../../lib/ai/plan";
 
 const baseInput = {
   nl: "list pro users",

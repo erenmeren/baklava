@@ -1,7 +1,7 @@
-import type { Plugin } from "./sources/types.js";
-import { sqlitePlugin } from "./sources/sqlite.js";
-import { postgresPlugin } from "./sources/postgres.js";
-import { BaklavaException, makeError } from "./errors.js";
+import type { Plugin } from "./sources/types";
+import { sqlitePlugin } from "./sources/sqlite";
+import { postgresPlugin } from "./sources/postgres";
+import { BaklavaException, makeError } from "./errors";
 
 const REGISTRY = new Map<string, Plugin<unknown>>([
   ["sqlite", sqlitePlugin as Plugin<unknown>],

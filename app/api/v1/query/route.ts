@@ -1,8 +1,8 @@
-import { ok, secured } from "../../../../lib/api.js";
-import { BaklavaException, makeError } from "../../../../lib/errors.js";
-import { loadConnections } from "../../../../lib/config.js";
-import { getPlugin } from "../../../../lib/plugins.js";
-import { runQuery, type RegisteredSource } from "../../../../lib/pipeline.js";
+import { ok, secured } from "../../../../lib/api";
+import { BaklavaException, makeError } from "../../../../lib/errors";
+import { loadConnections } from "../../../../lib/config";
+import { getPlugin } from "../../../../lib/plugins";
+import { runQuery, type RegisteredSource } from "../../../../lib/pipeline";
 
 interface QueryBody {
   nl?: unknown;

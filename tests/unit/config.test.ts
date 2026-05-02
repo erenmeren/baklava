@@ -11,7 +11,7 @@ import {
   loadConfig,
   saveConfig,
   getAnthropicApiKey,
-} from "../../lib/config.js";
+} from "../../lib/config";
 
 const ORIG_BAKLAVA_HOME = process.env.BAKLAVA_HOME;
 const ORIG_KEY = process.env.ANTHROPIC_API_KEY;
