@@ -10,5 +10,9 @@ out/
 .vitest/
 coverage/
 
+# TypeScript incremental build cache
+tsconfig.tsbuildinfo
+*.tsbuildinfo
+
 # Per-machine Claude Code state
 .claude/settings.local.json
