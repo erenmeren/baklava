@@ -65,7 +65,7 @@ export function makeError(input: ErrorInput): BaklavaError {
 export class BaklavaException extends Error {
   readonly error: BaklavaError;
   constructor(error: BaklavaError) {
-    super(`${error.code}: ${error.what}`);
+    super(`${error.code}: ${error.what} (why: ${error.why})`);
     this.name = "BaklavaException";
     this.error = error;
   }
