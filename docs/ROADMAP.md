@@ -33,10 +33,12 @@ Goal: Portainer-grade Docker workspace inside Baklava, plus pgAdmin-grade Postgr
 - Full xterm.js terminal — true bidirectional shell. SSE for stdout/stderr, POST for stdin, in-memory session map keyed by sessionId, resize support that wires xterm's onResize → daemon. Theme'd to match (honey cursor, JetBrains Mono).
 - Registry credentials — per-connection in-memory store (never persisted), auto-attach to pulls based on image-ref domain. Page lists creds, dialog adds with presets for Docker Hub / GHCR / Quay / ECR.
 
-## Phase 5 — Compose stacks (next big lift)
-- Parse / lint a `docker-compose.yml` paste.
-- Deploy multi-container stack (network + named volumes + dependent containers).
-- Stack list / detail / teardown.
+## Phase 5 — Compose stacks (done)
+- Compose parser (`yaml`) for `services` (with `image`, `command`, `environment`, `ports`, `volumes`, `networks`, `depends_on`, `restart`, `container_name`), top-level `networks` and `volumes`. Out of scope for now: `build:`, `secrets`, `configs`, `profiles`, `healthcheck` waits, `scale`/`replicas`.
+- Validate endpoint that returns the parsed plan (services, networks, volumes, warnings) so the UI can preview before deploy.
+- Deploy as SSE — phases `networks → volumes → pull → create → start → done`, per-service status events. Topological sort on `depends_on`. Idempotent on re-deploy (stale containers with the stack name are removed first). Auto-attaches registry credentials when pulling private refs.
+- Tracking: containers / networks / volumes labelled with `baklava.stack.name` and `baklava.stack.service`. List / detail / teardown all filter by these labels (clean separation from any compose CLI deployments).
+- UI: Stacks sidebar item, list page, composer page (paste + validate preview + deploy with live log + per-service status pills), detail page (services table linking into individual containers, networks, volumes, header Restart / Stop / Remove with optional volume-removal checkbox).
 
 ## Stretch — other techs
 - Postgres: row edit / insert / delete UI, EXPLAIN visualizer, server stats (pg_stat_activity), users/roles.

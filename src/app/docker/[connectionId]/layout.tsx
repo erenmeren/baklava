@@ -14,6 +14,7 @@ import {
   Activity,
   Radio,
   KeyRound,
+  Layers,
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -66,6 +67,12 @@ export default async function DockerWorkspaceLayout({
             icon={<Network className="size-4" />}
           >
             Networks
+          </SidebarLink>
+          <SidebarLink
+            href={`/docker/${connectionId}/stacks`}
+            icon={<Layers className="size-4" />}
+          >
+            Stacks
           </SidebarLink>
           <SidebarLink
             href={`/docker/${connectionId}/registries`}
