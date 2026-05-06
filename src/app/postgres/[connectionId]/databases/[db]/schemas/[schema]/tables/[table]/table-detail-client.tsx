@@ -13,18 +13,28 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { WorkspacePage } from "@/components/workspace/workspace-page";
-import { Loader2, ChevronLeft, ChevronRight, RefreshCcw } from "lucide-react";
+import {
+  Loader2,
+  ChevronLeft,
+  ChevronRight,
+  RefreshCcw,
+  Pencil,
+  Plus,
+  Trash2,
+} from "lucide-react";
 import { toast } from "sonner";
-
-interface ColumnInfo {
-  name: string;
-  position: number;
-  dataType: string;
-  isNullable: boolean;
-  default: string | null;
-  isPrimaryKey: boolean;
-}
+import { RowFormDialog, type ColumnInfo } from "./row-form-dialog";
 
 interface IndexInfo {
   name: string;
@@ -83,6 +93,17 @@ export function TableDetailClient({
   const [pageOffset, setPageOffset] = useState(0);
   const [loadingData, setLoadingData] = useState(false);
 
+  const [insertOpen, setInsertOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<{
+    fields: { name: string }[];
+    cells: unknown[];
+  } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{
+    fields: { name: string }[];
+    cells: unknown[];
+  } | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
   const fetchView = useCallback(
     async (
       view: "structure" | "indexes" | "constraints" | "foreign_keys"
@@ -126,11 +147,15 @@ export function TableDetailClient({
   }, [base]);
 
   useEffect(() => {
-    if (tab === "structure" && columns === null) {
+    if (columns === null) {
       fetchView("structure")
         .then((d) => setColumns((d as { columns: ColumnInfo[] }).columns))
         .catch(() => undefined);
-    } else if (tab === "indexes" && indexes === null) {
+    }
+  }, [columns, fetchView]);
+
+  useEffect(() => {
+    if (tab === "indexes" && indexes === null) {
       fetchView("indexes")
         .then((d) => setIndexes((d as { indexes: IndexInfo[] }).indexes))
         .catch(() => undefined);
@@ -153,21 +178,46 @@ export function TableDetailClient({
     } else if (tab === "data" && pageData === null) {
       loadData(0);
     }
-  }, [
-    tab,
-    columns,
-    indexes,
-    constraints,
-    foreignKeys,
-    pageData,
-    fetchView,
-    loadData,
-  ]);
+  }, [tab, indexes, constraints, foreignKeys, pageData, fetchView, loadData]);
 
   const totalPages = pageData?.totalRows
     ? Math.max(1, Math.ceil(pageData.totalRows / pageLimit))
     : null;
   const currentPage = Math.floor(pageOffset / pageLimit) + 1;
+
+  const pkColumns = columns?.filter((c) => c.isPrimaryKey) ?? [];
+  const canMutateRows = pkColumns.length > 0;
+  const noPkReason = "This table has no primary key";
+
+  const performDelete = async () => {
+    if (!deleteTarget || !columns) return;
+    const byName = new Map<string, unknown>();
+    deleteTarget.fields.forEach((f, i) =>
+      byName.set(f.name, deleteTarget.cells[i])
+    );
+    const pk = pkColumns.map((c) => ({
+      column: c.name,
+      value: byName.get(c.name) ?? null,
+    }));
+    setDeleting(true);
+    try {
+      const res = await fetch(`${base}/rows`, {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ pk }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success("Row deleted");
+        setDeleteTarget(null);
+        loadData(pageOffset);
+      } else {
+        toast.error("Delete failed", { description: data.error });
+      }
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   return (
     <WorkspacePage
@@ -204,6 +254,14 @@ export function TableDetailClient({
                 : ""}
             </p>
             <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                onClick={() => setInsertOpen(true)}
+                disabled={!columns}
+              >
+                <Plus className="size-3.5" />
+                Insert row
+              </Button>
               <Button
                 size="sm"
                 variant="outline"
@@ -267,11 +325,12 @@ export function TableDetailClient({
                         </div>
                       </th>
                     ))}
+                    <th className="w-px border-b border-border/60" />
                   </tr>
                 </thead>
                 <tbody>
                   {pageData.rows.map((row, i) => (
-                    <tr key={i} className="border-b border-border/30">
+                    <tr key={i} className="group border-b border-border/30">
                       {row.map((cell, j) => (
                         <td
                           key={j}
@@ -289,12 +348,46 @@ export function TableDetailClient({
                           )}
                         </td>
                       ))}
+                      <td className="px-2 py-1 align-top whitespace-nowrap">
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="size-6"
+                            disabled={!canMutateRows}
+                            title={canMutateRows ? "Edit row" : noPkReason}
+                            onClick={() =>
+                              setEditTarget({
+                                fields: pageData.fields,
+                                cells: row,
+                              })
+                            }
+                          >
+                            <Pencil className="size-3" />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="size-6 text-destructive hover:text-destructive"
+                            disabled={!canMutateRows}
+                            title={canMutateRows ? "Delete row" : noPkReason}
+                            onClick={() =>
+                              setDeleteTarget({
+                                fields: pageData.fields,
+                                cells: row,
+                              })
+                            }
+                          >
+                            <Trash2 className="size-3" />
+                          </Button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                   {pageData.rows.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={pageData.fields.length || 1}
+                        colSpan={(pageData.fields.length || 1) + 1}
                         className="px-3 py-6 text-center text-muted-foreground"
                       >
                         No rows.
@@ -488,6 +581,68 @@ export function TableDetailClient({
           )}
         </TabsContent>
       </Tabs>
+
+      {columns ? (
+        <>
+          <RowFormDialog
+            open={insertOpen}
+            onOpenChange={setInsertOpen}
+            mode="insert"
+            base={base}
+            schema={schema}
+            table={table}
+            columns={columns}
+            onSuccess={() => loadData(pageOffset)}
+          />
+          <RowFormDialog
+            open={editTarget !== null}
+            onOpenChange={(v) => {
+              if (!v) setEditTarget(null);
+            }}
+            mode="edit"
+            base={base}
+            schema={schema}
+            table={table}
+            columns={columns}
+            initialRow={editTarget ?? undefined}
+            onSuccess={() => loadData(pageOffset)}
+          />
+        </>
+      ) : null}
+
+      <AlertDialog
+        open={deleteTarget !== null}
+        onOpenChange={(v) => {
+          if (!v && !deleting) setDeleteTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete row?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will run{" "}
+              <span className="font-mono">
+                DELETE FROM {schema}.{table}
+              </span>{" "}
+              for the selected row. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                performDelete();
+              }}
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? <Loader2 className="size-3.5 animate-spin" /> : null}
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </WorkspacePage>
   );
 }

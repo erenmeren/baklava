@@ -397,6 +397,175 @@ export async function readTableData(
   });
 }
 
+export type ColumnValue =
+  | { kind: "null" }
+  | { kind: "default" }
+  | { kind: "value"; value: string };
+
+export interface PrimaryKeyValue {
+  column: string;
+  value: unknown;
+}
+
+function quoteIdent(name: string): string {
+  return `"${name.replace(/"/g, '""')}"`;
+}
+
+function tableIdent(schema: string, table: string): string {
+  return `${quoteIdent(schema)}.${quoteIdent(table)}`;
+}
+
+function paramFor(v: ColumnValue): { skip: true } | { skip: false; value: unknown } {
+  if (v.kind === "default") return { skip: true };
+  if (v.kind === "null") return { skip: false, value: null };
+  return { skip: false, value: v.value };
+}
+
+export async function insertRow(
+  config: PostgresConfig,
+  database: string,
+  schema: string,
+  table: string,
+  values: Record<string, ColumnValue>
+): Promise<{ rowsAffected: number }> {
+  const cols: string[] = [];
+  const placeholders: string[] = [];
+  const params: unknown[] = [];
+  for (const [col, v] of Object.entries(values)) {
+    const p = paramFor(v);
+    if (p.skip) continue;
+    cols.push(quoteIdent(col));
+    params.push(p.value);
+    placeholders.push(`$${params.length}`);
+  }
+  return withClient(config, database, async (client) => {
+    const sql =
+      cols.length === 0
+        ? `insert into ${tableIdent(schema, table)} default values`
+        : `insert into ${tableIdent(schema, table)} (${cols.join(", ")}) values (${placeholders.join(", ")})`;
+    const res = await client.query(sql, params);
+    return { rowsAffected: res.rowCount ?? 0 };
+  });
+}
+
+export async function updateRow(
+  config: PostgresConfig,
+  database: string,
+  schema: string,
+  table: string,
+  pk: PrimaryKeyValue[],
+  values: Record<string, ColumnValue>
+): Promise<{ rowsAffected: number }> {
+  if (pk.length === 0) {
+    throw new Error("Cannot update: no primary key on this table");
+  }
+  const sets: string[] = [];
+  const params: unknown[] = [];
+  for (const [col, v] of Object.entries(values)) {
+    const p = paramFor(v);
+    if (p.skip) continue;
+    params.push(p.value);
+    sets.push(`${quoteIdent(col)} = $${params.length}`);
+  }
+  if (sets.length === 0) {
+    throw new Error("No columns to update");
+  }
+  const wheres = pk.map((item) => {
+    params.push(item.value);
+    return `${quoteIdent(item.column)} = $${params.length}`;
+  });
+  const sql = `update ${tableIdent(schema, table)} set ${sets.join(", ")} where ${wheres.join(" and ")}`;
+  return withClient(config, database, async (client) => {
+    const res = await client.query(sql, params);
+    return { rowsAffected: res.rowCount ?? 0 };
+  });
+}
+
+export interface CreateTableColumnInput {
+  name: string;
+  dataType: string;
+  nullable: boolean;
+  default?: string;
+  isPrimaryKey: boolean;
+}
+
+export interface CreateTableInput {
+  schema: string;
+  name: string;
+  columns: CreateTableColumnInput[];
+  ifNotExists?: boolean;
+}
+
+export async function createTable(
+  config: PostgresConfig,
+  database: string,
+  input: CreateTableInput
+): Promise<void> {
+  if (!input.name.trim()) {
+    throw new Error("Table name is required");
+  }
+  if (!input.columns.length) {
+    throw new Error("At least one column is required");
+  }
+  const seen = new Set<string>();
+  for (const c of input.columns) {
+    if (!c.name.trim()) throw new Error("Every column needs a name");
+    if (!c.dataType.trim()) {
+      throw new Error(`Column "${c.name}" needs a data type`);
+    }
+    const key = c.name.trim().toLowerCase();
+    if (seen.has(key)) {
+      throw new Error(`Duplicate column name "${c.name}"`);
+    }
+    seen.add(key);
+  }
+
+  const colDefs = input.columns.map((c) => {
+    const parts = [quoteIdent(c.name.trim()), c.dataType.trim()];
+    if (!c.nullable) parts.push("NOT NULL");
+    if (c.default && c.default.trim()) {
+      parts.push(`DEFAULT ${c.default.trim()}`);
+    }
+    return parts.join(" ");
+  });
+
+  const pkCols = input.columns.filter((c) => c.isPrimaryKey);
+  if (pkCols.length) {
+    colDefs.push(
+      `PRIMARY KEY (${pkCols.map((c) => quoteIdent(c.name.trim())).join(", ")})`
+    );
+  }
+
+  const ifNotExists = input.ifNotExists ? "IF NOT EXISTS " : "";
+  const sql = `CREATE TABLE ${ifNotExists}${tableIdent(input.schema, input.name.trim())} (\n  ${colDefs.join(",\n  ")}\n)`;
+
+  await withClient(config, database, async (client) => {
+    await client.query(sql);
+  });
+}
+
+export async function deleteRow(
+  config: PostgresConfig,
+  database: string,
+  schema: string,
+  table: string,
+  pk: PrimaryKeyValue[]
+): Promise<{ rowsAffected: number }> {
+  if (pk.length === 0) {
+    throw new Error("Cannot delete: no primary key on this table");
+  }
+  const params: unknown[] = [];
+  const wheres = pk.map((item) => {
+    params.push(item.value);
+    return `${quoteIdent(item.column)} = $${params.length}`;
+  });
+  const sql = `delete from ${tableIdent(schema, table)} where ${wheres.join(" and ")}`;
+  return withClient(config, database, async (client) => {
+    const res = await client.query(sql, params);
+    return { rowsAffected: res.rowCount ?? 0 };
+  });
+}
+
 export interface QueryResult {
   fields: string[];
   rows: unknown[][];

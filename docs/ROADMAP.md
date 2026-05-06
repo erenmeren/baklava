@@ -40,7 +40,16 @@ Goal: Portainer-grade Docker workspace inside Baklava, plus pgAdmin-grade Postgr
 - Tracking: containers / networks / volumes labelled with `baklava.stack.name` and `baklava.stack.service`. List / detail / teardown all filter by these labels (clean separation from any compose CLI deployments).
 - UI: Stacks sidebar item, list page, composer page (paste + validate preview + deploy with live log + per-service status pills), detail page (services table linking into individual containers, networks, volumes, header Restart / Stop / Remove with optional volume-removal checkbox).
 
+## Postgres Phase 1 — Row CRUD (done)
+- `insertRow` / `updateRow` / `deleteRow` helpers in `src/lib/connections/postgres.ts` with quoted identifiers and parameterized values; tagged-union `ColumnValue` distinguishes `null` / `default` / literal value.
+- New API route `POST/PATCH/DELETE /api/postgres/[id]/databases/[db]/schemas/[schema]/tables/[table]/rows`.
+- Shared row form dialog: per-column input with null toggle, default toggle (insert only), boolean pills, textarea for `text`/`json`/`jsonb`. Pre-populates on edit from the current row.
+- Data tab: Insert button in toolbar, hover-revealed Edit / Delete on every row, AlertDialog confirm on delete. Edit/Delete disabled when the table has no primary key. Refresh after every mutation.
+
+## Postgres Phase 2 — DDL & ops (in progress)
+- Create table from UI (done): per-schema hover-revealed "+" in the sidebar tree opens a column-driven `CREATE TABLE` dialog — name, type, nullable, default, PK (multi-checkbox = composite PK), `IF NOT EXISTS`. Identifiers quoted via `quoteIdent`; type and default are SQL expressions (`varchar(50)`, `numeric(10,2)`, `now()`, `gen_random_uuid()`) so users aren't boxed in. New `createTable()` helper in `src/lib/connections/postgres.ts`, `POST /api/postgres/[id]/databases/[db]/schemas/[schema]/tables`, `<CreateTableDialog>` co-located with the sidebar.
+- Up next: EXPLAIN visualizer in the SQL editor, Activity sidebar entry (`pg_stat_activity` + `pg_terminate_backend`), Roles sidebar entry (`pg_roles`).
+
 ## Stretch — other techs
-- Postgres: row edit / insert / delete UI, EXPLAIN visualizer, server stats (pg_stat_activity), users/roles.
 - Kafka: schema registry, ACLs, message search/filter, consumer-group offset reset.
 - New techs to add (one driver each, same workspace pattern): Redis, MongoDB, MQTT.

@@ -12,9 +12,11 @@ import {
   RefreshCcw,
   Loader2,
   Eye,
+  Plus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { CreateTableDialog } from "./create-table-dialog";
 
 interface DatabaseInfo {
   name: string;
@@ -54,6 +56,10 @@ export function PostgresSidebar({ connectionId, defaultDatabase }: Props) {
   >({});
   const [loadingDbs, setLoadingDbs] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [createTarget, setCreateTarget] = useState<{
+    db: string;
+    schema: string;
+  } | null>(null);
 
   const loadDatabases = useCallback(async () => {
     setLoadingDbs(true);
@@ -184,21 +190,37 @@ export function PostgresSidebar({ connectionId, defaultDatabase }: Props) {
                       const isOpen = openSchema[key];
                       return (
                         <li key={schema.name}>
-                          <button
-                            onClick={() => toggleSchema(db.name, schema.name)}
-                            className="flex items-center gap-1 w-full px-2 py-1 rounded-md text-sm hover:bg-foreground/5 transition-colors text-left"
-                          >
-                            <ChevronRight
-                              className={cn(
-                                "size-3 text-muted-foreground transition-transform",
-                                isOpen && "rotate-90"
-                              )}
-                            />
-                            <Folder className="size-3.5 text-muted-foreground" />
-                            <span className="truncate font-mono text-xs">
-                              {schema.name}
-                            </span>
-                          </button>
+                          <div className="group/schema-row flex items-center pr-1 rounded-md hover:bg-foreground/5 transition-colors">
+                            <button
+                              onClick={() =>
+                                toggleSchema(db.name, schema.name)
+                              }
+                              className="flex items-center gap-1 flex-1 min-w-0 px-2 py-1 text-sm text-left"
+                            >
+                              <ChevronRight
+                                className={cn(
+                                  "size-3 text-muted-foreground transition-transform",
+                                  isOpen && "rotate-90"
+                                )}
+                              />
+                              <Folder className="size-3.5 text-muted-foreground" />
+                              <span className="truncate font-mono text-xs">
+                                {schema.name}
+                              </span>
+                            </button>
+                            <button
+                              onClick={() =>
+                                setCreateTarget({
+                                  db: db.name,
+                                  schema: schema.name,
+                                })
+                              }
+                              className="opacity-0 group-hover/schema-row:opacity-100 size-5 inline-flex items-center justify-center rounded hover:bg-foreground/10 hover:text-foreground text-muted-foreground transition-opacity"
+                              title={`New table in ${schema.name}`}
+                            >
+                              <Plus className="size-3" />
+                            </button>
+                          </div>
                           {isOpen ? (
                             <ul className="ml-4 border-l border-border/50">
                               {!objectsBySchema[key] ? (
@@ -267,6 +289,25 @@ export function PostgresSidebar({ connectionId, defaultDatabase }: Props) {
           ))}
         </ul>
       )}
+
+      {createTarget ? (
+        <CreateTableDialog
+          open={true}
+          onOpenChange={(v) => {
+            if (!v) setCreateTarget(null);
+          }}
+          connectionId={connectionId}
+          database={createTarget.db}
+          schema={createTarget.schema}
+          onCreated={() => {
+            const t = createTarget;
+            if (!t) return;
+            setOpenDb((s) => ({ ...s, [t.db]: true }));
+            setOpenSchema((s) => ({ ...s, [`${t.db}.${t.schema}`]: true }));
+            loadObjects(t.db, t.schema);
+          }}
+        />
+      ) : null}
     </div>
   );
 }
