@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   FileText,
   Home,
+  Shield,
   Table as TableIcon,
   X,
 } from "lucide-react";
@@ -13,6 +14,7 @@ import { cn } from "@/lib/utils";
 
 type Tab =
   | { kind: "overview" }
+  | { kind: "roles" }
   | { kind: "table"; db: string; schema: string; name: string }
   | { kind: "query"; db: string };
 
@@ -49,6 +51,8 @@ function tabKey(t: Tab): string {
   switch (t.kind) {
     case "overview":
       return "overview";
+    case "roles":
+      return "roles";
     case "table":
       return `t:${t.db}/${t.schema}/${t.name}`;
     case "query":
@@ -60,6 +64,8 @@ function tabHref(connectionId: string, t: Tab): string {
   switch (t.kind) {
     case "overview":
       return `/postgres/${connectionId}`;
+    case "roles":
+      return `/postgres/${connectionId}/roles`;
     case "table":
       return `/postgres/${connectionId}/databases/${encodeURIComponent(t.db)}/schemas/${encodeURIComponent(t.schema)}/tables/${encodeURIComponent(t.name)}`;
     case "query":
@@ -71,6 +77,8 @@ function tabLabel(t: Tab): string {
   switch (t.kind) {
     case "overview":
       return "Overview";
+    case "roles":
+      return "Roles";
     case "table":
       return `${t.schema}.${t.name}`;
     case "query":
@@ -83,6 +91,7 @@ function tabFromPath(pathname: string, connectionId: string): Tab | null {
   if (!pathname.startsWith(prefix)) return null;
   const rest = pathname.slice(prefix.length);
   if (rest === "" || rest === "/") return { kind: "overview" };
+  if (rest === "/roles" || rest.startsWith("/roles")) return { kind: "roles" };
   // /databases/[db]/schemas/[schema]/tables/[name]
   const tableMatch = rest.match(
     /^\/databases\/([^/]+)\/schemas\/([^/]+)\/tables\/([^/]+)/,
@@ -193,6 +202,8 @@ export function PostgresTabs({ connectionId }: Props) {
               icon={
                 t.kind === "table" ? (
                   <TableIcon className="size-3 shrink-0" />
+                ) : t.kind === "roles" ? (
+                  <Shield className="size-3 shrink-0" />
                 ) : (
                   <FileText className="size-3 shrink-0" />
                 )

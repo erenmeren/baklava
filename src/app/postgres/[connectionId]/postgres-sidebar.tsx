@@ -14,6 +14,8 @@ import {
   MoreHorizontal,
   Plus,
   RefreshCcw,
+  Server,
+  Shield,
   Table as TableIcon,
   Eye,
 } from "lucide-react";
@@ -28,6 +30,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { CreateTableDialog } from "./create-table-dialog";
 import { CreateSchemaDialog } from "./create-schema-dialog";
+import { CreateDatabaseDialog } from "./create-database-dialog";
 import { DropConfirm, type DropTarget } from "./drop-confirm";
 import { DDLDialog } from "./ddl-dialog";
 
@@ -112,6 +115,7 @@ export function PostgresSidebar({ connectionId, defaultDatabase }: Props) {
   const [createSchemaTarget, setCreateSchemaTarget] = useState<string | null>(
     null,
   );
+  const [createDbOpen, setCreateDbOpen] = useState(false);
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
   const [ddlTarget, setDdlTarget] = useState<{
     title: string;
@@ -288,24 +292,57 @@ export function PostgresSidebar({ connectionId, defaultDatabase }: Props) {
 
   // ----- Render -------------------------------------------------------------
 
+  const rolesHref = `/postgres/${connectionId}/roles`;
+  const rolesActive = pathname === rolesHref;
+
   return (
     <div className="space-y-1 select-none">
-      <div className="flex items-center justify-between px-2 py-1">
-        <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-          Tree
+      <div className="px-2 py-1">
+        <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground inline-flex items-center gap-1.5">
+          <Server className="size-3" />
+          Server
         </span>
-        <Button
-          size="icon-xs"
-          variant="ghost"
-          onClick={refreshAll}
-          title="Refresh"
-        >
-          {loadingDbs ? (
-            <Loader2 className="size-3 animate-spin" />
-          ) : (
-            <RefreshCcw className="size-3" />
-          )}
-        </Button>
+      </div>
+      <Link
+        href={rolesHref}
+        className={cn(
+          "flex items-center gap-1.5 px-2 py-1 ml-2 rounded-md text-xs font-mono transition-colors",
+          rolesActive
+            ? "bg-foreground/10 text-foreground font-medium"
+            : "text-muted-foreground hover:bg-foreground/5 hover:text-foreground",
+        )}
+      >
+        <Shield className="size-3 shrink-0" />
+        <span className="truncate">Roles</span>
+      </Link>
+
+      <div className="flex items-center justify-between px-2 pt-3 pb-1">
+        <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground inline-flex items-center gap-1.5">
+          <Database className="size-3" />
+          Databases
+        </span>
+        <div className="flex items-center gap-0.5">
+          <Button
+            size="icon-xs"
+            variant="ghost"
+            onClick={() => setCreateDbOpen(true)}
+            title="New database"
+          >
+            <Plus className="size-3" />
+          </Button>
+          <Button
+            size="icon-xs"
+            variant="ghost"
+            onClick={refreshAll}
+            title="Refresh"
+          >
+            {loadingDbs ? (
+              <Loader2 className="size-3 animate-spin" />
+            ) : (
+              <RefreshCcw className="size-3" />
+            )}
+          </Button>
+        </div>
       </div>
 
       {databases === null ? (
@@ -323,6 +360,9 @@ export function PostgresSidebar({ connectionId, defaultDatabase }: Props) {
                   setSchemasByDb((s) => ({ ...s, [db.name]: undefined as unknown as SchemaInfo[] }));
                   loadSchemas(db.name);
                 }}
+                onDrop={() =>
+                  setDropTarget({ kind: "database", database: db.name })
+                }
                 onOpenSqlEditor={`/postgres/${connectionId}/databases/${encodeURIComponent(db.name)}/query`}
               />
               {openDb[db.name] ? (
@@ -564,6 +604,15 @@ export function PostgresSidebar({ connectionId, defaultDatabase }: Props) {
         />
       ) : null}
 
+      <CreateDatabaseDialog
+        open={createDbOpen}
+        onOpenChange={setCreateDbOpen}
+        connectionId={connectionId}
+        onCreated={() => {
+          setRefreshKey((n) => n + 1);
+        }}
+      />
+
       {createSchemaTarget ? (
         <CreateSchemaDialog
           open={true}
@@ -589,6 +638,15 @@ export function PostgresSidebar({ connectionId, defaultDatabase }: Props) {
         connectionId={connectionId}
         target={dropTarget}
         onDropped={(t) => {
+          if (t.kind === "database") {
+            setRefreshKey((n) => n + 1);
+            setOpenDb((s) => {
+              const next = { ...s };
+              delete next[t.database];
+              return next;
+            });
+            return;
+          }
           if (t.kind === "schema") {
             // Reload schema list for that database.
             loadSchemas(t.database);
@@ -635,6 +693,7 @@ function DatabaseRow({
   onToggle,
   onCreateSchema,
   onRefresh,
+  onDrop,
   onOpenSqlEditor,
 }: {
   db: DatabaseInfo;
@@ -642,6 +701,7 @@ function DatabaseRow({
   onToggle: () => void;
   onCreateSchema: () => void;
   onRefresh: () => void;
+  onDrop: () => void;
   onOpenSqlEditor: string;
 }) {
   const router = useRouter();
@@ -680,6 +740,13 @@ function DatabaseRow({
           <DropdownMenuItem onClick={onRefresh}>
             <RefreshCcw className="size-3.5" />
             Refresh
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            onClick={onDrop}
+            className="text-destructive focus:text-destructive"
+          >
+            Drop database…
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

@@ -717,6 +717,193 @@ export async function getTableDDL(
   return [create, ...indexLines].join("\n\n");
 }
 
+function validateIdentifier(name: string, kind: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) throw new Error(`${kind} name is required`);
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(trimmed)) {
+    throw new Error(
+      `${kind} name must start with a letter or underscore and contain only letters, numbers, and underscores`,
+    );
+  }
+  return trimmed;
+}
+
+export async function createDatabase(
+  config: PostgresConfig,
+  name: string,
+  options?: { ifNotExists?: boolean; owner?: string; encoding?: string; template?: string },
+): Promise<void> {
+  const trimmed = validateIdentifier(name, "Database");
+  const parts = [`CREATE DATABASE ${quoteIdent(trimmed)}`];
+  if (options?.owner && options.owner.trim()) {
+    parts.push(`OWNER ${quoteIdent(options.owner.trim())}`);
+  }
+  if (options?.template && options.template.trim()) {
+    parts.push(`TEMPLATE ${quoteIdent(options.template.trim())}`);
+  }
+  if (options?.encoding && options.encoding.trim()) {
+    parts.push(`ENCODING ${quoteIdent(options.encoding.trim())}`);
+  }
+  await withClient(config, undefined, async (client) => {
+    await client.query(parts.join(" "));
+  });
+}
+
+export async function dropDatabase(
+  config: PostgresConfig,
+  name: string,
+  options?: { ifExists?: boolean; force?: boolean },
+): Promise<void> {
+  // Connect to a database that isn't the target. Default config DB usually works,
+  // but if the caller asked to drop *that* one, fall back to "postgres".
+  const fallback =
+    config.database && config.database !== name ? config.database : "postgres";
+  const sql = `DROP DATABASE ${options?.ifExists ? "IF EXISTS " : ""}${quoteIdent(name)}${options?.force ? " WITH (FORCE)" : ""}`;
+  const conn: PostgresConfig = { ...config, database: fallback };
+  await withClient(conn, fallback, async (client) => {
+    await client.query(sql);
+  });
+}
+
+export interface RoleInfo {
+  name: string;
+  isSuperuser: boolean;
+  canLogin: boolean;
+  canCreateDb: boolean;
+  canCreateRole: boolean;
+  canReplication: boolean;
+  inherits: boolean;
+  connectionLimit: number;
+  validUntil: string | null;
+  memberOf: string[];
+}
+
+export async function listRoles(config: PostgresConfig): Promise<RoleInfo[]> {
+  return withClient(config, undefined, async (client) => {
+    const res = await client.query<{
+      name: string;
+      is_superuser: boolean;
+      can_login: boolean;
+      can_create_db: boolean;
+      can_create_role: boolean;
+      can_replication: boolean;
+      inherits: boolean;
+      connection_limit: number;
+      valid_until: string | null;
+      member_of: string[];
+    }>(
+      `select r.rolname as name,
+              r.rolsuper as is_superuser,
+              r.rolcanlogin as can_login,
+              r.rolcreatedb as can_create_db,
+              r.rolcreaterole as can_create_role,
+              r.rolreplication as can_replication,
+              r.rolinherit as inherits,
+              r.rolconnlimit as connection_limit,
+              r.rolvaliduntil::text as valid_until,
+              coalesce((
+                select array_agg(b.rolname order by b.rolname)
+                from pg_auth_members m
+                join pg_roles b on b.oid = m.roleid
+                where m.member = r.oid
+              ), ARRAY[]::name[])::text[] as member_of
+       from pg_roles r
+       where r.rolname not like 'pg\\_%'
+       order by r.rolname`,
+    );
+    return res.rows.map((r) => ({
+      name: r.name,
+      isSuperuser: r.is_superuser,
+      canLogin: r.can_login,
+      canCreateDb: r.can_create_db,
+      canCreateRole: r.can_create_role,
+      canReplication: r.can_replication,
+      inherits: r.inherits,
+      connectionLimit: r.connection_limit,
+      validUntil: r.valid_until,
+      memberOf: Array.isArray(r.member_of) ? r.member_of : [],
+    }));
+  });
+}
+
+export interface RoleAttrs {
+  canLogin?: boolean;
+  isSuperuser?: boolean;
+  canCreateDb?: boolean;
+  canCreateRole?: boolean;
+  canReplication?: boolean;
+  inherits?: boolean;
+  connectionLimit?: number;
+  password?: string | null; // null clears, undefined leaves alone
+}
+
+function attrClauses(attrs: RoleAttrs): string[] {
+  const parts: string[] = [];
+  if (attrs.canLogin !== undefined) parts.push(attrs.canLogin ? "LOGIN" : "NOLOGIN");
+  if (attrs.isSuperuser !== undefined)
+    parts.push(attrs.isSuperuser ? "SUPERUSER" : "NOSUPERUSER");
+  if (attrs.canCreateDb !== undefined)
+    parts.push(attrs.canCreateDb ? "CREATEDB" : "NOCREATEDB");
+  if (attrs.canCreateRole !== undefined)
+    parts.push(attrs.canCreateRole ? "CREATEROLE" : "NOCREATEROLE");
+  if (attrs.canReplication !== undefined)
+    parts.push(attrs.canReplication ? "REPLICATION" : "NOREPLICATION");
+  if (attrs.inherits !== undefined)
+    parts.push(attrs.inherits ? "INHERIT" : "NOINHERIT");
+  if (attrs.connectionLimit !== undefined)
+    parts.push(`CONNECTION LIMIT ${Math.max(-1, Math.floor(attrs.connectionLimit))}`);
+  if (attrs.password !== undefined) {
+    if (attrs.password === null || attrs.password === "") {
+      parts.push("PASSWORD NULL");
+    } else {
+      // pg's literal-string escape: double single quotes.
+      const escaped = attrs.password.replace(/'/g, "''");
+      parts.push(`PASSWORD '${escaped}'`);
+    }
+  }
+  return parts;
+}
+
+export async function createRole(
+  config: PostgresConfig,
+  name: string,
+  attrs: RoleAttrs = {},
+): Promise<void> {
+  const trimmed = validateIdentifier(name, "Role");
+  const clauses = attrClauses(attrs);
+  const sql =
+    clauses.length === 0
+      ? `CREATE ROLE ${quoteIdent(trimmed)}`
+      : `CREATE ROLE ${quoteIdent(trimmed)} WITH ${clauses.join(" ")}`;
+  await withClient(config, undefined, async (client) => {
+    await client.query(sql);
+  });
+}
+
+export async function alterRole(
+  config: PostgresConfig,
+  name: string,
+  attrs: RoleAttrs,
+): Promise<void> {
+  const clauses = attrClauses(attrs);
+  if (clauses.length === 0) throw new Error("No changes to apply");
+  const sql = `ALTER ROLE ${quoteIdent(name)} WITH ${clauses.join(" ")}`;
+  await withClient(config, undefined, async (client) => {
+    await client.query(sql);
+  });
+}
+
+export async function dropRole(
+  config: PostgresConfig,
+  name: string,
+  options?: { ifExists?: boolean },
+): Promise<void> {
+  const sql = `DROP ROLE ${options?.ifExists ? "IF EXISTS " : ""}${quoteIdent(name)}`;
+  await withClient(config, undefined, async (client) => {
+    await client.query(sql);
+  });
+}
+
 export async function createSchema(
   config: PostgresConfig,
   database: string,
