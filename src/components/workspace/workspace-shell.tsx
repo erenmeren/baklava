@@ -1,5 +1,3 @@
-import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
 import type { TechMeta } from "@/lib/tech-catalog";
 
 interface WorkspaceShellProps {
@@ -19,16 +17,10 @@ export function WorkspaceShell({
 }: WorkspaceShellProps) {
   const Icon = tech.icon;
   return (
-    <div className="flex h-[calc(100vh-3.5rem)] w-full">
+    <div className="flex h-[calc(100vh-3rem)] w-full">
       <aside className="w-64 shrink-0 border-r border-border/60 flex flex-col bg-sidebar">
-        <div className="p-4 border-b border-border/60">
-          <Link
-            href={`/${tech.id}`}
-            className="inline-flex items-center gap-1 text-[11px] font-mono text-muted-foreground hover:text-brand transition-colors"
-          >
-            <ArrowLeft className="size-3" /> connections
-          </Link>
-          <div className="mt-3 flex items-center gap-2.5">
+        <div className="px-4 py-3.5 border-b border-border/60">
+          <div className="flex items-center gap-2.5">
             <div
               className={`inline-flex items-center justify-center size-8 rounded-lg bg-gradient-to-br ${tech.color} text-white shrink-0 ring-1 ring-white/10 shadow-sm shadow-black/10`}
             >

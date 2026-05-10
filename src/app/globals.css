@@ -229,6 +229,14 @@
     letter-spacing: -0.015em;
   }
 
+  /* Hide scrollbar (used by header tab strip) but keep scrollability */
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
   /* Brand color helpers */
   .text-brand {
     color: var(--brand);

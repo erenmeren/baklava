@@ -7,6 +7,8 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { THEME_COOKIE, readTheme } from "@/lib/theme";
+import { BrandMark } from "@/components/brand-mark";
+import { ConnectionTabs } from "@/components/connection-tabs";
 import Link from "next/link";
 
 const geistSans = Geist({
@@ -50,14 +52,26 @@ export default async function RootLayout({
       <body className="min-h-full flex flex-col bg-background text-foreground">
         <ThemeProvider initialTheme={theme}>
           <TooltipProvider delay={150}>
-            <header className="sticky top-0 z-30">
-              <div className="mx-auto max-w-7xl flex items-center justify-between px-6 h-12">
+            <header className="sticky top-0 z-30 border-b border-border/60 bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/65">
+              <div className="flex items-stretch h-12 pr-3">
                 <Link
                   href="/"
-                  className="size-6"
                   aria-label="Baklava home"
+                  className="inline-flex items-center gap-2 px-4 text-foreground/90 hover:text-brand transition-colors shrink-0"
+                >
+                  <BrandMark size={20} />
+                  <span className="font-semibold tracking-tight text-[13.5px] hidden sm:inline">
+                    baklava
+                  </span>
+                </Link>
+                <span
+                  className="self-center h-5 w-px bg-border/70 mr-1"
+                  aria-hidden
                 />
-                <ThemeToggle />
+                <ConnectionTabs />
+                <div className="flex items-center gap-1 pl-2 shrink-0">
+                  <ThemeToggle />
+                </div>
               </div>
             </header>
             <main className="flex-1 w-full">{children}</main>
