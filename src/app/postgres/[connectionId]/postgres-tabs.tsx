@@ -16,7 +16,7 @@ type Tab =
   | { kind: "overview" }
   | { kind: "roles" }
   | { kind: "table"; db: string; schema: string; name: string }
-  | { kind: "query"; db: string };
+  | { kind: "query"; db: string; queryId: string; title: string };
 
 interface Props {
   connectionId: string;
@@ -56,7 +56,7 @@ function tabKey(t: Tab): string {
     case "table":
       return `t:${t.db}/${t.schema}/${t.name}`;
     case "query":
-      return `q:${t.db}`;
+      return `q:${t.db}/${t.queryId}`;
   }
 }
 
@@ -69,7 +69,7 @@ function tabHref(connectionId: string, t: Tab): string {
     case "table":
       return `/postgres/${connectionId}/databases/${encodeURIComponent(t.db)}/schemas/${encodeURIComponent(t.schema)}/tables/${encodeURIComponent(t.name)}`;
     case "query":
-      return `/postgres/${connectionId}/databases/${encodeURIComponent(t.db)}/query`;
+      return `/postgres/${connectionId}/databases/${encodeURIComponent(t.db)}/query/${t.queryId}`;
   }
 }
 
@@ -82,7 +82,7 @@ function tabLabel(t: Tab): string {
     case "table":
       return `${t.schema}.${t.name}`;
     case "query":
-      return `SQL · ${t.db}`;
+      return t.title;
   }
 }
 
@@ -104,10 +104,16 @@ function tabFromPath(pathname: string, connectionId: string): Tab | null {
       name: decodeURIComponent(tableMatch[3]),
     };
   }
-  // /databases/[db]/query
-  const queryMatch = rest.match(/^\/databases\/([^/]+)\/query/);
+  // /databases/[db]/query/[queryId]
+  const queryMatch = rest.match(/^\/databases\/([^/]+)\/query\/([^/]+)/);
   if (queryMatch) {
-    return { kind: "query", db: decodeURIComponent(queryMatch[1]) };
+    return {
+      kind: "query",
+      db: decodeURIComponent(queryMatch[1]),
+      queryId: queryMatch[2],
+      // title is filled in on auto-add (we need access to existing tabs to count).
+      title: "",
+    };
   }
   return null;
 }
@@ -140,6 +146,11 @@ export function PostgresTabs({ connectionId }: Props) {
     setTabs((prev) => {
       const k = tabKey(activeTab);
       if (prev.some((t) => tabKey(t) === k)) return prev;
+      if (activeTab.kind === "query") {
+        // Number this tab sequentially: count existing query tabs and add one.
+        const existing = prev.filter((t) => t.kind === "query").length;
+        return [...prev, { ...activeTab, title: `query ${existing + 1}` }];
+      }
       return [...prev, activeTab];
     });
   }, [activeTab, hydrated]);

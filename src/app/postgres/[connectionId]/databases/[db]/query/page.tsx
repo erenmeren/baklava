@@ -1,15 +1,20 @@
-import { QueryEditorClient } from "./query-editor-client";
+import { redirect } from "next/navigation";
+
+export const dynamic = "force-dynamic";
 
 interface PageProps {
   params: Promise<{ connectionId: string; db: string }>;
 }
 
-export default async function QueryEditorPage({ params }: PageProps) {
-  const { connectionId, db } = await params;
+function freshQueryId(): string {
   return (
-    <QueryEditorClient
-      connectionId={connectionId}
-      db={decodeURIComponent(db)}
-    />
+    Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+  );
+}
+
+export default async function QueryEditorRedirect({ params }: PageProps) {
+  const { connectionId, db } = await params;
+  redirect(
+    `/postgres/${connectionId}/databases/${encodeURIComponent(db)}/query/${freshQueryId()}`,
   );
 }

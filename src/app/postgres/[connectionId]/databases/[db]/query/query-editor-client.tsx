@@ -40,20 +40,30 @@ interface HistoryItem {
 interface Props {
   connectionId: string;
   db: string;
+  /** Stable per-tab id — different query tabs for the same db keep independent state. */
+  queryId: string;
 }
 
 type ResultTab = "data" | "messages" | "history" | "explain";
 
 const HISTORY_LIMIT = 25;
 
-function historyKey(connectionId: string, db: string) {
-  return `baklava:pg-query-history:${connectionId}:${db}`;
+function sqlKey(connectionId: string, db: string, queryId: string) {
+  return `baklava:pg-query-sql:${connectionId}:${db}:${queryId}`;
 }
 
-function loadHistory(connectionId: string, db: string): HistoryItem[] {
+function historyKey(connectionId: string, db: string, queryId: string) {
+  return `baklava:pg-query-history:${connectionId}:${db}:${queryId}`;
+}
+
+function loadHistory(
+  connectionId: string,
+  db: string,
+  queryId: string,
+): HistoryItem[] {
   if (typeof window === "undefined") return [];
   try {
-    const raw = window.localStorage.getItem(historyKey(connectionId, db));
+    const raw = window.localStorage.getItem(historyKey(connectionId, db, queryId));
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? (parsed as HistoryItem[]) : [];
@@ -62,15 +72,49 @@ function loadHistory(connectionId: string, db: string): HistoryItem[] {
   }
 }
 
-function saveHistory(connectionId: string, db: string, items: HistoryItem[]) {
+function saveHistory(
+  connectionId: string,
+  db: string,
+  queryId: string,
+  items: HistoryItem[],
+) {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(
-      historyKey(connectionId, db),
+      historyKey(connectionId, db, queryId),
       JSON.stringify(items),
     );
   } catch {
     // ignore quota errors
+  }
+}
+
+function loadSql(
+  connectionId: string,
+  db: string,
+  queryId: string,
+  defaultSql: string,
+): string {
+  if (typeof window === "undefined") return defaultSql;
+  try {
+    const raw = window.localStorage.getItem(sqlKey(connectionId, db, queryId));
+    return raw ?? defaultSql;
+  } catch {
+    return defaultSql;
+  }
+}
+
+function saveSql(
+  connectionId: string,
+  db: string,
+  queryId: string,
+  value: string,
+) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(sqlKey(connectionId, db, queryId), value);
+  } catch {
+    // ignore
   }
 }
 
@@ -82,10 +126,9 @@ function formatTimestamp(ms: number): string {
     .padStart(2, "0")}:${d.getSeconds().toString().padStart(2, "0")}`;
 }
 
-export function QueryEditorClient({ connectionId, db }: Props) {
-  const [sqlText, setSqlText] = useState(
-    `-- ${db}\nselect now() as now, current_user as user;`,
-  );
+export function QueryEditorClient({ connectionId, db, queryId }: Props) {
+  const defaultSql = `-- ${db}\nselect now() as now, current_user as user;`;
+  const [sqlText, setSqlText] = useState(defaultSql);
   const [phase, setPhase] = useState<"idle" | "running" | "ok" | "err">("idle");
   const [result, setResult] = useState<QueryResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -95,13 +138,21 @@ export function QueryEditorClient({ connectionId, db }: Props) {
   const { resolvedTheme } = useTheme();
 
   useEffect(() => {
-    setHistory(loadHistory(connectionId, db));
+    setSqlText(loadSql(connectionId, db, queryId, defaultSql));
+    setHistory(loadHistory(connectionId, db, queryId));
     setHydrated(true);
-  }, [connectionId, db]);
+    // defaultSql intentionally excluded: it would re-trigger on every render
+    // and overwrite user edits.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connectionId, db, queryId]);
 
   useEffect(() => {
-    if (hydrated) saveHistory(connectionId, db, history);
-  }, [history, hydrated, connectionId, db]);
+    if (hydrated) saveHistory(connectionId, db, queryId, history);
+  }, [history, hydrated, connectionId, db, queryId]);
+
+  useEffect(() => {
+    if (hydrated) saveSql(connectionId, db, queryId, sqlText);
+  }, [sqlText, hydrated, connectionId, db, queryId]);
 
   const execute = useCallback(
     async (asExplain = false) => {
