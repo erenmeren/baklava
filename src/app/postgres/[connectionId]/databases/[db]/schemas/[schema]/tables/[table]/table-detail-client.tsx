@@ -1,9 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -32,9 +34,19 @@ import {
   Pencil,
   Plus,
   Trash2,
+  Search,
+  Rows3,
+  Rows4,
+  FileCode,
+  Wand2,
+  Trash,
 } from "lucide-react";
 import { toast } from "sonner";
 import { RowFormDialog, type ColumnInfo } from "./row-form-dialog";
+import { DDLDialog } from "../../../../../../ddl-dialog";
+import { DropConfirm, type DropTarget } from "../../../../../../drop-confirm";
+import { ModifyTableDialog } from "../../../../../../modify-table-dialog";
+import { cn } from "@/lib/utils";
 
 interface IndexInfo {
   name: string;
@@ -103,6 +115,21 @@ export function TableDetailClient({
     cells: unknown[];
   } | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  // DataGrip-style affordances
+  const [filter, setFilter] = useState("");
+  const [density, setDensity] = useState<"compact" | "normal">("compact");
+  const [ddlOpen, setDdlOpen] = useState(false);
+  const [modifyOpen, setModifyOpen] = useState(false);
+  const [dropOpen, setDropOpen] = useState(false);
+  const router = useRouter();
+
+  const dropTarget: DropTarget = {
+    kind: "table",
+    database: db,
+    schema,
+    name: table,
+  };
 
   const fetchView = useCallback(
     async (
@@ -185,6 +212,23 @@ export function TableDetailClient({
     : null;
   const currentPage = Math.floor(pageOffset / pageLimit) + 1;
 
+  const filteredRows = useMemo(() => {
+    if (!pageData) return [];
+    const q = filter.trim().toLowerCase();
+    if (!q) return pageData.rows;
+    return pageData.rows.filter((row) =>
+      row.some((cell) => {
+        if (cell == null) return false;
+        const text =
+          typeof cell === "object" ? JSON.stringify(cell) : String(cell);
+        return text.toLowerCase().includes(q);
+      }),
+    );
+  }, [pageData, filter]);
+
+  const cellPad = density === "compact" ? "px-3 py-1" : "px-3 py-2";
+  const headPad = density === "compact" ? "px-3 py-1.5" : "px-3 py-2.5";
+
   const pkColumns = columns?.filter((c) => c.isPrimaryKey) ?? [];
   const canMutateRows = pkColumns.length > 0;
   const noPkReason = "This table has no primary key";
@@ -231,6 +275,39 @@ export function TableDetailClient({
           database <span className="font-mono">{db}</span>
         </span>
       }
+      actions={
+        <>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setDdlOpen(true)}
+            title="Show generated CREATE TABLE"
+          >
+            <FileCode className="size-3.5" />
+            DDL
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setModifyOpen(true)}
+            disabled={!columns}
+            title="Add / drop / rename columns"
+          >
+            <Wand2 className="size-3.5" />
+            Modify
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setDropOpen(true)}
+            className="text-destructive hover:text-destructive"
+            title="Drop this table"
+          >
+            <Trash className="size-3.5" />
+            Drop
+          </Button>
+        </>
+      }
     >
       <Tabs value={tab} onValueChange={setTab} className="h-full flex flex-col">
         <TabsList>
@@ -242,17 +319,60 @@ export function TableDetailClient({
         </TabsList>
 
         <TabsContent value="data" className="pt-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <p className="text-xs text-muted-foreground">
-              {pageData?.totalRows != null
-                ? `${pageData.totalRows.toLocaleString()} total rows`
-                : pageData?.rowCount != null
-                  ? `${pageData.rowCount} rows on this page`
+          <div className="flex flex-wrap items-center gap-2 justify-between sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/75 -mx-1 px-1 py-1 rounded-md">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="relative">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none" />
+                <Input
+                  value={filter}
+                  onChange={(e) => setFilter(e.target.value)}
+                  placeholder="Filter rows on this page…"
+                  className="h-8 w-[260px] pl-7 text-xs font-mono"
+                  spellCheck={false}
+                />
+              </div>
+              <div className="inline-flex rounded-md border border-border/60 overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setDensity("compact")}
+                  title="Compact rows"
+                  className={cn(
+                    "size-8 grid place-items-center transition-colors",
+                    density === "compact"
+                      ? "bg-foreground/10 text-foreground"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  <Rows4 className="size-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDensity("normal")}
+                  title="Normal rows"
+                  className={cn(
+                    "size-8 grid place-items-center transition-colors border-l border-border/60",
+                    density === "normal"
+                      ? "bg-foreground/10 text-foreground"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  <Rows3 className="size-3.5" />
+                </button>
+              </div>
+              <p className="text-[11px] text-muted-foreground font-mono whitespace-nowrap">
+                {pageData?.totalRows != null
+                  ? `${pageData.totalRows.toLocaleString()} rows`
+                  : pageData
+                    ? `${pageData.rowCount} on page`
+                    : "…"}
+                {pageData?.rowCount
+                  ? ` · ${pageOffset + 1}–${pageOffset + pageData.rowCount}`
                   : ""}
-              {pageData?.rowCount
-                ? ` · showing ${pageOffset + 1}–${pageOffset + pageData.rowCount}`
-                : ""}
-            </p>
+                {filter.trim()
+                  ? ` · ${filteredRows.length} match${filteredRows.length === 1 ? "" : "es"}`
+                  : ""}
+              </p>
+            </div>
             <div className="flex items-center gap-2">
               <Button
                 size="sm"
@@ -311,30 +431,53 @@ export function TableDetailClient({
           </div>
           {pageData ? (
             <div className="rounded-lg border border-border/60 overflow-auto">
-              <table className="w-full text-xs font-mono">
-                <thead className="bg-muted/50">
+              <table className="w-full text-xs font-mono border-collapse">
+                <thead className="bg-muted/60 sticky top-0 z-[1]">
                   <tr>
-                    {pageData.fields.map((f) => (
-                      <th
-                        key={f.name}
-                        className="px-3 py-2 text-left font-semibold border-b border-border/60 whitespace-nowrap"
-                      >
-                        <div className="text-foreground">{f.name}</div>
-                        <div className="text-[10px] font-normal text-muted-foreground">
-                          {f.dataType}
-                        </div>
-                      </th>
-                    ))}
+                    {pageData.fields.map((f) => {
+                      const col = columns?.find((c) => c.name === f.name);
+                      const isPk = !!col?.isPrimaryKey;
+                      return (
+                        <th
+                          key={f.name}
+                          className={cn(
+                            "text-left font-semibold border-b border-border/60 whitespace-nowrap",
+                            headPad,
+                          )}
+                        >
+                          <div className="flex items-center gap-1.5">
+                            {isPk ? (
+                              <span
+                                className="size-1.5 rounded-full bg-brand"
+                                title="Primary key"
+                                aria-hidden
+                              />
+                            ) : null}
+                            <span className="text-foreground">{f.name}</span>
+                          </div>
+                          <div className="text-[10px] font-normal text-muted-foreground">
+                            {col?.dataType ?? f.dataType}
+                            {col && !col.isNullable ? " · NOT NULL" : ""}
+                          </div>
+                        </th>
+                      );
+                    })}
                     <th className="w-px border-b border-border/60" />
                   </tr>
                 </thead>
                 <tbody>
-                  {pageData.rows.map((row, i) => (
-                    <tr key={i} className="group border-b border-border/30">
+                  {filteredRows.map((row, i) => (
+                    <tr
+                      key={i}
+                      className="group border-b border-border/30 hover:bg-foreground/[0.025]"
+                    >
                       {row.map((cell, j) => (
                         <td
                           key={j}
-                          className="px-3 py-1.5 max-w-[40ch] truncate align-top"
+                          className={cn(
+                            "max-w-[40ch] truncate align-top",
+                            cellPad,
+                          )}
                           title={cell == null ? "null" : String(cell)}
                         >
                           {cell === null ? (
@@ -342,7 +485,13 @@ export function TableDetailClient({
                               null
                             </span>
                           ) : typeof cell === "object" ? (
-                            JSON.stringify(cell)
+                            <span className="text-brand">
+                              {JSON.stringify(cell)}
+                            </span>
+                          ) : typeof cell === "boolean" ? (
+                            <span className="text-brand">
+                              {cell ? "true" : "false"}
+                            </span>
                           ) : (
                             String(cell)
                           )}
@@ -384,13 +533,15 @@ export function TableDetailClient({
                       </td>
                     </tr>
                   ))}
-                  {pageData.rows.length === 0 ? (
+                  {filteredRows.length === 0 ? (
                     <tr>
                       <td
                         colSpan={(pageData.fields.length || 1) + 1}
                         className="px-3 py-6 text-center text-muted-foreground"
                       >
-                        No rows.
+                        {pageData.rows.length === 0
+                          ? "No rows."
+                          : `No rows match “${filter}”.`}
                       </td>
                     </tr>
                   ) : null}
@@ -609,6 +760,41 @@ export function TableDetailClient({
           />
         </>
       ) : null}
+
+      <DDLDialog
+        open={ddlOpen}
+        onOpenChange={setDdlOpen}
+        title={`${schema}.${table}`}
+        description="generated CREATE TABLE"
+        fetchUrl={`${base}?view=ddl`}
+        payloadKey="ddl"
+      />
+
+      <ModifyTableDialog
+        open={modifyOpen}
+        onOpenChange={setModifyOpen}
+        connectionId={connectionId}
+        db={db}
+        schema={schema}
+        table={table}
+        columns={columns ?? []}
+        onApplied={() => {
+          setColumns(null);
+          setPageData(null);
+        }}
+      />
+
+      <DropConfirm
+        open={dropOpen}
+        onOpenChange={setDropOpen}
+        connectionId={connectionId}
+        target={dropOpen ? dropTarget : null}
+        onDropped={() => {
+          router.push(
+            `/postgres/${connectionId}/databases/${encodeURIComponent(db)}/query`,
+          );
+        }}
+      />
 
       <AlertDialog
         open={deleteTarget !== null}

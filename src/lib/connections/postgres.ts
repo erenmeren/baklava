@@ -566,6 +566,282 @@ export async function deleteRow(
   });
 }
 
+export interface FunctionInfo {
+  name: string;
+  language: string;
+  returnType: string;
+  arguments: string;
+  kind: "function" | "procedure" | "aggregate" | "window";
+}
+
+export async function listFunctions(
+  config: PostgresConfig,
+  database: string,
+  schema: string
+): Promise<FunctionInfo[]> {
+  return withClient(config, database, async (client) => {
+    const res = await client.query<{
+      name: string;
+      language: string;
+      return_type: string;
+      arguments: string;
+      kind: string;
+    }>(
+      `select p.proname as name,
+              l.lanname as language,
+              pg_get_function_result(p.oid) as return_type,
+              pg_get_function_arguments(p.oid) as arguments,
+              case p.prokind
+                when 'f' then 'function'
+                when 'p' then 'procedure'
+                when 'a' then 'aggregate'
+                when 'w' then 'window'
+                else p.prokind::text
+              end as kind
+       from pg_proc p
+       join pg_namespace n on n.oid = p.pronamespace
+       join pg_language l on l.oid = p.prolang
+       where n.nspname = $1
+       order by p.proname`,
+      [schema]
+    );
+    return res.rows.map((r) => ({
+      name: r.name,
+      language: r.language,
+      returnType: r.return_type,
+      arguments: r.arguments,
+      kind: r.kind as FunctionInfo["kind"],
+    }));
+  });
+}
+
+export interface SequenceInfo {
+  name: string;
+  dataType: string;
+  startValue: string;
+  minValue: string;
+  maxValue: string;
+  increment: string;
+  lastValue: string | null;
+}
+
+export async function listSequences(
+  config: PostgresConfig,
+  database: string,
+  schema: string
+): Promise<SequenceInfo[]> {
+  return withClient(config, database, async (client) => {
+    const res = await client.query<{
+      name: string;
+      data_type: string;
+      start_value: string;
+      minimum_value: string;
+      maximum_value: string;
+      increment: string;
+      last_value: string | null;
+    }>(
+      `select s.sequence_name as name,
+              s.data_type,
+              s.start_value::text as start_value,
+              s.minimum_value::text as minimum_value,
+              s.maximum_value::text as maximum_value,
+              s.increment::text as increment,
+              (select last_value::text from pg_sequences ps
+                where ps.schemaname = s.sequence_schema
+                  and ps.sequencename = s.sequence_name) as last_value
+       from information_schema.sequences s
+       where s.sequence_schema = $1
+       order by s.sequence_name`,
+      [schema]
+    );
+    return res.rows.map((r) => ({
+      name: r.name,
+      dataType: r.data_type,
+      startValue: r.start_value,
+      minValue: r.minimum_value,
+      maxValue: r.maximum_value,
+      increment: r.increment,
+      lastValue: r.last_value,
+    }));
+  });
+}
+
+export async function getViewDefinition(
+  config: PostgresConfig,
+  database: string,
+  schema: string,
+  view: string
+): Promise<string> {
+  return withClient(config, database, async (client) => {
+    const res = await client.query<{ definition: string }>(
+      `select pg_get_viewdef((quote_ident($1) || '.' || quote_ident($2))::regclass, true) as definition`,
+      [schema, view]
+    );
+    return res.rows[0]?.definition ?? "";
+  });
+}
+
+/**
+ * Synthesizes a CREATE TABLE statement from columns + constraints + indexes.
+ * Not byte-identical with pg_dump, but readable and copy-pastable.
+ */
+export async function getTableDDL(
+  config: PostgresConfig,
+  database: string,
+  schema: string,
+  table: string
+): Promise<string> {
+  const [columns, constraints, indexes] = await Promise.all([
+    listColumns(config, database, schema, table),
+    listConstraints(config, database, schema, table),
+    listIndexes(config, database, schema, table),
+  ]);
+
+  const colLines = columns.map((c) => {
+    const parts = [quoteIdent(c.name), c.dataType];
+    if (!c.isNullable) parts.push("NOT NULL");
+    if (c.default) parts.push(`DEFAULT ${c.default}`);
+    return "  " + parts.join(" ");
+  });
+
+  const constraintLines = constraints.map(
+    (c) => `  CONSTRAINT ${quoteIdent(c.name)} ${c.definition}`
+  );
+
+  const create = `CREATE TABLE ${tableIdent(schema, table)} (\n${[...colLines, ...constraintLines].join(",\n")}\n);`;
+
+  const indexLines = indexes
+    .filter((i) => !i.isPrimary)
+    .map((i) => i.definition.endsWith(";") ? i.definition : i.definition + ";");
+
+  return [create, ...indexLines].join("\n\n");
+}
+
+export async function createSchema(
+  config: PostgresConfig,
+  database: string,
+  name: string,
+  options?: { ifNotExists?: boolean }
+): Promise<void> {
+  const trimmed = name.trim();
+  if (!trimmed) throw new Error("Schema name is required");
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(trimmed)) {
+    throw new Error(
+      "Schema name must start with a letter or underscore and contain only letters, numbers, and underscores"
+    );
+  }
+  const sql = `CREATE SCHEMA ${options?.ifNotExists ? "IF NOT EXISTS " : ""}${quoteIdent(trimmed)}`;
+  await withClient(config, database, async (client) => {
+    await client.query(sql);
+  });
+}
+
+export async function dropSchema(
+  config: PostgresConfig,
+  database: string,
+  schema: string,
+  options?: { cascade?: boolean; ifExists?: boolean }
+): Promise<void> {
+  const sql = `DROP SCHEMA ${options?.ifExists ? "IF EXISTS " : ""}${quoteIdent(schema)}${options?.cascade ? " CASCADE" : " RESTRICT"}`;
+  await withClient(config, database, async (client) => {
+    await client.query(sql);
+  });
+}
+
+export async function dropTable(
+  config: PostgresConfig,
+  database: string,
+  schema: string,
+  table: string,
+  options?: { cascade?: boolean; ifExists?: boolean }
+): Promise<void> {
+  const sql = `DROP TABLE ${options?.ifExists ? "IF EXISTS " : ""}${tableIdent(schema, table)}${options?.cascade ? " CASCADE" : " RESTRICT"}`;
+  await withClient(config, database, async (client) => {
+    await client.query(sql);
+  });
+}
+
+export async function dropView(
+  config: PostgresConfig,
+  database: string,
+  schema: string,
+  view: string,
+  options?: { cascade?: boolean; ifExists?: boolean; materialized?: boolean }
+): Promise<void> {
+  const kind = options?.materialized ? "MATERIALIZED VIEW" : "VIEW";
+  const sql = `DROP ${kind} ${options?.ifExists ? "IF EXISTS " : ""}${tableIdent(schema, view)}${options?.cascade ? " CASCADE" : " RESTRICT"}`;
+  await withClient(config, database, async (client) => {
+    await client.query(sql);
+  });
+}
+
+export type AlterTableOp =
+  | { kind: "addColumn"; name: string; dataType: string; nullable: boolean; default?: string }
+  | { kind: "dropColumn"; name: string; cascade?: boolean }
+  | { kind: "renameColumn"; from: string; to: string }
+  | { kind: "alterType"; name: string; dataType: string; using?: string }
+  | { kind: "setDefault"; name: string; default: string }
+  | { kind: "dropDefault"; name: string }
+  | { kind: "setNotNull"; name: string }
+  | { kind: "dropNotNull"; name: string };
+
+function buildAlterClause(schema: string, table: string, op: AlterTableOp): string {
+  const t = tableIdent(schema, table);
+  switch (op.kind) {
+    case "addColumn": {
+      if (!op.name.trim()) throw new Error("Column name is required");
+      if (!op.dataType.trim()) throw new Error("Column type is required");
+      const parts = [`ALTER TABLE ${t} ADD COLUMN ${quoteIdent(op.name.trim())} ${op.dataType.trim()}`];
+      if (!op.nullable) parts.push("NOT NULL");
+      if (op.default && op.default.trim()) parts.push(`DEFAULT ${op.default.trim()}`);
+      return parts.join(" ");
+    }
+    case "dropColumn":
+      return `ALTER TABLE ${t} DROP COLUMN ${quoteIdent(op.name)}${op.cascade ? " CASCADE" : ""}`;
+    case "renameColumn":
+      if (!op.to.trim()) throw new Error("New column name is required");
+      return `ALTER TABLE ${t} RENAME COLUMN ${quoteIdent(op.from)} TO ${quoteIdent(op.to.trim())}`;
+    case "alterType": {
+      if (!op.dataType.trim()) throw new Error("New type is required");
+      const using = op.using && op.using.trim() ? ` USING ${op.using.trim()}` : "";
+      return `ALTER TABLE ${t} ALTER COLUMN ${quoteIdent(op.name)} TYPE ${op.dataType.trim()}${using}`;
+    }
+    case "setDefault":
+      if (!op.default.trim()) throw new Error("Default expression is required");
+      return `ALTER TABLE ${t} ALTER COLUMN ${quoteIdent(op.name)} SET DEFAULT ${op.default.trim()}`;
+    case "dropDefault":
+      return `ALTER TABLE ${t} ALTER COLUMN ${quoteIdent(op.name)} DROP DEFAULT`;
+    case "setNotNull":
+      return `ALTER TABLE ${t} ALTER COLUMN ${quoteIdent(op.name)} SET NOT NULL`;
+    case "dropNotNull":
+      return `ALTER TABLE ${t} ALTER COLUMN ${quoteIdent(op.name)} DROP NOT NULL`;
+  }
+}
+
+export async function alterTable(
+  config: PostgresConfig,
+  database: string,
+  schema: string,
+  table: string,
+  ops: AlterTableOp[]
+): Promise<{ statements: string[] }> {
+  if (ops.length === 0) throw new Error("No changes to apply");
+  const statements = ops.map((op) => buildAlterClause(schema, table, op));
+  await withClient(config, database, async (client) => {
+    await client.query("BEGIN");
+    try {
+      for (const stmt of statements) {
+        await client.query(stmt);
+      }
+      await client.query("COMMIT");
+    } catch (err) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw err;
+    }
+  });
+  return { statements };
+}
+
 export interface QueryResult {
   fields: string[];
   rows: unknown[][];
