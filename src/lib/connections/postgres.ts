@@ -666,6 +666,126 @@ export async function listSequences(
   });
 }
 
+export interface TableStats {
+  rowEstimate: number;
+  totalSize: number;
+  tableSize: number;
+  indexSize: number;
+  toastSize: number;
+  liveTuples: number;
+  deadTuples: number;
+  seqScan: number;
+  seqTupRead: number;
+  idxScan: number;
+  idxTupFetch: number;
+  nTupIns: number;
+  nTupUpd: number;
+  nTupDel: number;
+  nTupHotUpd: number;
+  vacuumCount: number;
+  autovacuumCount: number;
+  analyzeCount: number;
+  autoanalyzeCount: number;
+  lastVacuum: string | null;
+  lastAutovacuum: string | null;
+  lastAnalyze: string | null;
+  lastAutoanalyze: string | null;
+}
+
+export async function getTableStats(
+  config: PostgresConfig,
+  database: string,
+  schema: string,
+  table: string,
+): Promise<TableStats> {
+  return withClient(config, database, async (client) => {
+    const res = await client.query<{
+      row_estimate: string;
+      total_size: string;
+      table_size: string;
+      index_size: string;
+      toast_size: string;
+      live_tuples: string | null;
+      dead_tuples: string | null;
+      seq_scan: string | null;
+      seq_tup_read: string | null;
+      idx_scan: string | null;
+      idx_tup_fetch: string | null;
+      n_tup_ins: string | null;
+      n_tup_upd: string | null;
+      n_tup_del: string | null;
+      n_tup_hot_upd: string | null;
+      vacuum_count: string | null;
+      autovacuum_count: string | null;
+      analyze_count: string | null;
+      autoanalyze_count: string | null;
+      last_vacuum: string | null;
+      last_autovacuum: string | null;
+      last_analyze: string | null;
+      last_autoanalyze: string | null;
+    }>(
+      `select
+         c.reltuples::bigint::text as row_estimate,
+         pg_total_relation_size(c.oid)::text as total_size,
+         pg_relation_size(c.oid)::text as table_size,
+         pg_indexes_size(c.oid)::text as index_size,
+         coalesce(pg_total_relation_size(c.reltoastrelid), 0)::text as toast_size,
+         s.n_live_tup::text as live_tuples,
+         s.n_dead_tup::text as dead_tuples,
+         s.seq_scan::text as seq_scan,
+         s.seq_tup_read::text as seq_tup_read,
+         s.idx_scan::text as idx_scan,
+         s.idx_tup_fetch::text as idx_tup_fetch,
+         s.n_tup_ins::text as n_tup_ins,
+         s.n_tup_upd::text as n_tup_upd,
+         s.n_tup_del::text as n_tup_del,
+         s.n_tup_hot_upd::text as n_tup_hot_upd,
+         s.vacuum_count::text as vacuum_count,
+         s.autovacuum_count::text as autovacuum_count,
+         s.analyze_count::text as analyze_count,
+         s.autoanalyze_count::text as autoanalyze_count,
+         s.last_vacuum::text as last_vacuum,
+         s.last_autovacuum::text as last_autovacuum,
+         s.last_analyze::text as last_analyze,
+         s.last_autoanalyze::text as last_autoanalyze
+       from pg_class c
+       join pg_namespace n on n.oid = c.relnamespace
+       left join pg_stat_user_tables s
+         on s.schemaname = n.nspname and s.relname = c.relname
+       where n.nspname = $1 and c.relname = $2`,
+      [schema, table],
+    );
+    const r = res.rows[0];
+    if (!r) throw new Error(`Table ${schema}.${table} not found`);
+    const num = (v: string | null) => Number(v ?? "0");
+    return {
+      rowEstimate: num(r.row_estimate),
+      totalSize: num(r.total_size),
+      tableSize: num(r.table_size),
+      indexSize: num(r.index_size),
+      toastSize: num(r.toast_size),
+      liveTuples: num(r.live_tuples),
+      deadTuples: num(r.dead_tuples),
+      seqScan: num(r.seq_scan),
+      seqTupRead: num(r.seq_tup_read),
+      idxScan: num(r.idx_scan),
+      idxTupFetch: num(r.idx_tup_fetch),
+      nTupIns: num(r.n_tup_ins),
+      nTupUpd: num(r.n_tup_upd),
+      nTupDel: num(r.n_tup_del),
+      nTupHotUpd: num(r.n_tup_hot_upd),
+      vacuumCount: num(r.vacuum_count),
+      autovacuumCount: num(r.autovacuum_count),
+      analyzeCount: num(r.analyze_count),
+      autoanalyzeCount: num(r.autoanalyze_count),
+      lastVacuum: r.last_vacuum,
+      lastAutovacuum: r.last_autovacuum,
+      lastAnalyze: r.last_analyze,
+      lastAutoanalyze: r.last_autoanalyze,
+    };
+  });
+}
+
 export async function getViewDefinition(
   config: PostgresConfig,
   database: string,

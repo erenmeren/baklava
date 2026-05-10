@@ -7,6 +7,7 @@ import {
   listIndexes,
   readTableData,
   getTableDDL,
+  getTableStats,
   dropTable,
   alterTable,
   type AlterTableOp,
@@ -57,6 +58,10 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
       case "ddl":
         return NextResponse.json({
           ddl: await getTableDDL(cfg, dbName, schemaName, tableName),
+        });
+      case "stats":
+        return NextResponse.json({
+          stats: await getTableStats(cfg, dbName, schemaName, tableName),
         });
       case "data": {
         const limit = Math.min(

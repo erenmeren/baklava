@@ -37,13 +37,13 @@ import {
   Search,
   Rows3,
   Rows4,
-  FileCode,
   Wand2,
   Trash,
+  Copy,
+  Check,
 } from "lucide-react";
 import { toast } from "sonner";
 import { RowFormDialog, type ColumnInfo } from "./row-form-dialog";
-import { DDLDialog } from "../../../../../../ddl-dialog";
 import { DropConfirm, type DropTarget } from "../../../../../../drop-confirm";
 import { ModifyTableDialog } from "../../../../../../modify-table-dialog";
 import { cn } from "@/lib/utils";
@@ -69,6 +69,32 @@ interface ForeignKeyInfo {
   refColumns: string[];
   onUpdate: string;
   onDelete: string;
+}
+
+interface TableStats {
+  rowEstimate: number;
+  totalSize: number;
+  tableSize: number;
+  indexSize: number;
+  toastSize: number;
+  liveTuples: number;
+  deadTuples: number;
+  seqScan: number;
+  seqTupRead: number;
+  idxScan: number;
+  idxTupFetch: number;
+  nTupIns: number;
+  nTupUpd: number;
+  nTupDel: number;
+  nTupHotUpd: number;
+  vacuumCount: number;
+  autovacuumCount: number;
+  analyzeCount: number;
+  autoanalyzeCount: number;
+  lastVacuum: string | null;
+  lastAutovacuum: string | null;
+  lastAnalyze: string | null;
+  lastAutoanalyze: string | null;
 }
 
 interface TableData {
@@ -99,6 +125,9 @@ export function TableDetailClient({
   const [indexes, setIndexes] = useState<IndexInfo[] | null>(null);
   const [constraints, setConstraints] = useState<ConstraintInfo[] | null>(null);
   const [foreignKeys, setForeignKeys] = useState<ForeignKeyInfo[] | null>(null);
+  const [ddl, setDdl] = useState<string | null>(null);
+  const [stats, setStats] = useState<TableStats | null>(null);
+  const [ddlCopied, setDdlCopied] = useState(false);
 
   const [pageData, setPageData] = useState<TableData | null>(null);
   const [pageLimit] = useState(100);
@@ -119,7 +148,6 @@ export function TableDetailClient({
   // DataGrip-style affordances
   const [filter, setFilter] = useState("");
   const [density, setDensity] = useState<"compact" | "normal">("compact");
-  const [ddlOpen, setDdlOpen] = useState(false);
   const [modifyOpen, setModifyOpen] = useState(false);
   const [dropOpen, setDropOpen] = useState(false);
   const router = useRouter();
@@ -169,6 +197,8 @@ export function TableDetailClient({
     setIndexes(null);
     setConstraints(null);
     setForeignKeys(null);
+    setDdl(null);
+    setStats(null);
     setPageData(null);
     setPageOffset(0);
   }, [base]);
@@ -202,10 +232,34 @@ export function TableDetailClient({
           )
         )
         .catch(() => undefined);
+    } else if (tab === "ddl" && ddl === null) {
+      fetch(`${base}?view=ddl`, { cache: "no-store" })
+        .then(async (res) => {
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Could not load DDL");
+          setDdl(data.ddl as string);
+        })
+        .catch((err) => {
+          toast.error("Could not load DDL", {
+            description: err instanceof Error ? err.message : String(err),
+          });
+        });
+    } else if (tab === "stats" && stats === null) {
+      fetch(`${base}?view=stats`, { cache: "no-store" })
+        .then(async (res) => {
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Could not load stats");
+          setStats(data.stats as TableStats);
+        })
+        .catch((err) => {
+          toast.error("Could not load statistics", {
+            description: err instanceof Error ? err.message : String(err),
+          });
+        });
     } else if (tab === "data" && pageData === null) {
       loadData(0);
     }
-  }, [tab, indexes, constraints, foreignKeys, pageData, fetchView, loadData]);
+  }, [tab, indexes, constraints, foreignKeys, ddl, stats, pageData, base, fetchView, loadData]);
 
   const totalPages = pageData?.totalRows
     ? Math.max(1, Math.ceil(pageData.totalRows / pageLimit))
@@ -280,15 +334,6 @@ export function TableDetailClient({
           <Button
             size="sm"
             variant="outline"
-            onClick={() => setDdlOpen(true)}
-            title="Show generated CREATE TABLE"
-          >
-            <FileCode className="size-3.5" />
-            DDL
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
             onClick={() => setModifyOpen(true)}
             disabled={!columns}
             title="Add / drop / rename columns"
@@ -316,6 +361,8 @@ export function TableDetailClient({
           <TabsTrigger value="indexes">Indexes</TabsTrigger>
           <TabsTrigger value="constraints">Constraints</TabsTrigger>
           <TabsTrigger value="foreign_keys">Foreign keys</TabsTrigger>
+          <TabsTrigger value="ddl">DDL</TabsTrigger>
+          <TabsTrigger value="stats">Statistics</TabsTrigger>
         </TabsList>
 
         <TabsContent value="data" className="pt-4 space-y-3">
@@ -731,6 +778,57 @@ export function TableDetailClient({
             <Skeleton className="h-32 w-full" />
           )}
         </TabsContent>
+
+        <TabsContent value="ddl" className="pt-4">
+          {ddl === null ? (
+            <Skeleton className="h-40 w-full" />
+          ) : (
+            <div className="rounded-lg border border-border/60 bg-muted/30 relative">
+              <div className="flex items-center justify-between border-b border-border/40 px-3 py-1.5">
+                <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+                  generated CREATE TABLE
+                </span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7"
+                  onClick={async () => {
+                    if (!ddl) return;
+                    try {
+                      await navigator.clipboard.writeText(ddl);
+                      setDdlCopied(true);
+                      setTimeout(() => setDdlCopied(false), 1500);
+                    } catch {
+                      toast.error("Could not copy");
+                    }
+                  }}
+                >
+                  {ddlCopied ? (
+                    <Check className="size-3.5" />
+                  ) : (
+                    <Copy className="size-3.5" />
+                  )}
+                  {ddlCopied ? "Copied" : "Copy"}
+                </Button>
+              </div>
+              <pre className="p-4 text-[12px] font-mono leading-[1.55] whitespace-pre overflow-x-auto max-h-[60vh] overflow-y-auto">
+                {ddl}
+              </pre>
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="stats" className="pt-4">
+          {stats ? (
+            <StatsGrid stats={stats} columns={columns} indexes={indexes} />
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+              {Array.from({ length: 12 }).map((_, i) => (
+                <Skeleton key={i} className="h-20 w-full" />
+              ))}
+            </div>
+          )}
+        </TabsContent>
       </Tabs>
 
       {columns ? (
@@ -760,15 +858,6 @@ export function TableDetailClient({
           />
         </>
       ) : null}
-
-      <DDLDialog
-        open={ddlOpen}
-        onOpenChange={setDdlOpen}
-        title={`${schema}.${table}`}
-        description="generated CREATE TABLE"
-        fetchUrl={`${base}?view=ddl`}
-        payloadKey="ddl"
-      />
 
       <ModifyTableDialog
         open={modifyOpen}
@@ -830,5 +919,179 @@ export function TableDetailClient({
         </AlertDialogContent>
       </AlertDialog>
     </WorkspacePage>
+  );
+}
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let value = n / 1024;
+  for (const u of units) {
+    if (value < 1024) {
+      return `${value < 10 ? value.toFixed(2) : value < 100 ? value.toFixed(1) : Math.round(value)} ${u}`;
+    }
+    value /= 1024;
+  }
+  return `${Math.round(value)} PB`;
+}
+
+function formatNumber(n: number): string {
+  return n.toLocaleString();
+}
+
+function formatRelative(iso: string | null): string {
+  if (!iso) return "—";
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return "—";
+  const diff = Date.now() - t;
+  const sec = Math.round(diff / 1000);
+  if (sec < 60) return `${sec}s ago`;
+  const min = Math.round(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.round(min / 60);
+  if (hr < 48) return `${hr}h ago`;
+  const day = Math.round(hr / 24);
+  if (day < 30) return `${day}d ago`;
+  const mo = Math.round(day / 30);
+  if (mo < 18) return `${mo}mo ago`;
+  return `${Math.round(day / 365)}y ago`;
+}
+
+function StatsGrid({
+  stats,
+  columns,
+  indexes,
+}: {
+  stats: TableStats;
+  columns: ColumnInfo[] | null;
+  indexes: IndexInfo[] | null;
+}) {
+  // The "last vacuum" / "last analyze" we show is the more recent of manual + auto.
+  const pickRecent = (a: string | null, b: string | null) => {
+    if (!a) return b;
+    if (!b) return a;
+    return new Date(a) > new Date(b) ? a : b;
+  };
+  const lastVacuum = pickRecent(stats.lastVacuum, stats.lastAutovacuum);
+  const lastAnalyze = pickRecent(stats.lastAnalyze, stats.lastAutoanalyze);
+
+  const sections: Array<{
+    title: string;
+    items: Array<{ label: string; value: React.ReactNode; hint?: string }>;
+  }> = [
+    {
+      title: "Storage",
+      items: [
+        {
+          label: "Row estimate",
+          value: formatNumber(stats.rowEstimate),
+          hint: "from pg_class.reltuples",
+        },
+        { label: "Total size", value: formatBytes(stats.totalSize) },
+        { label: "Table size", value: formatBytes(stats.tableSize) },
+        { label: "Indexes size", value: formatBytes(stats.indexSize) },
+        { label: "TOAST size", value: formatBytes(stats.toastSize) },
+        {
+          label: "Live tuples",
+          value: formatNumber(stats.liveTuples),
+        },
+        {
+          label: "Dead tuples",
+          value: formatNumber(stats.deadTuples),
+          hint:
+            stats.deadTuples > stats.liveTuples * 0.2 && stats.liveTuples > 0
+              ? "consider VACUUM"
+              : undefined,
+        },
+      ],
+    },
+    {
+      title: "Activity",
+      items: [
+        { label: "Sequential scans", value: formatNumber(stats.seqScan) },
+        { label: "Seq tuples read", value: formatNumber(stats.seqTupRead) },
+        { label: "Index scans", value: formatNumber(stats.idxScan) },
+        { label: "Idx tuples fetched", value: formatNumber(stats.idxTupFetch) },
+        { label: "Inserts", value: formatNumber(stats.nTupIns) },
+        { label: "Updates", value: formatNumber(stats.nTupUpd) },
+        { label: "Deletes", value: formatNumber(stats.nTupDel) },
+        {
+          label: "HOT updates",
+          value: formatNumber(stats.nTupHotUpd),
+          hint:
+            stats.nTupUpd > 0
+              ? `${Math.round((stats.nTupHotUpd / stats.nTupUpd) * 100)}% of updates`
+              : undefined,
+        },
+      ],
+    },
+    {
+      title: "Maintenance",
+      items: [
+        {
+          label: "Last vacuum",
+          value: formatRelative(lastVacuum),
+          hint: lastVacuum
+            ? `${stats.vacuumCount + stats.autovacuumCount} run${
+                stats.vacuumCount + stats.autovacuumCount === 1 ? "" : "s"
+              }`
+            : "never",
+        },
+        {
+          label: "Last analyze",
+          value: formatRelative(lastAnalyze),
+          hint: lastAnalyze
+            ? `${stats.analyzeCount + stats.autoanalyzeCount} run${
+                stats.analyzeCount + stats.autoanalyzeCount === 1 ? "" : "s"
+              }`
+            : "never",
+        },
+      ],
+    },
+    {
+      title: "Schema",
+      items: [
+        {
+          label: "Columns",
+          value: columns ? formatNumber(columns.length) : "—",
+        },
+        {
+          label: "Indexes",
+          value: indexes ? formatNumber(indexes.length) : "—",
+        },
+      ],
+    },
+  ];
+
+  return (
+    <div className="space-y-5">
+      {sections.map((section) => (
+        <div key={section.title}>
+          <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground mb-2">
+            {section.title}
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+            {section.items.map((item) => (
+              <div
+                key={item.label}
+                className="rounded-lg border border-border/60 bg-card px-3 py-2.5"
+              >
+                <div className="text-[10.5px] font-mono uppercase tracking-wider text-muted-foreground/80">
+                  {item.label}
+                </div>
+                <div className="mt-1 text-[18px] font-mono text-foreground tabular-nums">
+                  {item.value}
+                </div>
+                {item.hint ? (
+                  <div className="text-[10.5px] font-mono text-muted-foreground mt-0.5">
+                    {item.hint}
+                  </div>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
