@@ -25,6 +25,8 @@ export interface ColumnInfo {
   isNullable: boolean;
   default: string | null;
   isPrimaryKey: boolean;
+  isUnique?: boolean;
+  comment?: string | null;
 }
 
 export type ColumnValue =

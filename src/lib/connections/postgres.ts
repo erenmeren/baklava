@@ -152,6 +152,8 @@ export interface ColumnInfo {
   isNullable: boolean;
   default: string | null;
   isPrimaryKey: boolean;
+  isUnique: boolean;
+  comment: string | null;
 }
 
 export async function listColumns(
@@ -168,6 +170,8 @@ export async function listColumns(
       is_nullable: string;
       default: string | null;
       is_primary_key: boolean;
+      is_unique: boolean;
+      comment: string | null;
     }>(
       `select c.column_name as name,
               c.ordinal_position as position,
@@ -180,7 +184,20 @@ export async function listColumns(
                 where i.indrelid = (quote_ident($1) || '.' || quote_ident($2))::regclass
                   and i.indisprimary
                   and a.attnum = any(i.indkey)
-              ), false) as is_primary_key
+              ), false) as is_primary_key,
+              coalesce((
+                select true
+                from pg_index i
+                where i.indrelid = (quote_ident($1) || '.' || quote_ident($2))::regclass
+                  and i.indisunique
+                  and not i.indisprimary
+                  and i.indnatts = 1
+                  and i.indkey[0] = a.attnum
+              ), false) as is_unique,
+              col_description(
+                (quote_ident($1) || '.' || quote_ident($2))::regclass,
+                a.attnum
+              ) as comment
        from information_schema.columns c
        join pg_attribute a on a.attname = c.column_name
          and a.attrelid = (quote_ident(c.table_schema) || '.' || quote_ident(c.table_name))::regclass
@@ -195,6 +212,8 @@ export async function listColumns(
       isNullable: r.is_nullable === "YES",
       default: r.default,
       isPrimaryKey: r.is_primary_key,
+      isUnique: r.is_unique,
+      comment: r.comment,
     }));
   });
 }
@@ -310,17 +329,17 @@ export async function listForeignKeys(
                 c.confupdtype as upd,
                 c.confdeltype as del,
                 array(
-                  select attname
+                  select attname::text
                   from unnest(c.conkey) k
                   join pg_attribute a on a.attrelid = c.conrelid and a.attnum = k
                   order by array_position(c.conkey, k)
-                ) as columns,
+                )::text[] as columns,
                 array(
-                  select attname
+                  select attname::text
                   from unnest(c.confkey) k
                   join pg_attribute a on a.attrelid = c.confrelid and a.attnum = k
                   order by array_position(c.confkey, k)
-                ) as ref_columns,
+                )::text[] as ref_columns,
                 cn.nspname as ref_schema,
                 cnf.nspname as schema
          from pg_constraint c
@@ -344,10 +363,10 @@ export async function listForeignKeys(
     );
     return res.rows.map((r) => ({
       name: r.name,
-      columns: r.columns,
+      columns: Array.isArray(r.columns) ? r.columns : [],
       refSchema: r.ref_schema,
       refTable: r.ref_table,
-      refColumns: r.ref_columns,
+      refColumns: Array.isArray(r.ref_columns) ? r.ref_columns : [],
       onUpdate: r.on_update,
       onDelete: r.on_delete,
     }));
