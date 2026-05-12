@@ -46,6 +46,7 @@ import { toast } from "sonner";
 import { RowFormDialog, type ColumnInfo } from "./row-form-dialog";
 import { DropConfirm, type DropTarget } from "../../../../../../drop-confirm";
 import { ModifyTableDialog } from "../../../../../../modify-table-dialog";
+import { CreateIndexDialog } from "./create-index-dialog";
 import { cn } from "@/lib/utils";
 
 interface IndexInfo {
@@ -150,6 +151,11 @@ export function TableDetailClient({
   const [density, setDensity] = useState<"compact" | "normal">("compact");
   const [modifyOpen, setModifyOpen] = useState(false);
   const [dropOpen, setDropOpen] = useState(false);
+  const [createIndexOpen, setCreateIndexOpen] = useState(false);
+  const [renameIdxTarget, setRenameIdxTarget] = useState<string | null>(null);
+  const [renameIdxValue, setRenameIdxValue] = useState("");
+  const [dropIdxTarget, setDropIdxTarget] = useState<string | null>(null);
+  const [idxWorking, setIdxWorking] = useState(false);
   const router = useRouter();
 
   const dropTarget: DropTarget = {
@@ -624,7 +630,21 @@ export function TableDetailClient({
           )}
         </TabsContent>
 
-        <TabsContent value="indexes" className="pt-4">
+        <TabsContent value="indexes" className="pt-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-[11px] text-muted-foreground font-mono">
+              {indexes ? `${indexes.length} index${indexes.length === 1 ? "" : "es"}` : "…"}
+            </p>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setCreateIndexOpen(true)}
+              disabled={!columns}
+            >
+              <Plus className="size-3.5" />
+              New index
+            </Button>
+          </div>
           {indexes ? (
             indexes.length === 0 ? (
               <p className="text-sm text-muted-foreground">No indexes.</p>
@@ -637,11 +657,12 @@ export function TableDetailClient({
                       <TableHead>Unique</TableHead>
                       <TableHead>Primary</TableHead>
                       <TableHead>Definition</TableHead>
+                      <TableHead className="w-px" />
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {indexes.map((i) => (
-                      <TableRow key={i.name}>
+                      <TableRow key={i.name} className="group">
                         <TableCell className="font-mono text-xs">
                           {i.name}
                         </TableCell>
@@ -651,12 +672,45 @@ export function TableDetailClient({
                           ) : null}
                         </TableCell>
                         <TableCell>
-                          {i.isPrimary ? (
-                            <Badge>primary</Badge>
-                          ) : null}
+                          {i.isPrimary ? <Badge>primary</Badge> : null}
                         </TableCell>
                         <TableCell className="font-mono text-[11px] text-muted-foreground break-all">
                           {i.definition}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="size-7"
+                              disabled={i.isPrimary}
+                              title={
+                                i.isPrimary
+                                  ? "Primary key index can't be renamed here"
+                                  : "Rename index"
+                              }
+                              onClick={() => {
+                                setRenameIdxTarget(i.name);
+                                setRenameIdxValue(i.name);
+                              }}
+                            >
+                              <Pencil className="size-3.5" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="size-7 text-destructive hover:text-destructive"
+                              disabled={i.isPrimary}
+                              title={
+                                i.isPrimary
+                                  ? "Primary key index can't be dropped here"
+                                  : "Drop index"
+                              }
+                              onClick={() => setDropIdxTarget(i.name)}
+                            >
+                              <Trash2 className="size-3.5" />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -833,6 +887,136 @@ export function TableDetailClient({
           />
         </>
       ) : null}
+
+      <CreateIndexDialog
+        open={createIndexOpen}
+        onOpenChange={setCreateIndexOpen}
+        connectionId={connectionId}
+        db={db}
+        schema={schema}
+        table={table}
+        availableColumns={columns?.map((c) => c.name) ?? []}
+        onCreated={() => {
+          setIndexes(null);
+          // Re-trigger the lazy fetcher on the indexes tab.
+          if (tab !== "indexes") setTab("indexes");
+        }}
+      />
+
+      <AlertDialog
+        open={renameIdxTarget !== null}
+        onOpenChange={(v) => {
+          if (!v && !idxWorking) setRenameIdxTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Rename index</AlertDialogTitle>
+            <AlertDialogDescription>
+              ALTER INDEX{" "}
+              <span className="font-mono">
+                {schema}.{renameIdxTarget}
+              </span>{" "}
+              RENAME TO …
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <input
+            type="text"
+            value={renameIdxValue}
+            onChange={(e) => setRenameIdxValue(e.target.value)}
+            disabled={idxWorking}
+            spellCheck={false}
+            className="font-mono h-9 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/50"
+            placeholder="new_index_name"
+            autoFocus
+          />
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={idxWorking}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async (e) => {
+                e.preventDefault();
+                if (!renameIdxTarget || !renameIdxValue.trim()) return;
+                setIdxWorking(true);
+                try {
+                  const res = await fetch(
+                    `${base}/indexes/${encodeURIComponent(renameIdxTarget)}`,
+                    {
+                      method: "PATCH",
+                      headers: { "content-type": "application/json" },
+                      body: JSON.stringify({ newName: renameIdxValue.trim() }),
+                    },
+                  );
+                  const data = await res.json();
+                  if (!res.ok) {
+                    toast.error("Rename failed", { description: data.error });
+                  } else {
+                    toast.success("Index renamed");
+                    setIndexes(null);
+                    setRenameIdxTarget(null);
+                  }
+                } finally {
+                  setIdxWorking(false);
+                }
+              }}
+              disabled={idxWorking || !renameIdxValue.trim()}
+            >
+              {idxWorking ? <Loader2 className="size-3.5 animate-spin" /> : null}
+              Rename
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={dropIdxTarget !== null}
+        onOpenChange={(v) => {
+          if (!v && !idxWorking) setDropIdxTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Drop index?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will run{" "}
+              <span className="font-mono">
+                DROP INDEX {schema}.{dropIdxTarget}
+              </span>
+              . This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={idxWorking}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async (e) => {
+                e.preventDefault();
+                if (!dropIdxTarget) return;
+                setIdxWorking(true);
+                try {
+                  const res = await fetch(
+                    `${base}/indexes/${encodeURIComponent(dropIdxTarget)}`,
+                    { method: "DELETE" },
+                  );
+                  const data = await res.json();
+                  if (!res.ok) {
+                    toast.error("Drop failed", { description: data.error });
+                  } else {
+                    toast.success("Index dropped");
+                    setIndexes(null);
+                    setDropIdxTarget(null);
+                  }
+                } finally {
+                  setIdxWorking(false);
+                }
+              }}
+              disabled={idxWorking}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {idxWorking ? <Loader2 className="size-3.5 animate-spin" /> : null}
+              Drop
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <ModifyTableDialog
         open={modifyOpen}

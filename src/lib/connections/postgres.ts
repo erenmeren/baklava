@@ -939,6 +939,98 @@ export async function getFunctionDefinition(
  * Execute CREATE [OR REPLACE] [MATERIALIZED] VIEW verbatim. Refuses anything
  * else so the endpoint can't run arbitrary SQL.
  */
+export interface CreateIndexInput {
+  /** Optional; Postgres auto-generates a name when omitted. */
+  name?: string;
+  /** Column expressions (will be quoted as identifiers when alphanumeric). */
+  columns: string[];
+  unique?: boolean;
+  method?: "btree" | "hash" | "gin" | "gist" | "brin" | "spgist";
+  /** Optional WHERE for a partial index. */
+  where?: string;
+  /** CONCURRENTLY — non-blocking but cannot run inside a transaction. */
+  concurrent?: boolean;
+}
+
+const INDEX_METHODS = new Set([
+  "btree",
+  "hash",
+  "gin",
+  "gist",
+  "brin",
+  "spgist",
+]);
+
+function quoteIndexColumn(expr: string): string {
+  const trimmed = expr.trim();
+  if (!trimmed) throw new Error("Column expression is required");
+  // If it looks like a bare identifier, quote it; otherwise treat as a raw
+  // expression (e.g. `lower(email)`).
+  if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(trimmed)) {
+    return quoteIdent(trimmed);
+  }
+  return trimmed;
+}
+
+export async function createIndex(
+  config: PostgresConfig,
+  database: string,
+  schema: string,
+  table: string,
+  input: CreateIndexInput,
+): Promise<void> {
+  if (!input.columns || input.columns.length === 0) {
+    throw new Error("At least one column is required");
+  }
+  if (input.method && !INDEX_METHODS.has(input.method)) {
+    throw new Error(`Unknown index method: ${input.method}`);
+  }
+  const parts: string[] = ["CREATE"];
+  if (input.unique) parts.push("UNIQUE");
+  parts.push("INDEX");
+  if (input.concurrent) parts.push("CONCURRENTLY");
+  if (input.name) {
+    parts.push(validateIdentifier(input.name, "Index"));
+  }
+  parts.push("ON", tableIdent(schema, table));
+  if (input.method) parts.push(`USING ${input.method}`);
+  parts.push(`(${input.columns.map(quoteIndexColumn).join(", ")})`);
+  if (input.where && input.where.trim()) {
+    parts.push(`WHERE ${input.where.trim()}`);
+  }
+  const sql = parts.join(" ");
+  await withClient(config, database, async (client) => {
+    await client.query(sql);
+  });
+}
+
+export async function dropIndex(
+  config: PostgresConfig,
+  database: string,
+  schema: string,
+  name: string,
+  options?: { cascade?: boolean; ifExists?: boolean; concurrent?: boolean },
+): Promise<void> {
+  const sql = `DROP INDEX ${options?.concurrent ? "CONCURRENTLY " : ""}${options?.ifExists ? "IF EXISTS " : ""}${quoteIdent(schema)}.${quoteIdent(name)}${options?.cascade ? " CASCADE" : ""}`;
+  await withClient(config, database, async (client) => {
+    await client.query(sql);
+  });
+}
+
+export async function renameIndex(
+  config: PostgresConfig,
+  database: string,
+  schema: string,
+  name: string,
+  newName: string,
+): Promise<void> {
+  const trimmed = validateIdentifier(newName, "Index");
+  const sql = `ALTER INDEX ${quoteIdent(schema)}.${quoteIdent(name)} RENAME TO ${quoteIdent(trimmed)}`;
+  await withClient(config, database, async (client) => {
+    await client.query(sql);
+  });
+}
+
 export async function createOrReplaceView(
   config: PostgresConfig,
   database: string,
