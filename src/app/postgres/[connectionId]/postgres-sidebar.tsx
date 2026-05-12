@@ -31,8 +31,24 @@ import {
 import { CreateTableDialog } from "./create-table-dialog";
 import { CreateSchemaDialog } from "./create-schema-dialog";
 import { CreateDatabaseDialog } from "./create-database-dialog";
+import {
+  SequenceFormDialog,
+  type SequenceFormSeed,
+} from "./sequence-form-dialog";
+import { FunctionEditorDialog } from "./function-editor-dialog";
 import { DropConfirm, type DropTarget } from "./drop-confirm";
 import { DDLDialog } from "./ddl-dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { toast } from "sonner";
 
 interface DatabaseInfo {
   name: string;
@@ -63,6 +79,10 @@ interface FunctionInfo {
 interface SequenceInfo {
   name: string;
   dataType: string;
+  startValue: string;
+  minValue: string;
+  maxValue: string;
+  increment: string;
   lastValue: string | null;
 }
 
@@ -116,6 +136,29 @@ export function PostgresSidebar({ connectionId, defaultDatabase }: Props) {
     null,
   );
   const [createDbOpen, setCreateDbOpen] = useState(false);
+  const [seqDialog, setSeqDialog] = useState<
+    | { mode: "create"; db: string; schema: string }
+    | { mode: "edit"; db: string; schema: string; initial: SequenceFormSeed }
+    | null
+  >(null);
+  const [fnDialog, setFnDialog] = useState<
+    | { mode: "create"; db: string; schema: string }
+    | { mode: "edit"; db: string; schema: string; name: string; args: string }
+    | null
+  >(null);
+  const [dropFnTarget, setDropFnTarget] = useState<{
+    db: string;
+    schema: string;
+    name: string;
+    args: string;
+    kind: "function" | "procedure" | "aggregate" | "window";
+  } | null>(null);
+  const [dropSeqTarget, setDropSeqTarget] = useState<{
+    db: string;
+    schema: string;
+    name: string;
+  } | null>(null);
+  const [working, setWorking] = useState(false);
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
   const [ddlTarget, setDdlTarget] = useState<{
     title: string;
@@ -522,12 +565,45 @@ export function PostgresSidebar({ connectionId, defaultDatabase }: Props) {
                                 onToggle={() =>
                                   toggleGroup(db.name, schema.name, "functions")
                                 }
+                                onCreate={() =>
+                                  setFnDialog({
+                                    mode: "create",
+                                    db: db.name,
+                                    schema: schema.name,
+                                  })
+                                }
+                                createLabel="New function"
                                 renderItem={(f) => (
                                   <FunctionRow
                                     key={`${f.name}(${f.arguments})`}
                                     fn={f}
                                     onCopy={() =>
                                       copy(`${schema.name}.${f.name}`)
+                                    }
+                                    onViewDDL={() =>
+                                      setDdlTarget({
+                                        title: `${schema.name}.${f.name}(${f.arguments})`,
+                                        fetchUrl: `/api/postgres/${connectionId}/databases/${encodeURIComponent(db.name)}/schemas/${encodeURIComponent(schema.name)}/functions/${encodeURIComponent(f.name)}?args=${encodeURIComponent(f.arguments)}`,
+                                        payloadKey: "definition",
+                                      })
+                                    }
+                                    onEdit={() =>
+                                      setFnDialog({
+                                        mode: "edit",
+                                        db: db.name,
+                                        schema: schema.name,
+                                        name: f.name,
+                                        args: f.arguments,
+                                      })
+                                    }
+                                    onDrop={() =>
+                                      setDropFnTarget({
+                                        db: db.name,
+                                        schema: schema.name,
+                                        name: f.name,
+                                        args: f.arguments,
+                                        kind: f.kind,
+                                      })
                                     }
                                   />
                                 )}
@@ -544,12 +620,43 @@ export function PostgresSidebar({ connectionId, defaultDatabase }: Props) {
                                 onToggle={() =>
                                   toggleGroup(db.name, schema.name, "sequences")
                                 }
+                                onCreate={() =>
+                                  setSeqDialog({
+                                    mode: "create",
+                                    db: db.name,
+                                    schema: schema.name,
+                                  })
+                                }
+                                createLabel="New sequence"
                                 renderItem={(s) => (
                                   <SequenceRow
                                     key={s.name}
                                     seq={s}
                                     onCopy={() =>
                                       copy(`${schema.name}.${s.name}`)
+                                    }
+                                    onEdit={() =>
+                                      setSeqDialog({
+                                        mode: "edit",
+                                        db: db.name,
+                                        schema: schema.name,
+                                        initial: {
+                                          name: s.name,
+                                          start: s.startValue,
+                                          increment: s.increment,
+                                          minValue: s.minValue,
+                                          maxValue: s.maxValue,
+                                          cache: "1",
+                                          cycle: false,
+                                        },
+                                      })
+                                    }
+                                    onDrop={() =>
+                                      setDropSeqTarget({
+                                        db: db.name,
+                                        schema: schema.name,
+                                        name: s.name,
+                                      })
                                     }
                                   />
                                 )}
@@ -612,6 +719,190 @@ export function PostgresSidebar({ connectionId, defaultDatabase }: Props) {
           setRefreshKey((n) => n + 1);
         }}
       />
+
+      {seqDialog ? (
+        seqDialog.mode === "create" ? (
+          <SequenceFormDialog
+            mode="create"
+            open={true}
+            onOpenChange={(v) => {
+              if (!v) setSeqDialog(null);
+            }}
+            connectionId={connectionId}
+            database={seqDialog.db}
+            schema={seqDialog.schema}
+            onSuccess={() => {
+              const key = `${seqDialog.db}.${seqDialog.schema}`;
+              setOpenGroup((s) => ({ ...s, [`${key}.sequences`]: true }));
+              loadGroup(seqDialog.db, seqDialog.schema, "sequences");
+            }}
+          />
+        ) : (
+          <SequenceFormDialog
+            mode="edit"
+            open={true}
+            onOpenChange={(v) => {
+              if (!v) setSeqDialog(null);
+            }}
+            connectionId={connectionId}
+            database={seqDialog.db}
+            schema={seqDialog.schema}
+            initial={seqDialog.initial}
+            onSuccess={() =>
+              loadGroup(seqDialog.db, seqDialog.schema, "sequences")
+            }
+          />
+        )
+      ) : null}
+
+      {fnDialog ? (
+        fnDialog.mode === "create" ? (
+          <FunctionEditorDialog
+            mode="create"
+            open={true}
+            onOpenChange={(v) => {
+              if (!v) setFnDialog(null);
+            }}
+            connectionId={connectionId}
+            database={fnDialog.db}
+            schema={fnDialog.schema}
+            onSuccess={() => {
+              const key = `${fnDialog.db}.${fnDialog.schema}`;
+              setOpenGroup((s) => ({ ...s, [`${key}.functions`]: true }));
+              loadGroup(fnDialog.db, fnDialog.schema, "functions");
+            }}
+          />
+        ) : (
+          <FunctionEditorDialog
+            mode="edit"
+            open={true}
+            onOpenChange={(v) => {
+              if (!v) setFnDialog(null);
+            }}
+            connectionId={connectionId}
+            database={fnDialog.db}
+            schema={fnDialog.schema}
+            name={fnDialog.name}
+            argSignature={fnDialog.args}
+            onSuccess={() =>
+              loadGroup(fnDialog.db, fnDialog.schema, "functions")
+            }
+          />
+        )
+      ) : null}
+
+      <AlertDialog
+        open={dropFnTarget !== null}
+        onOpenChange={(v) => {
+          if (!v && !working) setDropFnTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Drop {dropFnTarget?.kind === "procedure" ? "procedure" : "function"}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {dropFnTarget ? (
+                <>
+                  This will run{" "}
+                  <span className="font-mono">
+                    DROP {dropFnTarget.kind === "procedure" ? "PROCEDURE" : "FUNCTION"}{" "}
+                    {dropFnTarget.schema}.{dropFnTarget.name}({dropFnTarget.args})
+                  </span>
+                  . This cannot be undone.
+                </>
+              ) : null}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={working}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async (e) => {
+                e.preventDefault();
+                if (!dropFnTarget) return;
+                setWorking(true);
+                try {
+                  const url = `/api/postgres/${connectionId}/databases/${encodeURIComponent(dropFnTarget.db)}/schemas/${encodeURIComponent(dropFnTarget.schema)}/functions/${encodeURIComponent(dropFnTarget.name)}?args=${encodeURIComponent(dropFnTarget.args)}&kind=${dropFnTarget.kind === "procedure" ? "procedure" : "function"}`;
+                  const res = await fetch(url, { method: "DELETE" });
+                  const data = await res.json();
+                  if (!res.ok) {
+                    toast.error("Drop failed", { description: data.error });
+                  } else {
+                    toast.success(
+                      `Dropped ${dropFnTarget.schema}.${dropFnTarget.name}`,
+                    );
+                    loadGroup(dropFnTarget.db, dropFnTarget.schema, "functions");
+                    setDropFnTarget(null);
+                  }
+                } finally {
+                  setWorking(false);
+                }
+              }}
+              disabled={working}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {working ? <Loader2 className="size-3.5 animate-spin" /> : null}
+              Drop
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={dropSeqTarget !== null}
+        onOpenChange={(v) => {
+          if (!v && !working) setDropSeqTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Drop sequence?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {dropSeqTarget ? (
+                <>
+                  This will run{" "}
+                  <span className="font-mono">
+                    DROP SEQUENCE {dropSeqTarget.schema}.{dropSeqTarget.name}
+                  </span>
+                  . Owned columns will lose their default; this cannot be undone.
+                </>
+              ) : null}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={working}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async (e) => {
+                e.preventDefault();
+                if (!dropSeqTarget) return;
+                setWorking(true);
+                try {
+                  const url = `/api/postgres/${connectionId}/databases/${encodeURIComponent(dropSeqTarget.db)}/schemas/${encodeURIComponent(dropSeqTarget.schema)}/sequences/${encodeURIComponent(dropSeqTarget.name)}`;
+                  const res = await fetch(url, { method: "DELETE" });
+                  const data = await res.json();
+                  if (!res.ok) {
+                    toast.error("Drop failed", { description: data.error });
+                  } else {
+                    toast.success(
+                      `Dropped ${dropSeqTarget.schema}.${dropSeqTarget.name}`,
+                    );
+                    loadGroup(dropSeqTarget.db, dropSeqTarget.schema, "sequences");
+                    setDropSeqTarget(null);
+                  }
+                } finally {
+                  setWorking(false);
+                }
+              }}
+              disabled={working}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {working ? <Loader2 className="size-3.5 animate-spin" /> : null}
+              Drop
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {createSchemaTarget ? (
         <CreateSchemaDialog
@@ -824,6 +1115,8 @@ function Group<T>({
   openKey,
   openMap,
   onToggle,
+  onCreate,
+  createLabel,
   renderItem,
 }: {
   kind: GroupKind;
@@ -833,29 +1126,46 @@ function Group<T>({
   openKey: string;
   openMap: Record<string, boolean>;
   onToggle: () => void;
+  onCreate?: () => void;
+  createLabel?: string;
   renderItem: (item: T) => React.ReactNode;
 }) {
   const isOpen = !!openMap[openKey];
   return (
     <li>
-      <button
-        onClick={onToggle}
-        className="flex items-center gap-1 w-full px-2 py-1 rounded-md text-[11px] font-medium uppercase tracking-wider text-muted-foreground hover:bg-foreground/5 hover:text-foreground transition-colors text-left"
-      >
-        <ChevronRight
-          className={cn(
-            "size-3 transition-transform",
-            isOpen && "rotate-90",
-          )}
-        />
-        {icon}
-        <span>{label}</span>
-        {items ? (
-          <span className="ml-auto font-mono normal-case tracking-normal text-[10px] text-muted-foreground/70">
-            {items.length}
-          </span>
+      <div className="group/grp flex items-center pr-1 rounded-md hover:bg-foreground/5 transition-colors">
+        <button
+          onClick={onToggle}
+          className="flex items-center gap-1 flex-1 min-w-0 px-2 py-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors text-left"
+        >
+          <ChevronRight
+            className={cn(
+              "size-3 transition-transform",
+              isOpen && "rotate-90",
+            )}
+          />
+          {icon}
+          <span>{label}</span>
+          {items ? (
+            <span className="ml-auto font-mono normal-case tracking-normal text-[10px] text-muted-foreground/70">
+              {items.length}
+            </span>
+          ) : null}
+        </button>
+        {onCreate ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onCreate();
+            }}
+            className="opacity-0 group-hover/grp:opacity-100 size-5 inline-flex items-center justify-center rounded hover:bg-foreground/10 hover:text-foreground text-muted-foreground transition-opacity outline-none"
+            title={createLabel ?? "New"}
+          >
+            <Plus className="size-3" />
+          </button>
         ) : null}
-      </button>
+      </div>
       {isOpen ? (
         <ul className="ml-4 border-l border-border/40">
           {items === null ? (
@@ -931,14 +1241,21 @@ function RowMenu({ children }: { children: React.ReactNode }) {
 function FunctionRow({
   fn,
   onCopy,
+  onViewDDL,
+  onEdit,
+  onDrop,
 }: {
   fn: FunctionInfo;
   onCopy: () => void;
+  onViewDDL: () => void;
+  onEdit: () => void;
+  onDrop: () => void;
 }) {
   const signature = fn.arguments
     ? `${fn.name}(${fn.arguments.length > 40 ? fn.arguments.slice(0, 38) + "…" : fn.arguments})`
     : `${fn.name}()`;
   const tooltip = `${fn.kind} · ${fn.language}\n${fn.name}(${fn.arguments}) → ${fn.returnType}`;
+  const isEditable = fn.kind === "function" || fn.kind === "procedure";
   return (
     <li>
       <div className="group/obj flex items-center pr-1 rounded-md hover:bg-foreground/5 transition-colors">
@@ -951,7 +1268,18 @@ function FunctionRow({
         </div>
         <div className="opacity-0 group-hover/obj:opacity-100 transition-opacity">
           <RowMenu>
+            <DropdownMenuItem onClick={onViewDDL}>View DDL</DropdownMenuItem>
+            {isEditable ? (
+              <DropdownMenuItem onClick={onEdit}>Edit…</DropdownMenuItem>
+            ) : null}
             <DropdownMenuItem onClick={onCopy}>Copy name</DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={onDrop}
+              className="text-destructive focus:text-destructive"
+            >
+              Drop {fn.kind === "procedure" ? "procedure" : "function"}…
+            </DropdownMenuItem>
           </RowMenu>
         </div>
       </div>
@@ -962,9 +1290,13 @@ function FunctionRow({
 function SequenceRow({
   seq,
   onCopy,
+  onEdit,
+  onDrop,
 }: {
   seq: SequenceInfo;
   onCopy: () => void;
+  onEdit: () => void;
+  onDrop: () => void;
 }) {
   const tooltip = `${seq.dataType} · last ${seq.lastValue ?? "—"}`;
   return (
@@ -979,7 +1311,15 @@ function SequenceRow({
         </div>
         <div className="opacity-0 group-hover/obj:opacity-100 transition-opacity">
           <RowMenu>
+            <DropdownMenuItem onClick={onEdit}>Edit…</DropdownMenuItem>
             <DropdownMenuItem onClick={onCopy}>Copy name</DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={onDrop}
+              className="text-destructive focus:text-destructive"
+            >
+              Drop sequence…
+            </DropdownMenuItem>
           </RowMenu>
         </div>
       </div>

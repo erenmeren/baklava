@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getConnection } from "@/lib/connections/store";
 import {
-  listSequences,
-  createSequence,
-  type SequenceOptions,
+  dropFunction,
+  getFunctionDefinition,
 } from "@/lib/connections/postgres";
 import type { PostgresConfig } from "@/lib/connections/types";
 import { formatError } from "@/lib/errors";
@@ -11,49 +10,48 @@ import { formatError } from "@/lib/errors";
 export const runtime = "nodejs";
 
 interface RouteContext {
-  params: Promise<{ id: string; db: string; schema: string }>;
+  params: Promise<{ id: string; db: string; schema: string; name: string }>;
 }
 
-export async function GET(_req: NextRequest, ctx: RouteContext) {
-  const { id, db, schema } = await ctx.params;
+export async function GET(req: NextRequest, ctx: RouteContext) {
+  const { id, db, schema, name } = await ctx.params;
   const record = getConnection(id);
   if (!record || record.tech !== "postgres") {
     return NextResponse.json({ error: "Connection not found" }, { status: 404 });
   }
+  const args = req.nextUrl.searchParams.get("args") ?? "";
   try {
-    const sequences = await listSequences(
+    const definition = await getFunctionDefinition(
       record.config as PostgresConfig,
       decodeURIComponent(db),
-      decodeURIComponent(schema)
+      decodeURIComponent(schema),
+      decodeURIComponent(name),
+      args,
     );
-    return NextResponse.json({ sequences });
+    return NextResponse.json({ definition });
   } catch (err) {
     return NextResponse.json({ error: formatError(err) }, { status: 502 });
   }
 }
 
-export async function POST(req: NextRequest, ctx: RouteContext) {
-  const { id, db, schema } = await ctx.params;
+export async function DELETE(req: NextRequest, ctx: RouteContext) {
+  const { id, db, schema, name } = await ctx.params;
   const record = getConnection(id);
   if (!record || record.tech !== "postgres") {
     return NextResponse.json({ error: "Connection not found" }, { status: 404 });
   }
-  let body: { name?: string; options?: SequenceOptions };
+  const args = req.nextUrl.searchParams.get("args") ?? "";
+  const cascade = req.nextUrl.searchParams.get("cascade") === "true";
+  const isProcedure =
+    req.nextUrl.searchParams.get("kind") === "procedure";
   try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
-  }
-  if (!body?.name) {
-    return NextResponse.json({ error: "name is required" }, { status: 400 });
-  }
-  try {
-    await createSequence(
+    await dropFunction(
       record.config as PostgresConfig,
       decodeURIComponent(db),
       decodeURIComponent(schema),
-      body.name,
-      body.options ?? {},
+      decodeURIComponent(name),
+      args,
+      { cascade, ifExists: true, isProcedure },
     );
     return NextResponse.json({ ok: true });
   } catch (err) {

@@ -805,6 +805,136 @@ export async function getTableStats(
   });
 }
 
+export interface SequenceOptions {
+  start?: string;
+  increment?: string;
+  minValue?: string | null; // null clears (NO MINVALUE)
+  maxValue?: string | null; // null clears (NO MAXVALUE)
+  cache?: string;
+  cycle?: boolean;
+}
+
+function buildSequenceClauses(opts: SequenceOptions): string[] {
+  const parts: string[] = [];
+  const numeric = (v: string) => {
+    if (!/^-?\d+$/.test(v.trim())) {
+      throw new Error(`Expected integer, got "${v}"`);
+    }
+    return v.trim();
+  };
+  if (opts.start !== undefined) parts.push(`START WITH ${numeric(opts.start)}`);
+  if (opts.increment !== undefined)
+    parts.push(`INCREMENT BY ${numeric(opts.increment)}`);
+  if (opts.minValue !== undefined) {
+    parts.push(opts.minValue === null ? "NO MINVALUE" : `MINVALUE ${numeric(opts.minValue)}`);
+  }
+  if (opts.maxValue !== undefined) {
+    parts.push(opts.maxValue === null ? "NO MAXVALUE" : `MAXVALUE ${numeric(opts.maxValue)}`);
+  }
+  if (opts.cache !== undefined) parts.push(`CACHE ${numeric(opts.cache)}`);
+  if (opts.cycle !== undefined) parts.push(opts.cycle ? "CYCLE" : "NO CYCLE");
+  return parts;
+}
+
+export async function createSequence(
+  config: PostgresConfig,
+  database: string,
+  schema: string,
+  name: string,
+  opts: SequenceOptions = {},
+): Promise<void> {
+  const trimmed = validateIdentifier(name, "Sequence");
+  const clauses = buildSequenceClauses(opts);
+  const sql = `CREATE SEQUENCE ${quoteIdent(schema)}.${quoteIdent(trimmed)}${
+    clauses.length ? " " + clauses.join(" ") : ""
+  }`;
+  await withClient(config, database, async (client) => {
+    await client.query(sql);
+  });
+}
+
+export async function alterSequence(
+  config: PostgresConfig,
+  database: string,
+  schema: string,
+  name: string,
+  opts: SequenceOptions,
+): Promise<void> {
+  const clauses = buildSequenceClauses(opts);
+  if (clauses.length === 0) throw new Error("No changes to apply");
+  const sql = `ALTER SEQUENCE ${quoteIdent(schema)}.${quoteIdent(name)} ${clauses.join(" ")}`;
+  await withClient(config, database, async (client) => {
+    await client.query(sql);
+  });
+}
+
+export async function dropSequence(
+  config: PostgresConfig,
+  database: string,
+  schema: string,
+  name: string,
+  options?: { cascade?: boolean; ifExists?: boolean },
+): Promise<void> {
+  const sql = `DROP SEQUENCE ${options?.ifExists ? "IF EXISTS " : ""}${quoteIdent(schema)}.${quoteIdent(name)}${options?.cascade ? " CASCADE" : ""}`;
+  await withClient(config, database, async (client) => {
+    await client.query(sql);
+  });
+}
+
+/**
+ * Execute a CREATE FUNCTION (or CREATE OR REPLACE FUNCTION) statement verbatim.
+ * The caller is responsible for the SQL; we only check that it begins with the
+ * expected keyword to avoid arbitrary script execution.
+ */
+export async function createOrReplaceFunction(
+  config: PostgresConfig,
+  database: string,
+  sql: string,
+): Promise<void> {
+  const trimmed = sql.trim().replace(/;+\s*$/g, "");
+  if (!/^create\s+(or\s+replace\s+)?(procedure|function)\b/i.test(trimmed)) {
+    throw new Error(
+      "SQL must begin with CREATE [OR REPLACE] FUNCTION or PROCEDURE",
+    );
+  }
+  await withClient(config, database, async (client) => {
+    await client.query(trimmed);
+  });
+}
+
+export async function dropFunction(
+  config: PostgresConfig,
+  database: string,
+  schema: string,
+  name: string,
+  argSignature: string,
+  options?: { cascade?: boolean; ifExists?: boolean; isProcedure?: boolean },
+): Promise<void> {
+  const kind = options?.isProcedure ? "PROCEDURE" : "FUNCTION";
+  const sql = `DROP ${kind} ${options?.ifExists ? "IF EXISTS " : ""}${quoteIdent(schema)}.${quoteIdent(name)}(${argSignature})${options?.cascade ? " CASCADE" : ""}`;
+  await withClient(config, database, async (client) => {
+    await client.query(sql);
+  });
+}
+
+export async function getFunctionDefinition(
+  config: PostgresConfig,
+  database: string,
+  schema: string,
+  name: string,
+  argSignature: string,
+): Promise<string> {
+  return withClient(config, database, async (client) => {
+    const res = await client.query<{ def: string }>(
+      `select pg_get_functiondef(
+         (quote_ident($1) || '.' || quote_ident($2) || '(' || $3 || ')')::regprocedure::oid
+       ) as def`,
+      [schema, name, argSignature],
+    );
+    return res.rows[0]?.def ?? "";
+  });
+}
+
 export async function getViewDefinition(
   config: PostgresConfig,
   database: string,
