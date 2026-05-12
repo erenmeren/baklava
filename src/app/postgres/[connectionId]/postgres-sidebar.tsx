@@ -1301,9 +1301,20 @@ function Group<T>({
   renderItem: (item: T) => React.ReactNode;
 }) {
   const isOpen = !!openMap[openKey];
+  const [menuOpen, setMenuOpen] = useState(false);
   return (
     <li>
-      <div className="group/grp flex items-center pr-1 rounded-md hover:bg-foreground/5 transition-colors">
+      <div
+        className="group/grp flex items-center pr-1 rounded-md hover:bg-foreground/5 transition-colors"
+        onContextMenu={
+          onCreate
+            ? (e) => {
+                e.preventDefault();
+                setMenuOpen(true);
+              }
+            : undefined
+        }
+      >
         <button
           onClick={onToggle}
           className="flex items-center gap-1 flex-1 min-w-0 px-2 py-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors text-left"
@@ -1323,17 +1334,28 @@ function Group<T>({
           ) : null}
         </button>
         {onCreate ? (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onCreate();
-            }}
-            className="opacity-0 group-hover/grp:opacity-100 size-5 inline-flex items-center justify-center rounded hover:bg-foreground/10 hover:text-foreground text-muted-foreground transition-opacity outline-none"
-            title={createLabel ?? "New"}
-          >
-            <Plus className="size-3" />
-          </button>
+          <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+            <DropdownMenuTrigger
+              onClick={(e) => {
+                // Left-click on the trigger fires the primary action directly,
+                // matching the previous "+ shortcut" UX. Right-click opens the
+                // menu via the wrapping div's onContextMenu handler.
+                e.stopPropagation();
+                e.preventDefault();
+                onCreate();
+              }}
+              className="opacity-0 group-hover/grp:opacity-100 data-[popup-open]:opacity-100 size-5 inline-flex items-center justify-center rounded hover:bg-foreground/10 hover:text-foreground text-muted-foreground transition-opacity outline-none"
+              title={createLabel ?? "New"}
+            >
+              <Plus className="size-3" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={onCreate}>
+                <Plus className="size-3.5" />
+                {createLabel ?? "New"}…
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         ) : null}
       </div>
       {isOpen ? (
