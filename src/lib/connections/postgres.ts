@@ -686,6 +686,10 @@ export async function listSequences(
 }
 
 export interface TableStats {
+  /** 'r' table, 'v' view, 'm' materialized view, 'p' partitioned, 'f' foreign. */
+  relKind: string;
+  /** True once ANALYZE has populated reltuples (i.e. rowEstimate >= 0). */
+  analyzed: boolean;
   rowEstimate: number;
   totalSize: number;
   tableSize: number;
@@ -719,6 +723,7 @@ export async function getTableStats(
 ): Promise<TableStats> {
   return withClient(config, database, async (client) => {
     const res = await client.query<{
+      rel_kind: string;
       row_estimate: string;
       total_size: string;
       table_size: string;
@@ -744,6 +749,7 @@ export async function getTableStats(
       last_autoanalyze: string | null;
     }>(
       `select
+         c.relkind::text as rel_kind,
          c.reltuples::bigint::text as row_estimate,
          pg_total_relation_size(c.oid)::text as total_size,
          pg_relation_size(c.oid)::text as table_size,
@@ -777,8 +783,11 @@ export async function getTableStats(
     const r = res.rows[0];
     if (!r) throw new Error(`Table ${schema}.${table} not found`);
     const num = (v: string | null) => Number(v ?? "0");
+    const rowEstimate = num(r.row_estimate);
     return {
-      rowEstimate: num(r.row_estimate),
+      relKind: r.rel_kind,
+      analyzed: rowEstimate >= 0,
+      rowEstimate,
       totalSize: num(r.total_size),
       tableSize: num(r.table_size),
       indexSize: num(r.index_size),

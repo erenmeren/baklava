@@ -73,6 +73,8 @@ interface ForeignKeyInfo {
 }
 
 interface TableStats {
+  relKind: string;
+  analyzed: boolean;
   rowEstimate: number;
   totalSize: number;
   tableSize: number;
@@ -1125,6 +1127,27 @@ function StatsGrid({
   columns: ColumnInfo[] | null;
   indexes: IndexInfo[] | null;
 }) {
+  // Views and materialized views aren't tracked in pg_stat_user_tables, so the
+  // numbers we'd render would all be zero. Show a clear empty state instead.
+  if (stats.relKind === "v") {
+    return (
+      <UnsupportedKind
+        title="Statistics aren't tracked for views"
+        hint="Postgres doesn't record activity counters for plain views — they're computed on read from their underlying tables."
+      />
+    );
+  }
+  if (stats.relKind === "m") {
+    return (
+      <UnsupportedKind
+        title="Limited statistics for materialized views"
+        hint="Storage figures are accurate. Activity counters live on the source tables, not on the materialized view itself."
+        showStorageOnly
+        stats={stats}
+      />
+    );
+  }
+
   // The "last vacuum" / "last analyze" we show is the more recent of manual + auto.
   const pickRecent = (a: string | null, b: string | null) => {
     if (!a) return b;
@@ -1143,8 +1166,14 @@ function StatsGrid({
       items: [
         {
           label: "Row estimate",
-          value: formatNumber(stats.rowEstimate),
-          hint: "from pg_class.reltuples",
+          value: stats.analyzed ? (
+            formatNumber(stats.rowEstimate)
+          ) : (
+            <span className="text-muted-foreground/60 italic">—</span>
+          ),
+          hint: stats.analyzed
+            ? "from pg_class.reltuples"
+            : "run ANALYZE to populate",
         },
         { label: "Total size", value: formatBytes(stats.totalSize) },
         { label: "Table size", value: formatBytes(stats.tableSize) },
@@ -1251,6 +1280,56 @@ function StatsGrid({
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+function UnsupportedKind({
+  title,
+  hint,
+  showStorageOnly,
+  stats,
+}: {
+  title: string;
+  hint: string;
+  showStorageOnly?: boolean;
+  stats?: TableStats;
+}) {
+  return (
+    <div className="space-y-5">
+      <div className="rounded-lg border border-border/60 bg-muted/30 px-4 py-3">
+        <div className="text-[13px] font-medium text-foreground">{title}</div>
+        <div className="text-[11.5px] font-mono text-muted-foreground mt-0.5">
+          {hint}
+        </div>
+      </div>
+      {showStorageOnly && stats ? (
+        <div>
+          <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground mb-2">
+            Storage
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+            {[
+              ["Total size", formatBytes(stats.totalSize)],
+              ["Table size", formatBytes(stats.tableSize)],
+              ["Indexes size", formatBytes(stats.indexSize)],
+              ["TOAST size", formatBytes(stats.toastSize)],
+            ].map(([label, value]) => (
+              <div
+                key={label}
+                className="rounded-lg border border-border/60 bg-card px-3 py-2.5"
+              >
+                <div className="text-[10.5px] font-mono uppercase tracking-wider text-muted-foreground/80">
+                  {label}
+                </div>
+                <div className="mt-1 text-[18px] font-mono text-foreground tabular-nums">
+                  {value}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
