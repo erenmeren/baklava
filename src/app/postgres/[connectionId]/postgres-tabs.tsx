@@ -2,9 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   FileText,
+  FileCode,
+  Hash,
   Home,
   Shield,
   Table as TableIcon,
@@ -16,6 +18,14 @@ type Tab =
   | { kind: "overview" }
   | { kind: "roles" }
   | { kind: "table"; db: string; schema: string; name: string }
+  | {
+      kind: "function";
+      db: string;
+      schema: string;
+      name: string;
+      args: string;
+    }
+  | { kind: "sequence"; db: string; schema: string; name: string }
   | { kind: "query"; db: string; queryId: string; title: string };
 
 interface Props {
@@ -55,6 +65,10 @@ function tabKey(t: Tab): string {
       return "roles";
     case "table":
       return `t:${t.db}/${t.schema}/${t.name}`;
+    case "function":
+      return `f:${t.db}/${t.schema}/${t.name}(${t.args})`;
+    case "sequence":
+      return `s:${t.db}/${t.schema}/${t.name}`;
     case "query":
       return `q:${t.db}/${t.queryId}`;
   }
@@ -68,6 +82,10 @@ function tabHref(connectionId: string, t: Tab): string {
       return `/postgres/${connectionId}/roles`;
     case "table":
       return `/postgres/${connectionId}/databases/${encodeURIComponent(t.db)}/schemas/${encodeURIComponent(t.schema)}/tables/${encodeURIComponent(t.name)}`;
+    case "function":
+      return `/postgres/${connectionId}/databases/${encodeURIComponent(t.db)}/schemas/${encodeURIComponent(t.schema)}/functions/${encodeURIComponent(t.name)}?args=${encodeURIComponent(t.args)}`;
+    case "sequence":
+      return `/postgres/${connectionId}/databases/${encodeURIComponent(t.db)}/schemas/${encodeURIComponent(t.schema)}/sequences/${encodeURIComponent(t.name)}`;
     case "query":
       return `/postgres/${connectionId}/databases/${encodeURIComponent(t.db)}/query/${t.queryId}`;
   }
@@ -81,12 +99,20 @@ function tabLabel(t: Tab): string {
       return "Roles";
     case "table":
       return `${t.schema}.${t.name}`;
+    case "function":
+      return `${t.schema}.${t.name}()`;
+    case "sequence":
+      return `${t.schema}.${t.name}`;
     case "query":
       return t.title;
   }
 }
 
-function tabFromPath(pathname: string, connectionId: string): Tab | null {
+function tabFromPath(
+  pathname: string,
+  search: string,
+  connectionId: string,
+): Tab | null {
   const prefix = `/postgres/${connectionId}`;
   if (!pathname.startsWith(prefix)) return null;
   const rest = pathname.slice(prefix.length);
@@ -102,6 +128,32 @@ function tabFromPath(pathname: string, connectionId: string): Tab | null {
       db: decodeURIComponent(tableMatch[1]),
       schema: decodeURIComponent(tableMatch[2]),
       name: decodeURIComponent(tableMatch[3]),
+    };
+  }
+  // /databases/[db]/schemas/[schema]/functions/[name]?args=...
+  const fnMatch = rest.match(
+    /^\/databases\/([^/]+)\/schemas\/([^/]+)\/functions\/([^/]+)/,
+  );
+  if (fnMatch) {
+    const args = new URLSearchParams(search).get("args") ?? "";
+    return {
+      kind: "function",
+      db: decodeURIComponent(fnMatch[1]),
+      schema: decodeURIComponent(fnMatch[2]),
+      name: decodeURIComponent(fnMatch[3]),
+      args,
+    };
+  }
+  // /databases/[db]/schemas/[schema]/sequences/[name]
+  const seqMatch = rest.match(
+    /^\/databases\/([^/]+)\/schemas\/([^/]+)\/sequences\/([^/]+)/,
+  );
+  if (seqMatch) {
+    return {
+      kind: "sequence",
+      db: decodeURIComponent(seqMatch[1]),
+      schema: decodeURIComponent(seqMatch[2]),
+      name: decodeURIComponent(seqMatch[3]),
     };
   }
   // /databases/[db]/query/[queryId]
@@ -120,6 +172,8 @@ function tabFromPath(pathname: string, connectionId: string): Tab | null {
 
 export function PostgresTabs({ connectionId }: Props) {
   const pathname = usePathname() ?? "";
+  const searchParams = useSearchParams();
+  const searchString = searchParams ? searchParams.toString() : "";
   const router = useRouter();
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [hydrated, setHydrated] = useState(false);
@@ -135,8 +189,8 @@ export function PostgresTabs({ connectionId }: Props) {
   }, [tabs, hydrated, connectionId]);
 
   const activeTab = useMemo(
-    () => tabFromPath(pathname, connectionId),
-    [pathname, connectionId],
+    () => tabFromPath(pathname, searchString, connectionId),
+    [pathname, searchString, connectionId],
   );
   const activeKey = activeTab ? tabKey(activeTab) : null;
 
@@ -215,6 +269,10 @@ export function PostgresTabs({ connectionId }: Props) {
                   <TableIcon className="size-3 shrink-0" />
                 ) : t.kind === "roles" ? (
                   <Shield className="size-3 shrink-0" />
+                ) : t.kind === "function" ? (
+                  <FileCode className="size-3 shrink-0" />
+                ) : t.kind === "sequence" ? (
+                  <Hash className="size-3 shrink-0" />
                 ) : (
                   <FileText className="size-3 shrink-0" />
                 )

@@ -639,6 +639,8 @@ export function PostgresSidebar({ connectionId, defaultDatabase }: Props) {
                                   <FunctionRow
                                     key={`${f.name}(${f.arguments})`}
                                     fn={f}
+                                    href={`/postgres/${connectionId}/databases/${encodeURIComponent(db.name)}/schemas/${encodeURIComponent(schema.name)}/functions/${encodeURIComponent(f.name)}?args=${encodeURIComponent(f.arguments)}`}
+                                    pathname={pathname}
                                     onCopy={() =>
                                       copy(`${schema.name}.${f.name}`)
                                     }
@@ -694,6 +696,8 @@ export function PostgresSidebar({ connectionId, defaultDatabase }: Props) {
                                   <SequenceRow
                                     key={s.name}
                                     seq={s}
+                                    href={`/postgres/${connectionId}/databases/${encodeURIComponent(db.name)}/schemas/${encodeURIComponent(schema.name)}/sequences/${encodeURIComponent(s.name)}`}
+                                    pathname={pathname}
                                     onCopy={() =>
                                       copy(`${schema.name}.${s.name}`)
                                     }
@@ -1431,12 +1435,16 @@ function ObjectRow({
 
 function FunctionRow({
   fn,
+  href,
+  pathname,
   onCopy,
   onViewDDL,
   onEdit,
   onDrop,
 }: {
   fn: FunctionInfo;
+  href: string;
+  pathname: string;
   onCopy: () => void;
   onViewDDL: () => void;
   onEdit: () => void;
@@ -1448,22 +1456,30 @@ function FunctionRow({
   const tooltip = `${fn.kind} · ${fn.language}\n${fn.name}(${fn.arguments}) → ${fn.returnType}`;
   const isEditable = fn.kind === "function" || fn.kind === "procedure";
   const [menuOpen, setMenuOpen] = useState(false);
+  const active = pathname === href.split("?")[0];
   return (
     <li>
       <div
-        className="group/obj flex items-center pr-1 rounded-md hover:bg-foreground/5 transition-colors"
+        className={cn(
+          "group/obj flex items-center pr-1 rounded-md transition-colors",
+          active ? "bg-foreground/10" : "hover:bg-foreground/5",
+        )}
         onContextMenu={(e) => {
           e.preventDefault();
           setMenuOpen(true);
         }}
       >
-        <div
-          className="flex items-center gap-1.5 flex-1 min-w-0 px-2 py-1 text-xs font-mono text-muted-foreground"
+        <Link
+          href={href}
+          className={cn(
+            "flex items-center gap-1.5 flex-1 min-w-0 px-2 py-1 text-xs font-mono",
+            active ? "text-foreground font-medium" : "text-muted-foreground",
+          )}
           title={tooltip}
         >
           <FileCode className="size-3 shrink-0" />
           <span className="truncate">{signature}</span>
-        </div>
+        </Link>
         <div className="opacity-0 group-hover/obj:opacity-100 data-[popup-open]:opacity-100 transition-opacity">
           <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
             <DropdownMenuTrigger
@@ -1496,33 +1512,45 @@ function FunctionRow({
 
 function SequenceRow({
   seq,
+  href,
+  pathname,
   onCopy,
   onEdit,
   onDrop,
 }: {
   seq: SequenceInfo;
+  href: string;
+  pathname: string;
   onCopy: () => void;
   onEdit: () => void;
   onDrop: () => void;
 }) {
   const tooltip = `${seq.dataType} · last ${seq.lastValue ?? "—"}`;
   const [menuOpen, setMenuOpen] = useState(false);
+  const active = pathname === href;
   return (
     <li>
       <div
-        className="group/obj flex items-center pr-1 rounded-md hover:bg-foreground/5 transition-colors"
+        className={cn(
+          "group/obj flex items-center pr-1 rounded-md transition-colors",
+          active ? "bg-foreground/10" : "hover:bg-foreground/5",
+        )}
         onContextMenu={(e) => {
           e.preventDefault();
           setMenuOpen(true);
         }}
       >
-        <div
-          className="flex items-center gap-1.5 flex-1 min-w-0 px-2 py-1 text-xs font-mono text-muted-foreground"
+        <Link
+          href={href}
+          className={cn(
+            "flex items-center gap-1.5 flex-1 min-w-0 px-2 py-1 text-xs font-mono",
+            active ? "text-foreground font-medium" : "text-muted-foreground",
+          )}
           title={tooltip}
         >
           <Hash className="size-3 shrink-0" />
           <span className="truncate">{seq.name}</span>
-        </div>
+        </Link>
         <div className="opacity-0 group-hover/obj:opacity-100 data-[popup-open]:opacity-100 transition-opacity">
           <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
             <DropdownMenuTrigger
