@@ -473,6 +473,13 @@ export function PostgresSidebar({ connectionId, defaultDatabase }: Props) {
                                 onToggle={() =>
                                   toggleGroup(db.name, schema.name, "tables")
                                 }
+                                onCreate={() =>
+                                  setCreateTableTarget({
+                                    db: db.name,
+                                    schema: schema.name,
+                                  })
+                                }
+                                createLabel="New table"
                                 renderItem={(t) => (
                                   <ObjectRow
                                     key={t.name}
@@ -482,8 +489,8 @@ export function PostgresSidebar({ connectionId, defaultDatabase }: Props) {
                                     icon={
                                       <TableIcon className="size-3 shrink-0" />
                                     }
-                                    actions={
-                                      <RowMenu>
+                                    menuItems={
+                                      <>
                                         <DropdownMenuItem
                                           onClick={() =>
                                             openTableDDL(
@@ -516,7 +523,7 @@ export function PostgresSidebar({ connectionId, defaultDatabase }: Props) {
                                         >
                                           Drop table…
                                         </DropdownMenuItem>
-                                      </RowMenu>
+                                      </>
                                     }
                                   />
                                 )}
@@ -553,8 +560,8 @@ export function PostgresSidebar({ connectionId, defaultDatabase }: Props) {
                                       icon={
                                         <Eye className="size-3 shrink-0" />
                                       }
-                                      actions={
-                                        <RowMenu>
+                                      menuItems={
+                                        <>
                                           <DropdownMenuItem
                                             onClick={() =>
                                               setDdlTarget({
@@ -602,7 +609,7 @@ export function PostgresSidebar({ connectionId, defaultDatabase }: Props) {
                                           >
                                             Drop {isMatView ? "materialized view" : "view"}…
                                           </DropdownMenuItem>
-                                        </RowMenu>
+                                        </>
                                       }
                                     />
                                   );
@@ -1145,8 +1152,15 @@ function DatabaseRow({
   onOpenSqlEditor: string;
 }) {
   const router = useRouter();
+  const [menuOpen, setMenuOpen] = useState(false);
   return (
-    <div className="group/db flex items-center pr-1 rounded-md hover:bg-foreground/5 transition-colors">
+    <div
+      className="group/db flex items-center pr-1 rounded-md hover:bg-foreground/5 transition-colors"
+      onContextMenu={(e) => {
+        e.preventDefault();
+        setMenuOpen(true);
+      }}
+    >
       <button
         onClick={onToggle}
         className="flex items-center gap-1 flex-1 min-w-0 px-2 py-1 text-sm text-left"
@@ -1160,7 +1174,7 @@ function DatabaseRow({
         <Database className="size-3.5 text-muted-foreground" />
         <span className="truncate font-mono text-xs">{db.name}</span>
       </button>
-      <DropdownMenu>
+      <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger
           className="opacity-0 group-hover/db:opacity-100 data-[popup-open]:opacity-100 size-5 inline-flex items-center justify-center rounded hover:bg-foreground/10 hover:text-foreground text-muted-foreground transition-opacity outline-none"
           title="Database actions"
@@ -1211,8 +1225,15 @@ function SchemaRow({
   onDrop: () => void;
   onCopyName: () => void;
 }) {
+  const [menuOpen, setMenuOpen] = useState(false);
   return (
-    <div className="group/schema-row flex items-center pr-1 rounded-md hover:bg-foreground/5 transition-colors">
+    <div
+      className="group/schema-row flex items-center pr-1 rounded-md hover:bg-foreground/5 transition-colors"
+      onContextMenu={(e) => {
+        e.preventDefault();
+        setMenuOpen(true);
+      }}
+    >
       <button
         onClick={onToggle}
         className="flex items-center gap-1 flex-1 min-w-0 px-2 py-1 text-sm text-left"
@@ -1226,7 +1247,7 @@ function SchemaRow({
         <Folder className="size-3.5 text-muted-foreground" />
         <span className="truncate font-mono text-xs">{schema.name}</span>
       </button>
-      <DropdownMenu>
+      <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger
           className="opacity-0 group-hover/schema-row:opacity-100 data-[popup-open]:opacity-100 size-5 inline-flex items-center justify-center rounded hover:bg-foreground/10 hover:text-foreground text-muted-foreground transition-opacity outline-none"
           title="Schema actions"
@@ -1337,15 +1358,16 @@ function ObjectRow({
   name,
   pathname,
   icon,
-  actions,
+  menuItems,
 }: {
   href: string;
   name: string;
   pathname: string;
   icon: React.ReactNode;
-  actions: React.ReactNode;
+  menuItems: React.ReactNode;
 }) {
   const active = pathname.startsWith(href);
+  const [menuOpen, setMenuOpen] = useState(false);
   return (
     <li>
       <div
@@ -1353,6 +1375,10 @@ function ObjectRow({
           "group/obj flex items-center pr-1 rounded-md transition-colors",
           active ? "bg-foreground/10" : "hover:bg-foreground/5",
         )}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          setMenuOpen(true);
+        }}
       >
         <Link
           href={href}
@@ -1364,26 +1390,20 @@ function ObjectRow({
           {icon}
           <span className="truncate">{name}</span>
         </Link>
-        <div className="opacity-0 group-hover/obj:opacity-100 transition-opacity">
-          {actions}
+        <div className="opacity-0 group-hover/obj:opacity-100 data-[popup-open]:opacity-100 transition-opacity">
+          <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+            <DropdownMenuTrigger
+              className="size-5 inline-flex items-center justify-center rounded hover:bg-foreground/10 hover:text-foreground text-muted-foreground outline-none"
+              title="Actions"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <MoreHorizontal className="size-3" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">{menuItems}</DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
     </li>
-  );
-}
-
-function RowMenu({ children }: { children: React.ReactNode }) {
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        className="size-5 inline-flex items-center justify-center rounded hover:bg-foreground/10 hover:text-foreground text-muted-foreground outline-none"
-        title="Actions"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <MoreHorizontal className="size-3" />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">{children}</DropdownMenuContent>
-    </DropdownMenu>
   );
 }
 
@@ -1405,9 +1425,16 @@ function FunctionRow({
     : `${fn.name}()`;
   const tooltip = `${fn.kind} · ${fn.language}\n${fn.name}(${fn.arguments}) → ${fn.returnType}`;
   const isEditable = fn.kind === "function" || fn.kind === "procedure";
+  const [menuOpen, setMenuOpen] = useState(false);
   return (
     <li>
-      <div className="group/obj flex items-center pr-1 rounded-md hover:bg-foreground/5 transition-colors">
+      <div
+        className="group/obj flex items-center pr-1 rounded-md hover:bg-foreground/5 transition-colors"
+        onContextMenu={(e) => {
+          e.preventDefault();
+          setMenuOpen(true);
+        }}
+      >
         <div
           className="flex items-center gap-1.5 flex-1 min-w-0 px-2 py-1 text-xs font-mono text-muted-foreground"
           title={tooltip}
@@ -1415,21 +1442,30 @@ function FunctionRow({
           <FileCode className="size-3 shrink-0" />
           <span className="truncate">{signature}</span>
         </div>
-        <div className="opacity-0 group-hover/obj:opacity-100 transition-opacity">
-          <RowMenu>
-            <DropdownMenuItem onClick={onViewDDL}>View DDL</DropdownMenuItem>
-            {isEditable ? (
-              <DropdownMenuItem onClick={onEdit}>Edit…</DropdownMenuItem>
-            ) : null}
-            <DropdownMenuItem onClick={onCopy}>Copy name</DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onClick={onDrop}
-              className="text-destructive focus:text-destructive"
+        <div className="opacity-0 group-hover/obj:opacity-100 data-[popup-open]:opacity-100 transition-opacity">
+          <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+            <DropdownMenuTrigger
+              className="size-5 inline-flex items-center justify-center rounded hover:bg-foreground/10 hover:text-foreground text-muted-foreground outline-none"
+              title="Actions"
+              onClick={(e) => e.stopPropagation()}
             >
-              Drop {fn.kind === "procedure" ? "procedure" : "function"}…
-            </DropdownMenuItem>
-          </RowMenu>
+              <MoreHorizontal className="size-3" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={onViewDDL}>View DDL</DropdownMenuItem>
+              {isEditable ? (
+                <DropdownMenuItem onClick={onEdit}>Edit…</DropdownMenuItem>
+              ) : null}
+              <DropdownMenuItem onClick={onCopy}>Copy name</DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={onDrop}
+                className="text-destructive focus:text-destructive"
+              >
+                Drop {fn.kind === "procedure" ? "procedure" : "function"}…
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
     </li>
@@ -1448,9 +1484,16 @@ function SequenceRow({
   onDrop: () => void;
 }) {
   const tooltip = `${seq.dataType} · last ${seq.lastValue ?? "—"}`;
+  const [menuOpen, setMenuOpen] = useState(false);
   return (
     <li>
-      <div className="group/obj flex items-center pr-1 rounded-md hover:bg-foreground/5 transition-colors">
+      <div
+        className="group/obj flex items-center pr-1 rounded-md hover:bg-foreground/5 transition-colors"
+        onContextMenu={(e) => {
+          e.preventDefault();
+          setMenuOpen(true);
+        }}
+      >
         <div
           className="flex items-center gap-1.5 flex-1 min-w-0 px-2 py-1 text-xs font-mono text-muted-foreground"
           title={tooltip}
@@ -1458,18 +1501,27 @@ function SequenceRow({
           <Hash className="size-3 shrink-0" />
           <span className="truncate">{seq.name}</span>
         </div>
-        <div className="opacity-0 group-hover/obj:opacity-100 transition-opacity">
-          <RowMenu>
-            <DropdownMenuItem onClick={onEdit}>Edit…</DropdownMenuItem>
-            <DropdownMenuItem onClick={onCopy}>Copy name</DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onClick={onDrop}
-              className="text-destructive focus:text-destructive"
+        <div className="opacity-0 group-hover/obj:opacity-100 data-[popup-open]:opacity-100 transition-opacity">
+          <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+            <DropdownMenuTrigger
+              className="size-5 inline-flex items-center justify-center rounded hover:bg-foreground/10 hover:text-foreground text-muted-foreground outline-none"
+              title="Actions"
+              onClick={(e) => e.stopPropagation()}
             >
-              Drop sequence…
-            </DropdownMenuItem>
-          </RowMenu>
+              <MoreHorizontal className="size-3" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={onEdit}>Edit…</DropdownMenuItem>
+              <DropdownMenuItem onClick={onCopy}>Copy name</DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={onDrop}
+                className="text-destructive focus:text-destructive"
+              >
+                Drop sequence…
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
     </li>
