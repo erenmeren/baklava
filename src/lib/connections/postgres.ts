@@ -64,6 +64,156 @@ export interface DatabaseInfo {
   size: number;
 }
 
+export interface ServerOverview {
+  serverVersion: string;
+  currentUser: string;
+  currentDatabase: string;
+  uptimeSeconds: number;
+  maxConnections: number;
+  activeConnections: number;
+  idleConnections: number;
+  cacheHitRatio: number; // 0..1; null source rows treated as 0
+  totalDatabasesSize: number;
+  databases: Array<{
+    name: string;
+    owner: string;
+    encoding: string;
+    size: number;
+    connections: number;
+  }>;
+}
+
+export async function getServerOverview(
+  config: PostgresConfig,
+): Promise<ServerOverview> {
+  return withClient(config, undefined, async (client) => {
+    const [head, dbs, hit] = await Promise.all([
+      client.query<{
+        version: string;
+        current_user: string;
+        current_database: string;
+        uptime: string;
+        max_connections: string;
+        active: string;
+        idle: string;
+      }>(
+        `select
+           version() as version,
+           current_user as current_user,
+           current_database() as current_database,
+           extract(epoch from (now() - pg_postmaster_start_time()))::bigint::text as uptime,
+           current_setting('max_connections') as max_connections,
+           (select count(*) filter (where state = 'active') from pg_stat_activity)::text as active,
+           (select count(*) filter (where state = 'idle') from pg_stat_activity)::text as idle`,
+      ),
+      client.query<{
+        name: string;
+        owner: string;
+        encoding: string;
+        size: string;
+        connections: string;
+      }>(
+        `select d.datname as name,
+                pg_get_userbyid(d.datdba) as owner,
+                pg_encoding_to_char(d.encoding) as encoding,
+                pg_database_size(d.datname)::text as size,
+                coalesce((
+                  select count(*)
+                  from pg_stat_activity a
+                  where a.datname = d.datname
+                ), 0)::text as connections
+         from pg_database d
+         where d.datistemplate = false
+         order by pg_database_size(d.datname) desc`,
+      ),
+      client.query<{ hit: string | null }>(
+        `select
+           case
+             when sum(blks_hit + blks_read) = 0 then null
+             else sum(blks_hit)::float / sum(blks_hit + blks_read)
+           end::text as hit
+         from pg_stat_database`,
+      ),
+    ]);
+
+    const h = head.rows[0];
+    const databases = dbs.rows.map((r) => ({
+      name: r.name,
+      owner: r.owner,
+      encoding: r.encoding,
+      size: Number(r.size),
+      connections: Number(r.connections),
+    }));
+    return {
+      serverVersion: h.version,
+      currentUser: h.current_user,
+      currentDatabase: h.current_database,
+      uptimeSeconds: Number(h.uptime),
+      maxConnections: Number(h.max_connections),
+      activeConnections: Number(h.active),
+      idleConnections: Number(h.idle),
+      cacheHitRatio: hit.rows[0]?.hit ? Number(hit.rows[0].hit) : 0,
+      totalDatabasesSize: databases.reduce((s, d) => s + d.size, 0),
+      databases,
+    };
+  });
+}
+
+export interface TopTable {
+  schema: string;
+  name: string;
+  kind: "table" | "view" | "materialized_view";
+  rowEstimate: number;
+  totalSize: number;
+  indexSize: number;
+}
+
+export async function getTopTables(
+  config: PostgresConfig,
+  database: string,
+  limit: number = 10,
+): Promise<TopTable[]> {
+  return withClient(config, database, async (client) => {
+    const res = await client.query<{
+      schema: string;
+      name: string;
+      kind: string;
+      row_estimate: string;
+      total_size: string;
+      index_size: string;
+    }>(
+      `select n.nspname as schema,
+              c.relname as name,
+              case c.relkind
+                when 'r' then 'table'
+                when 'v' then 'view'
+                when 'm' then 'materialized_view'
+                else c.relkind::text
+              end as kind,
+              c.reltuples::bigint::text as row_estimate,
+              pg_total_relation_size(c.oid)::text as total_size,
+              pg_indexes_size(c.oid)::text as index_size
+       from pg_class c
+       join pg_namespace n on n.oid = c.relnamespace
+       where c.relkind in ('r', 'm')
+         and n.nspname not in ('pg_catalog', 'information_schema', 'pg_toast')
+         and n.nspname not like 'pg_temp_%'
+         and n.nspname not like 'pg_toast_temp_%'
+       order by pg_total_relation_size(c.oid) desc
+       limit $1`,
+      [limit],
+    );
+    return res.rows.map((r) => ({
+      schema: r.schema,
+      name: r.name,
+      kind: r.kind as TopTable["kind"],
+      rowEstimate: Number(r.row_estimate),
+      totalSize: Number(r.total_size),
+      indexSize: Number(r.index_size),
+    }));
+  });
+}
+
 export async function listDatabases(
   config: PostgresConfig
 ): Promise<DatabaseInfo[]> {
