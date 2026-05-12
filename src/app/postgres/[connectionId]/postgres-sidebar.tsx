@@ -36,6 +36,7 @@ import {
   type SequenceFormSeed,
 } from "./sequence-form-dialog";
 import { FunctionEditorDialog } from "./function-editor-dialog";
+import { ViewEditorDialog } from "./view-editor-dialog";
 import { DropConfirm, type DropTarget } from "./drop-confirm";
 import { DDLDialog } from "./ddl-dialog";
 import {
@@ -146,6 +147,17 @@ export function PostgresSidebar({ connectionId, defaultDatabase }: Props) {
     | { mode: "edit"; db: string; schema: string; name: string; args: string }
     | null
   >(null);
+  const [viewDialog, setViewDialog] = useState<
+    | { mode: "create"; db: string; schema: string }
+    | { mode: "edit"; db: string; schema: string; name: string }
+    | null
+  >(null);
+  const [dropViewTarget, setDropViewTarget] = useState<{
+    db: string;
+    schema: string;
+    name: string;
+    materialized: boolean;
+  } | null>(null);
   const [dropFnTarget, setDropFnTarget] = useState<{
     db: string;
     schema: string;
@@ -521,37 +533,80 @@ export function PostgresSidebar({ connectionId, defaultDatabase }: Props) {
                                 onToggle={() =>
                                   toggleGroup(db.name, schema.name, "views")
                                 }
-                                renderItem={(v) => (
-                                  <ObjectRow
-                                    key={v.name}
-                                    href={`/postgres/${connectionId}/databases/${encodeURIComponent(db.name)}/schemas/${encodeURIComponent(schema.name)}/tables/${encodeURIComponent(v.name)}`}
-                                    name={v.name}
-                                    pathname={pathname}
-                                    icon={<Eye className="size-3 shrink-0" />}
-                                    actions={
-                                      <RowMenu>
-                                        <DropdownMenuItem
-                                          onClick={() =>
-                                            setDdlTarget({
-                                              title: `${schema.name}.${v.name}`,
-                                              fetchUrl: `/api/postgres/${connectionId}/databases/${encodeURIComponent(db.name)}/schemas/${encodeURIComponent(schema.name)}/tables/${encodeURIComponent(v.name)}?view=ddl`,
-                                              payloadKey: "ddl",
-                                            })
-                                          }
-                                        >
-                                          View DDL
-                                        </DropdownMenuItem>
-                                        <DropdownMenuItem
-                                          onClick={() =>
-                                            copy(`${schema.name}.${v.name}`)
-                                          }
-                                        >
-                                          Copy name
-                                        </DropdownMenuItem>
-                                      </RowMenu>
-                                    }
-                                  />
-                                )}
+                                onCreate={() =>
+                                  setViewDialog({
+                                    mode: "create",
+                                    db: db.name,
+                                    schema: schema.name,
+                                  })
+                                }
+                                createLabel="New view"
+                                renderItem={(v) => {
+                                  const isMatView =
+                                    v.kind === "materialized_view";
+                                  return (
+                                    <ObjectRow
+                                      key={v.name}
+                                      href={`/postgres/${connectionId}/databases/${encodeURIComponent(db.name)}/schemas/${encodeURIComponent(schema.name)}/tables/${encodeURIComponent(v.name)}`}
+                                      name={v.name}
+                                      pathname={pathname}
+                                      icon={
+                                        <Eye className="size-3 shrink-0" />
+                                      }
+                                      actions={
+                                        <RowMenu>
+                                          <DropdownMenuItem
+                                            onClick={() =>
+                                              setDdlTarget({
+                                                title: `${schema.name}.${v.name}`,
+                                                fetchUrl: `/api/postgres/${connectionId}/databases/${encodeURIComponent(db.name)}/schemas/${encodeURIComponent(schema.name)}/views/${encodeURIComponent(v.name)}`,
+                                                payloadKey: "definition",
+                                                prefix: `CREATE OR REPLACE ${isMatView ? "MATERIALIZED " : ""}VIEW ${schema.name}.${v.name} AS\n`,
+                                              })
+                                            }
+                                          >
+                                            View DDL
+                                          </DropdownMenuItem>
+                                          {!isMatView ? (
+                                            <DropdownMenuItem
+                                              onClick={() =>
+                                                setViewDialog({
+                                                  mode: "edit",
+                                                  db: db.name,
+                                                  schema: schema.name,
+                                                  name: v.name,
+                                                })
+                                              }
+                                            >
+                                              Edit…
+                                            </DropdownMenuItem>
+                                          ) : null}
+                                          <DropdownMenuItem
+                                            onClick={() =>
+                                              copy(`${schema.name}.${v.name}`)
+                                            }
+                                          >
+                                            Copy name
+                                          </DropdownMenuItem>
+                                          <DropdownMenuSeparator />
+                                          <DropdownMenuItem
+                                            onClick={() =>
+                                              setDropViewTarget({
+                                                db: db.name,
+                                                schema: schema.name,
+                                                name: v.name,
+                                                materialized: isMatView,
+                                              })
+                                            }
+                                            className="text-destructive focus:text-destructive"
+                                          >
+                                            Drop {isMatView ? "materialized view" : "view"}…
+                                          </DropdownMenuItem>
+                                        </RowMenu>
+                                      }
+                                    />
+                                  );
+                                }}
                               />
                               <Group
                                 kind="functions"
@@ -754,6 +809,100 @@ export function PostgresSidebar({ connectionId, defaultDatabase }: Props) {
           />
         )
       ) : null}
+
+      {viewDialog ? (
+        viewDialog.mode === "create" ? (
+          <ViewEditorDialog
+            mode="create"
+            open={true}
+            onOpenChange={(v) => {
+              if (!v) setViewDialog(null);
+            }}
+            connectionId={connectionId}
+            database={viewDialog.db}
+            schema={viewDialog.schema}
+            onSuccess={() => {
+              const key = `${viewDialog.db}.${viewDialog.schema}`;
+              setOpenGroup((s) => ({ ...s, [`${key}.views`]: true }));
+              loadGroup(viewDialog.db, viewDialog.schema, "views");
+            }}
+          />
+        ) : (
+          <ViewEditorDialog
+            mode="edit"
+            open={true}
+            onOpenChange={(v) => {
+              if (!v) setViewDialog(null);
+            }}
+            connectionId={connectionId}
+            database={viewDialog.db}
+            schema={viewDialog.schema}
+            name={viewDialog.name}
+            onSuccess={() =>
+              loadGroup(viewDialog.db, viewDialog.schema, "views")
+            }
+          />
+        )
+      ) : null}
+
+      <AlertDialog
+        open={dropViewTarget !== null}
+        onOpenChange={(v) => {
+          if (!v && !working) setDropViewTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Drop {dropViewTarget?.materialized ? "materialized view" : "view"}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {dropViewTarget ? (
+                <>
+                  This will run{" "}
+                  <span className="font-mono">
+                    DROP{" "}
+                    {dropViewTarget.materialized ? "MATERIALIZED VIEW" : "VIEW"}{" "}
+                    {dropViewTarget.schema}.{dropViewTarget.name}
+                  </span>
+                  . This cannot be undone.
+                </>
+              ) : null}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={working}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async (e) => {
+                e.preventDefault();
+                if (!dropViewTarget) return;
+                setWorking(true);
+                try {
+                  const url = `/api/postgres/${connectionId}/databases/${encodeURIComponent(dropViewTarget.db)}/schemas/${encodeURIComponent(dropViewTarget.schema)}/views/${encodeURIComponent(dropViewTarget.name)}?materialized=${dropViewTarget.materialized}`;
+                  const res = await fetch(url, { method: "DELETE" });
+                  const data = await res.json();
+                  if (!res.ok) {
+                    toast.error("Drop failed", { description: data.error });
+                  } else {
+                    toast.success(
+                      `Dropped ${dropViewTarget.schema}.${dropViewTarget.name}`,
+                    );
+                    loadGroup(dropViewTarget.db, dropViewTarget.schema, "views");
+                    setDropViewTarget(null);
+                  }
+                } finally {
+                  setWorking(false);
+                }
+              }}
+              disabled={working}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {working ? <Loader2 className="size-3.5 animate-spin" /> : null}
+              Drop
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {fnDialog ? (
         fnDialog.mode === "create" ? (

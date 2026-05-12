@@ -935,6 +935,28 @@ export async function getFunctionDefinition(
   });
 }
 
+/**
+ * Execute CREATE [OR REPLACE] [MATERIALIZED] VIEW verbatim. Refuses anything
+ * else so the endpoint can't run arbitrary SQL.
+ */
+export async function createOrReplaceView(
+  config: PostgresConfig,
+  database: string,
+  sql: string,
+): Promise<void> {
+  const trimmed = sql.trim().replace(/;+\s*$/g, "");
+  if (
+    !/^create\s+(or\s+replace\s+)?(materialized\s+)?view\b/i.test(trimmed)
+  ) {
+    throw new Error(
+      "SQL must begin with CREATE [OR REPLACE] [MATERIALIZED] VIEW",
+    );
+  }
+  await withClient(config, database, async (client) => {
+    await client.query(trimmed);
+  });
+}
+
 export async function getViewDefinition(
   config: PostgresConfig,
   database: string,
