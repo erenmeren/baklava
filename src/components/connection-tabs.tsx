@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Home, Plus, X, ArrowUpRight } from "lucide-react";
+import { Plus, X, ArrowUpRight } from "lucide-react";
 import type { ConnectionRecord, TechId } from "@/lib/connections/types";
 import { TECH_CATALOG } from "@/lib/tech-catalog";
 import {
@@ -167,25 +167,11 @@ export function ConnectionTabs() {
     [router],
   );
 
-  const isHome = pathname === "/";
-
   return (
     <nav
       aria-label="Open connections"
       className="flex min-w-0 flex-1 items-stretch overflow-x-auto no-scrollbar"
     >
-      <Tab
-        href="/"
-        active={isHome}
-        title="Connections home"
-        icon={<Home className="size-3.5" />}
-        label="Home"
-      />
-
-      {openTabs.length > 0 ? (
-        <span className="self-center mx-1 h-4 w-px bg-border/70" aria-hidden />
-      ) : null}
-
       {openTabs.map((c) => {
         const tech = TECH_CATALOG.find((t) => t.id === c.tech);
         if (!tech) return null;
@@ -205,7 +191,7 @@ export function ConnectionTabs() {
                 height={14}
                 draggable={false}
                 aria-hidden
-                className="size-3.5 select-none"
+                className="size-3.5 select-none dark:brightness-0 dark:invert"
               />
             }
             label={c.name}
@@ -263,7 +249,7 @@ export function ConnectionTabs() {
                         height={18}
                         draggable={false}
                         aria-hidden
-                        className="size-[18px] shrink-0 select-none"
+                        className="size-[18px] shrink-0 select-none dark:brightness-0 dark:invert"
                       />
                       <div className="min-w-0 flex-1">
                         <div className="text-[13px] font-medium leading-tight truncate">

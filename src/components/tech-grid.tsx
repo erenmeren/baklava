@@ -146,7 +146,7 @@ export function TechGrid() {
                   height={64}
                   draggable={false}
                   aria-hidden
-                  className="size-16 select-none"
+                  className="size-16 select-none dark:brightness-0 dark:invert"
                 />
               </div>
 

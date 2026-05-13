@@ -55,7 +55,7 @@ export function ConnectionSheet({ tech, onOpenChange }: Props) {
               <img
                 src={`https://cdn.simpleicons.org/${tech.slug}`}
                 alt=""
-                className="size-9 select-none"
+                className="size-9 select-none dark:brightness-0 dark:invert"
                 aria-hidden
                 draggable={false}
               />
