@@ -345,6 +345,17 @@ function Tab({
       )}
       role="tab"
       aria-selected={active}
+      onMouseDown={(e) => {
+        // Middle-click would otherwise open in a new browser tab. Suppress the
+        // default and let onAuxClick handle the close.
+        if (e.button === 1 && onClose) e.preventDefault();
+      }}
+      onAuxClick={(e) => {
+        if (e.button === 1 && onClose) {
+          e.preventDefault();
+          onClose();
+        }
+      }}
     >
       <Link
         href={href}

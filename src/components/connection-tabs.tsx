@@ -335,6 +335,15 @@ function Tab({
         "group relative inline-flex items-stretch h-12 max-w-[240px] min-w-0",
         active ? "text-foreground" : "text-muted-foreground hover:text-foreground",
       )}
+      onMouseDown={(e) => {
+        if (e.button === 1 && onClose) e.preventDefault();
+      }}
+      onAuxClick={(e) => {
+        if (e.button === 1 && onClose) {
+          e.preventDefault();
+          onClose();
+        }
+      }}
     >
       <Link
         href={href}
