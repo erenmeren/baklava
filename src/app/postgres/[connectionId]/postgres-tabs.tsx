@@ -8,6 +8,7 @@ import {
   FileCode,
   Hash,
   Home,
+  Plus,
   Shield,
   Table as TableIcon,
   X,
@@ -30,6 +31,8 @@ type Tab =
 
 interface Props {
   connectionId: string;
+  /** Default database used as the target for the "+ Query" button. */
+  defaultDatabase: string;
 }
 
 function storageKey(connectionId: string) {
@@ -170,7 +173,7 @@ function tabFromPath(
   return null;
 }
 
-export function PostgresTabs({ connectionId }: Props) {
+export function PostgresTabs({ connectionId, defaultDatabase }: Props) {
   const pathname = usePathname() ?? "";
   const searchParams = useSearchParams();
   const searchString = searchParams ? searchParams.toString() : "";
@@ -283,6 +286,21 @@ export function PostgresTabs({ connectionId }: Props) {
             />
           );
         })}
+
+      <Link
+        href={`/postgres/${connectionId}/databases/${encodeURIComponent(defaultDatabase)}/query`}
+        title="Open a new query tab"
+        aria-label="New query"
+        className={cn(
+          "group/newq relative inline-flex items-center gap-1.5 h-9 px-3 ml-1 self-center",
+          "text-[12px] font-mono whitespace-nowrap rounded-md border border-dashed border-border/70",
+          "text-muted-foreground hover:text-brand hover:border-brand/60",
+          "transition-colors",
+        )}
+      >
+        <Plus className="size-3 shrink-0" strokeWidth={2.4} />
+        <span>Query</span>
+      </Link>
     </div>
   );
 }

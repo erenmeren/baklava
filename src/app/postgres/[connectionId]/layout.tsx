@@ -35,7 +35,10 @@ export default async function PostgresWorkspaceLayout({
       }
     >
       <div className="flex flex-col h-full min-h-0">
-        <PostgresTabs connectionId={connectionId} />
+        <PostgresTabs
+          connectionId={connectionId}
+          defaultDatabase={cfg.database}
+        />
         <div className="flex-1 min-h-0">{children}</div>
       </div>
     </WorkspaceShell>
