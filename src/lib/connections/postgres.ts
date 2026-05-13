@@ -690,10 +690,15 @@ export async function createTable(
   }
 
   const colDefs = input.columns.map((c) => {
-    const parts = [quoteIdent(c.name.trim()), c.dataType.trim()];
+    const parts = [
+      quoteIdent(c.name.trim()),
+      requireNoStatementTerminator(c.dataType.trim(), "Column type"),
+    ];
     if (!c.nullable) parts.push("NOT NULL");
     if (c.default && c.default.trim()) {
-      parts.push(`DEFAULT ${c.default.trim()}`);
+      parts.push(
+        `DEFAULT ${requireNoStatementTerminator(c.default.trim(), "Default expression")}`,
+      );
     }
     return parts.join(" ");
   });
@@ -1070,7 +1075,11 @@ export async function dropFunction(
   options?: { cascade?: boolean; ifExists?: boolean; isProcedure?: boolean },
 ): Promise<void> {
   const kind = options?.isProcedure ? "PROCEDURE" : "FUNCTION";
-  const sql = `DROP ${kind} ${options?.ifExists ? "IF EXISTS " : ""}${quoteIdent(schema)}.${quoteIdent(name)}(${argSignature})${options?.cascade ? " CASCADE" : ""}`;
+  const safeArgs = requireNoStatementTerminator(
+    argSignature,
+    "Function argument signature",
+  );
+  const sql = `DROP ${kind} ${options?.ifExists ? "IF EXISTS " : ""}${quoteIdent(schema)}.${quoteIdent(name)}(${safeArgs})${options?.cascade ? " CASCADE" : ""}`;
   await withClient(config, database, async (client) => {
     await client.query(sql);
   });
@@ -1155,7 +1164,9 @@ export async function createIndex(
   if (input.method) parts.push(`USING ${input.method}`);
   parts.push(`(${input.columns.map(quoteIndexColumn).join(", ")})`);
   if (input.where && input.where.trim()) {
-    parts.push(`WHERE ${input.where.trim()}`);
+    parts.push(
+      `WHERE ${requireNoStatementTerminator(input.where.trim(), "WHERE clause")}`,
+    );
   }
   const sql = parts.join(" ");
   await withClient(config, database, async (client) => {
@@ -1268,6 +1279,16 @@ function validateIdentifier(name: string, kind: string): string {
     );
   }
   return trimmed;
+}
+
+// Reject `;` in free-form SQL fragments (types, default exprs, USING clauses,
+// partial-index predicates, function arg signatures). `;` is the only character
+// that lets a fragment escape to a second statement in pg's simple-query path.
+function requireNoStatementTerminator(value: string, fieldName: string): string {
+  if (value.includes(";")) {
+    throw new Error(`${fieldName} cannot contain ';'`);
+  }
+  return value;
 }
 
 export async function createDatabase(
@@ -1520,9 +1541,13 @@ function buildAlterClause(schema: string, table: string, op: AlterTableOp): stri
     case "addColumn": {
       if (!op.name.trim()) throw new Error("Column name is required");
       if (!op.dataType.trim()) throw new Error("Column type is required");
-      const parts = [`ALTER TABLE ${t} ADD COLUMN ${quoteIdent(op.name.trim())} ${op.dataType.trim()}`];
+      const dataType = requireNoStatementTerminator(op.dataType.trim(), "Column type");
+      const parts = [`ALTER TABLE ${t} ADD COLUMN ${quoteIdent(op.name.trim())} ${dataType}`];
       if (!op.nullable) parts.push("NOT NULL");
-      if (op.default && op.default.trim()) parts.push(`DEFAULT ${op.default.trim()}`);
+      if (op.default && op.default.trim()) {
+        const def = requireNoStatementTerminator(op.default.trim(), "Default expression");
+        parts.push(`DEFAULT ${def}`);
+      }
       return parts.join(" ");
     }
     case "dropColumn":
@@ -1532,12 +1557,18 @@ function buildAlterClause(schema: string, table: string, op: AlterTableOp): stri
       return `ALTER TABLE ${t} RENAME COLUMN ${quoteIdent(op.from)} TO ${quoteIdent(op.to.trim())}`;
     case "alterType": {
       if (!op.dataType.trim()) throw new Error("New type is required");
-      const using = op.using && op.using.trim() ? ` USING ${op.using.trim()}` : "";
-      return `ALTER TABLE ${t} ALTER COLUMN ${quoteIdent(op.name)} TYPE ${op.dataType.trim()}${using}`;
+      const dataType = requireNoStatementTerminator(op.dataType.trim(), "Column type");
+      const using =
+        op.using && op.using.trim()
+          ? ` USING ${requireNoStatementTerminator(op.using.trim(), "USING expression")}`
+          : "";
+      return `ALTER TABLE ${t} ALTER COLUMN ${quoteIdent(op.name)} TYPE ${dataType}${using}`;
     }
-    case "setDefault":
+    case "setDefault": {
       if (!op.default.trim()) throw new Error("Default expression is required");
-      return `ALTER TABLE ${t} ALTER COLUMN ${quoteIdent(op.name)} SET DEFAULT ${op.default.trim()}`;
+      const def = requireNoStatementTerminator(op.default.trim(), "Default expression");
+      return `ALTER TABLE ${t} ALTER COLUMN ${quoteIdent(op.name)} SET DEFAULT ${def}`;
+    }
     case "dropDefault":
       return `ALTER TABLE ${t} ALTER COLUMN ${quoteIdent(op.name)} DROP DEFAULT`;
     case "setNotNull":
