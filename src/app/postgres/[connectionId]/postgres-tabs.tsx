@@ -292,14 +292,28 @@ export function PostgresTabs({ connectionId, defaultDatabase }: Props) {
         title="Open a new query tab"
         aria-label="New query"
         className={cn(
-          "group/newq relative inline-flex items-center gap-1.5 h-9 px-3 ml-1 self-center",
-          "text-[12px] font-mono whitespace-nowrap rounded-md border border-dashed border-border/70",
-          "text-muted-foreground hover:text-brand hover:border-brand/60",
-          "transition-colors",
+          "group/newq relative inline-flex items-center gap-2 h-7 px-3 ml-2 mr-1 self-center shrink-0",
+          "rounded-full border border-brand/30 bg-brand/[0.04]",
+          "text-[12px] font-mono tracking-tight whitespace-nowrap text-brand/85",
+          "transition-all duration-200 ease-out",
+          "hover:bg-brand/10 hover:border-brand/60 hover:text-brand",
+          "hover:shadow-[0_0_14px_-3px_var(--brand)]",
+          "active:scale-[0.97]",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40",
         )}
       >
-        <Plus className="size-3 shrink-0" strokeWidth={2.4} />
-        <span>Query</span>
+        <span
+          aria-hidden
+          className={cn(
+            "size-4 rounded-full grid place-items-center shrink-0",
+            "bg-brand/15 border border-brand/40",
+            "transition-transform duration-200 ease-out",
+            "group-hover/newq:rotate-90 group-hover/newq:bg-brand/25",
+          )}
+        >
+          <Plus className="size-2.5" strokeWidth={2.8} />
+        </span>
+        <span>New query</span>
       </Link>
     </div>
   );

@@ -8,7 +8,6 @@ import { WorkspacePage } from "@/components/workspace/workspace-page";
 import {
   Activity,
   Database,
-  FileText,
   HardDrive,
   Loader2,
   Plus,
@@ -157,13 +156,6 @@ export function OverviewClient({
             )}
             Refresh
           </Button>
-          <Link
-            href={`/postgres/${connectionId}/databases/${encodeURIComponent(defaultDatabase)}/query`}
-            className="inline-flex items-center gap-1.5 text-sm border border-border rounded-md px-3 py-1.5 hover:bg-muted transition-colors"
-          >
-            <FileText className="size-3.5" />
-            Open SQL editor
-          </Link>
         </>
       }
     >
@@ -411,13 +403,6 @@ export function OverviewClient({
             >
               <Shield className="size-3.5" />
               Roles
-            </Link>
-            <Link
-              href={`/postgres/${connectionId}/databases/${encodeURIComponent(defaultDatabase)}/query`}
-              className="inline-flex items-center gap-1.5 text-xs border border-border rounded-md px-3 py-1.5 hover:bg-muted transition-colors font-mono"
-            >
-              <FileText className="size-3.5" />
-              SQL editor
             </Link>
           </div>
         </section>

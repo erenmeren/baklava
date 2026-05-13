@@ -1,13 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import {
   ChevronRight,
   Database,
   FileCode,
-  FileText,
   Folder,
   Hash,
   Loader2,
@@ -418,7 +417,6 @@ export function PostgresSidebar({ connectionId, defaultDatabase }: Props) {
                 onDrop={() =>
                   setDropTarget({ kind: "database", database: db.name })
                 }
-                onOpenSqlEditor={`/postgres/${connectionId}/databases/${encodeURIComponent(db.name)}/query`}
               />
               {openDb[db.name] ? (
                 <ul className="ml-4 border-l border-border/50">
@@ -733,21 +731,6 @@ export function PostgresSidebar({ connectionId, defaultDatabase }: Props) {
                       );
                     })
                   )}
-                  <li>
-                    <Link
-                      href={`/postgres/${connectionId}/databases/${encodeURIComponent(db.name)}/query`}
-                      className={cn(
-                        "flex items-center gap-1.5 px-2 py-1 mt-1 rounded-md text-xs font-mono transition-colors",
-                        pathname ===
-                          `/postgres/${connectionId}/databases/${encodeURIComponent(db.name)}/query`
-                          ? "bg-foreground/10 text-foreground font-medium"
-                          : "text-muted-foreground hover:bg-foreground/5 hover:text-foreground",
-                      )}
-                    >
-                      <FileText className="size-3 shrink-0" />
-                      <span className="truncate">SQL editor</span>
-                    </Link>
-                  </li>
                 </ul>
               ) : null}
             </li>
@@ -1145,7 +1128,6 @@ function DatabaseRow({
   onCreateSchema,
   onRefresh,
   onDrop,
-  onOpenSqlEditor,
 }: {
   db: DatabaseInfo;
   isOpen: boolean;
@@ -1153,9 +1135,7 @@ function DatabaseRow({
   onCreateSchema: () => void;
   onRefresh: () => void;
   onDrop: () => void;
-  onOpenSqlEditor: string;
 }) {
-  const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
   return (
     <div
@@ -1189,10 +1169,6 @@ function DatabaseRow({
           <DropdownMenuItem onClick={onCreateSchema}>
             <Plus className="size-3.5" />
             New schema…
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => router.push(onOpenSqlEditor)}>
-            <FileText className="size-3.5" />
-            Open SQL editor
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={onRefresh}>
