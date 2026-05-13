@@ -63,6 +63,7 @@ export function ConnectionTabs() {
   const [conns, setConns] = useState<ConnectionRecord[]>([]);
   const [openIds, setOpenIds] = useState<string[]>([]);
   const [hydrated, setHydrated] = useState(false);
+  const [fetched, setFetched] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
 
   // Hydrate from localStorage once on the client.
@@ -84,7 +85,10 @@ export function ConnectionTabs() {
         const res = await fetch("/api/connections", { cache: "no-store" });
         if (!res.ok) return;
         const data = (await res.json()) as ConnectionsResponse;
-        if (!cancelled) setConns(data.connections);
+        if (!cancelled) {
+          setConns(data.connections);
+          setFetched(true);
+        }
       } catch {
         // best-effort
       }
@@ -115,9 +119,9 @@ export function ConnectionTabs() {
   // Drop stale tab ids whose connection no longer exists (after first server load).
   useEffect(() => {
     if (!hydrated) return;
-    if (conns.length === 0) return;
+    if (!fetched) return;
     setOpenIds((prev) => prev.filter((id) => connectionsById.has(id)));
-  }, [conns, connectionsById, hydrated]);
+  }, [conns, connectionsById, hydrated, fetched]);
 
   const openTabs = useMemo(
     () =>

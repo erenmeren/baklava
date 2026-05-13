@@ -97,6 +97,13 @@ export function HubSearchDialog({
     }
   }, [open]);
 
+  useEffect(() => {
+    return () => {
+      sourceRef.current?.close();
+      sourceRef.current = null;
+    };
+  }, []);
+
   const search = useCallback(async () => {
     const q = query.trim();
     if (!q) return;

@@ -35,10 +35,12 @@ export function RelativeTime({
 }: {
   value: number | string | Date;
 }) {
+  const [mounted, setMounted] = useState(false);
   const [, force] = useState(0);
   useEffect(() => {
+    setMounted(true);
     const i = setInterval(() => force((n) => n + 1), 30_000);
     return () => clearInterval(i);
   }, []);
-  return <span>{relativeTime(value)}</span>;
+  return <span>{mounted ? relativeTime(value) : ""}</span>;
 }

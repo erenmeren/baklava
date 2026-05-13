@@ -196,8 +196,9 @@ export async function fetchMessages(
   options: { partition?: number; limit: number; fromBeginning: boolean }
 ): Promise<KafkaMessage[]> {
   const client = createKafkaClient(config);
+  const groupId = `baklava-browse-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   const consumer = client.consumer({
-    groupId: `baklava-browse-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    groupId,
     sessionTimeout: 10000,
     heartbeatInterval: 3000,
   });
@@ -255,6 +256,17 @@ export async function fetchMessages(
     return collected.slice(0, target);
   } finally {
     await consumer.disconnect().catch(() => undefined);
+    try {
+      const admin = client.admin();
+      await admin.connect();
+      try {
+        await admin.deleteGroups([groupId]);
+      } finally {
+        await admin.disconnect().catch(() => undefined);
+      }
+    } catch (err) {
+      console.warn("fetchMessages: failed to delete consumer group", err);
+    }
   }
 }
 

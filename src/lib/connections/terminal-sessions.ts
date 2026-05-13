@@ -105,3 +105,19 @@ export function dropSession(id: string): void {
   }
   getStore().delete(id);
 }
+
+export function dropConnectionSessions(connectionId: string): number {
+  const store = getStore();
+  let dropped = 0;
+  for (const [id, s] of store) {
+    if (s.connectionId !== connectionId) continue;
+    try {
+      s.stream.end();
+    } catch {
+      // ignore
+    }
+    store.delete(id);
+    dropped += 1;
+  }
+  return dropped;
+}

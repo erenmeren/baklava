@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { deleteConnection, getConnection, publicView } from "@/lib/connections/store";
+import { dropConnectionSessions } from "@/lib/connections/terminal-sessions";
 
 export const runtime = "nodejs";
 
@@ -22,5 +23,6 @@ export async function DELETE(_req: Request, ctx: RouteContext) {
   if (!ok) {
     return NextResponse.json({ error: "Connection not found" }, { status: 404 });
   }
+  dropConnectionSessions(id);
   return NextResponse.json({ ok: true });
 }

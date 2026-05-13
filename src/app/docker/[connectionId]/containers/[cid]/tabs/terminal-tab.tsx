@@ -119,6 +119,25 @@ export function TerminalTab({ connectionId, cid, running, active }: Props) {
     if (termRef.current || !containerRef.current) return;
 
     let cancelled = false;
+    const onResize = () => {
+      if (!termRef.current || !sessionRef.current) return;
+      try {
+        termRef.current.fit.fit();
+      } catch {
+        // ignore
+      }
+      const { cols, rows } = termRef.current.term;
+      fetch(
+        `/api/docker/${connectionId}/containers/${cid}/terminal/${sessionRef.current}/resize`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ cols, rows }),
+        }
+      ).catch(() => undefined);
+    };
+    window.addEventListener("resize", onResize);
+
     (async () => {
       // Inject xterm CSS once.
       if (typeof document !== "undefined" && !document.getElementById("xterm-css")) {
@@ -169,35 +188,14 @@ export function TerminalTab({ connectionId, cid, running, active }: Props) {
         ).catch(() => undefined);
       });
 
-      const onResize = () => {
-        if (!termRef.current || !sessionRef.current) return;
-        try {
-          termRef.current.fit.fit();
-        } catch {
-          // ignore
-        }
-        const { cols, rows } = termRef.current.term;
-        fetch(
-          `/api/docker/${connectionId}/containers/${cid}/terminal/${sessionRef.current}/resize`,
-          {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ cols, rows }),
-          }
-        ).catch(() => undefined);
-      };
-      window.addEventListener("resize", onResize);
-
       term.writeln(
         "\x1b[2m  baklava terminal — pick a shell and click Start.\x1b[0m"
       );
-
-      // store cleanup
-      return () => window.removeEventListener("resize", onResize);
     })();
 
     return () => {
       cancelled = true;
+      window.removeEventListener("resize", onResize);
     };
   }, [active, connectionId, cid]);
 

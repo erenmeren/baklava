@@ -45,7 +45,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
     const errors =
       err instanceof ComposeParseError
         ? err.errors.map((e) => e.message)
-        : [err instanceof Error ? err.message : String(err)];
+        : [formatError(err)];
     return new Response(
       JSON.stringify({ error: "Compose parse failed", errors }),
       { status: 400, headers: { "content-type": "application/json" } }

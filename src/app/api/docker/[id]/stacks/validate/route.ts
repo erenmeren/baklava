@@ -4,6 +4,7 @@ import {
   ComposeParseError,
   parseCompose,
 } from "@/lib/connections/compose";
+import { formatError } from "@/lib/errors";
 
 export const runtime = "nodejs";
 
@@ -54,7 +55,6 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
         { status: 200 }
       );
     }
-    const msg = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ ok: false, error: msg }, { status: 200 });
+    return NextResponse.json({ ok: false, error: formatError(err) }, { status: 200 });
   }
 }

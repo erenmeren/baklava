@@ -91,6 +91,12 @@ export function EventsClient({ connectionId }: Props) {
       }
     });
     es.addEventListener("error", () => {
+      // Native EventSource auto-reconnects on error, but the server may replay
+      // events and seqRef keeps incrementing — that can produce duplicate rows
+      // (same content, different keys). Close explicitly and let the user
+      // reconnect via Pause/Resume, which re-runs this effect.
+      es.close();
+      if (sourceRef.current === es) sourceRef.current = null;
       setConnected(false);
     });
     return () => {
