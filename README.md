@@ -97,6 +97,15 @@ SQLite is file-backed (no daemon). Generate a seeded demo database with:
 bash seed/sqlite.sh            # writes /tmp/baklava-data/demo.sqlite
 ```
 
+To put real content into the vector DBs and Neo4j (random vectors + a small movies graph):
+
+```bash
+npm install                                  # if you haven't yet
+node seed/vector-and-graph.cjs               # seeds qdrant, weaviate, chroma, milvus, neo4j
+```
+
+Idempotent — wipes and recreates the demo collections / graph on each run.
+
 #### Connection details
 
 All credentials are throwaway and for local dev only. Plug these into the connection forms in the UI.
