@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -12,6 +12,7 @@ import { formatBytes } from "@/components/workspace/format";
 import { NetworksTab } from "./tabs/networks-tab";
 import { FilesTab } from "./tabs/files-tab";
 import { TerminalTab } from "./tabs/terminal-tab";
+import { LogsTab } from "./tabs/logs-tab";
 import { toast } from "sonner";
 import {
   ArrowLeft,
@@ -88,11 +89,9 @@ interface Props {
 export function ContainerDetailClient({ connectionId, cid }: Props) {
   const router = useRouter();
   const [inspect, setInspect] = useState<ContainerInspect | null>(null);
-  const [logs, setLogs] = useState<string>("");
   const [tab, setTab] = useState("overview");
   const [busy, setBusy] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
-  const logRef = useRef<HTMLPreElement>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   const [statsErr, setStatsErr] = useState<string | null>(null);
   const [execCmd, setExecCmd] = useState("ls -la");
@@ -109,32 +108,9 @@ export function ContainerDetailClient({ connectionId, cid }: Props) {
     if (res.ok) setInspect(data as ContainerInspect);
   }, [connectionId, cid]);
 
-  const loadLogs = useCallback(async () => {
-    const res = await fetch(
-      `/api/docker/${connectionId}/containers/${cid}/logs?tail=400`,
-      { cache: "no-store" }
-    );
-    const data = await res.json();
-    if (res.ok) {
-      setLogs(data.text || "(no output)");
-      requestAnimationFrame(() => {
-        if (logRef.current) {
-          logRef.current.scrollTop = logRef.current.scrollHeight;
-        }
-      });
-    } else toast.error("Could not load logs", { description: data.error });
-  }, [connectionId, cid]);
-
   useEffect(() => {
     loadInspect();
   }, [loadInspect]);
-
-  useEffect(() => {
-    if (tab !== "logs") return;
-    loadLogs();
-    const i = setInterval(loadLogs, 3000);
-    return () => clearInterval(i);
-  }, [tab, loadLogs]);
 
   const loadStats = useCallback(async () => {
     setStatsErr(null);
@@ -362,21 +338,12 @@ export function ContainerDetailClient({ connectionId, cid }: Props) {
         </TabsContent>
 
         <TabsContent value="logs" className="pt-4">
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-xs text-muted-foreground">
-              Tail 400 lines · auto-refresh every 3s
-            </p>
-            <Button size="sm" variant="outline" onClick={loadLogs}>
-              <RefreshCcw className="size-3.5" />
-              Refresh
-            </Button>
-          </div>
-          <pre
-            ref={logRef}
-            className="bg-zinc-950 text-zinc-100 rounded-md p-3 font-mono text-xs whitespace-pre-wrap overflow-auto max-h-[60vh] min-h-[300px]"
-          >
-            {logs || "Loading…"}
-          </pre>
+          <LogsTab
+            connectionId={connectionId}
+            cid={cid}
+            active={tab === "logs"}
+            onOpenTerminal={() => setTab("terminal")}
+          />
         </TabsContent>
 
         <TabsContent value="stats" className="pt-4 space-y-3">

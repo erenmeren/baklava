@@ -4,12 +4,14 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import {
+  Activity,
   ChevronRight,
   Database,
   FileCode,
   Folder,
   Hash,
   Loader2,
+  Lock,
   MoreHorizontal,
   Plus,
   RefreshCcw,
@@ -347,7 +349,19 @@ export function PostgresSidebar({ connectionId, defaultDatabase }: Props) {
   // ----- Render -------------------------------------------------------------
 
   const rolesHref = `/postgres/${connectionId}/roles`;
+  const activityHref = `/postgres/${connectionId}/activity`;
+  const locksHref = `/postgres/${connectionId}/locks`;
   const rolesActive = pathname === rolesHref;
+  const activityActive = pathname === activityHref;
+  const locksActive = pathname === locksHref;
+
+  const serverLinkClass = (active: boolean) =>
+    cn(
+      "flex items-center gap-1.5 px-2 py-1 ml-2 rounded-md text-xs font-mono transition-colors",
+      active
+        ? "bg-foreground/10 text-foreground font-medium"
+        : "text-muted-foreground hover:bg-foreground/5 hover:text-foreground",
+    );
 
   return (
     <div className="space-y-1 select-none">
@@ -357,15 +371,15 @@ export function PostgresSidebar({ connectionId, defaultDatabase }: Props) {
           Server
         </span>
       </div>
-      <Link
-        href={rolesHref}
-        className={cn(
-          "flex items-center gap-1.5 px-2 py-1 ml-2 rounded-md text-xs font-mono transition-colors",
-          rolesActive
-            ? "bg-foreground/10 text-foreground font-medium"
-            : "text-muted-foreground hover:bg-foreground/5 hover:text-foreground",
-        )}
-      >
+      <Link href={activityHref} className={serverLinkClass(activityActive)}>
+        <Activity className="size-3 shrink-0" />
+        <span className="truncate">Activity</span>
+      </Link>
+      <Link href={locksHref} className={serverLinkClass(locksActive)}>
+        <Lock className="size-3 shrink-0" />
+        <span className="truncate">Locks</span>
+      </Link>
+      <Link href={rolesHref} className={serverLinkClass(rolesActive)}>
         <Shield className="size-3 shrink-0" />
         <span className="truncate">Roles</span>
       </Link>

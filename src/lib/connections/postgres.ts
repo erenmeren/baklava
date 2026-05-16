@@ -1626,6 +1626,262 @@ export async function runQuery(
   });
 }
 
+// ====================================================================
+// Server-level operations: activity / locks / maintenance
+// ====================================================================
+
+export interface ActivityRow {
+  pid: number;
+  database: string | null;
+  user: string | null;
+  applicationName: string | null;
+  clientAddr: string | null;
+  state: string | null;
+  waitEventType: string | null;
+  waitEvent: string | null;
+  backendStart: string | null;
+  xactStart: string | null;
+  queryStart: string | null;
+  stateChange: string | null;
+  backendType: string | null;
+  query: string | null;
+  /** Seconds since query_start, computed server-side. */
+  queryAgeSeconds: number | null;
+}
+
+export interface ActivitySnapshot {
+  serverPid: number;
+  rows: ActivityRow[];
+}
+
+export async function listActivity(
+  config: PostgresConfig
+): Promise<ActivitySnapshot> {
+  return withClient(config, undefined, async (client) => {
+    const res = await client.query<{
+      pid: number;
+      datname: string | null;
+      usename: string | null;
+      application_name: string | null;
+      client_addr: string | null;
+      state: string | null;
+      wait_event_type: string | null;
+      wait_event: string | null;
+      backend_start: string | null;
+      xact_start: string | null;
+      query_start: string | null;
+      state_change: string | null;
+      backend_type: string | null;
+      query: string | null;
+      query_age: string | null;
+    }>(
+      `select pid,
+              datname,
+              usename,
+              application_name,
+              client_addr::text as client_addr,
+              state,
+              wait_event_type,
+              wait_event,
+              backend_start::text as backend_start,
+              xact_start::text as xact_start,
+              query_start::text as query_start,
+              state_change::text as state_change,
+              backend_type,
+              query,
+              extract(epoch from (now() - query_start))::float8::text as query_age
+       from pg_stat_activity
+       where pid <> pg_backend_pid()
+       order by case when state = 'active' then 0 else 1 end,
+                xact_start nulls last,
+                query_start nulls last`
+    );
+    const head = await client.query<{ pid: number }>(
+      `select pg_backend_pid() as pid`
+    );
+    return {
+      serverPid: head.rows[0]?.pid ?? 0,
+      rows: res.rows.map((r) => ({
+        pid: r.pid,
+        database: r.datname,
+        user: r.usename,
+        applicationName: r.application_name,
+        clientAddr: r.client_addr,
+        state: r.state,
+        waitEventType: r.wait_event_type,
+        waitEvent: r.wait_event,
+        backendStart: r.backend_start,
+        xactStart: r.xact_start,
+        queryStart: r.query_start,
+        stateChange: r.state_change,
+        backendType: r.backend_type,
+        query: r.query,
+        queryAgeSeconds:
+          r.query_age != null && r.query_age !== ""
+            ? Number(r.query_age)
+            : null,
+      })),
+    };
+  });
+}
+
+export async function cancelBackend(
+  config: PostgresConfig,
+  pid: number
+): Promise<boolean> {
+  if (!Number.isInteger(pid) || pid <= 0) {
+    throw new Error("Invalid PID");
+  }
+  return withClient(config, undefined, async (client) => {
+    const res = await client.query<{ ok: boolean }>(
+      `select pg_cancel_backend($1) as ok`,
+      [pid]
+    );
+    return Boolean(res.rows[0]?.ok);
+  });
+}
+
+export async function terminateBackend(
+  config: PostgresConfig,
+  pid: number
+): Promise<boolean> {
+  if (!Number.isInteger(pid) || pid <= 0) {
+    throw new Error("Invalid PID");
+  }
+  return withClient(config, undefined, async (client) => {
+    const res = await client.query<{ ok: boolean }>(
+      `select pg_terminate_backend($1) as ok`,
+      [pid]
+    );
+    return Boolean(res.rows[0]?.ok);
+  });
+}
+
+export interface LockEdge {
+  blockedPid: number;
+  blockedQuery: string | null;
+  blockedUser: string | null;
+  blockedDatabase: string | null;
+  blockedState: string | null;
+  blockingPid: number;
+  blockingQuery: string | null;
+  blockingUser: string | null;
+  blockingDatabase: string | null;
+  blockingState: string | null;
+  relation: string | null;
+  lockMode: string | null;
+  waitSeconds: number | null;
+}
+
+export async function listBlockingTree(
+  config: PostgresConfig
+): Promise<LockEdge[]> {
+  return withClient(config, undefined, async (client) => {
+    const res = await client.query<{
+      blocked_pid: number;
+      blocked_query: string | null;
+      blocked_user: string | null;
+      blocked_database: string | null;
+      blocked_state: string | null;
+      blocking_pid: number;
+      blocking_query: string | null;
+      blocking_user: string | null;
+      blocking_database: string | null;
+      blocking_state: string | null;
+      relation: string | null;
+      lock_mode: string | null;
+      wait_seconds: string | null;
+    }>(
+      `select bl.pid as blocked_pid,
+              bla.query as blocked_query,
+              bla.usename as blocked_user,
+              bla.datname as blocked_database,
+              bla.state as blocked_state,
+              kl.pid as blocking_pid,
+              kla.query as blocking_query,
+              kla.usename as blocking_user,
+              kla.datname as blocking_database,
+              kla.state as blocking_state,
+              coalesce(bl.relation::regclass::text, '') as relation,
+              bl.mode as lock_mode,
+              extract(epoch from (now() - bla.query_start))::float8::text as wait_seconds
+       from pg_locks bl
+       join pg_stat_activity bla on bla.pid = bl.pid
+       join pg_locks kl on bl.locktype = kl.locktype
+         and not bl.granted and kl.granted
+         and ((bl.relation = kl.relation) or (bl.transactionid = kl.transactionid))
+         and bl.pid <> kl.pid
+       join pg_stat_activity kla on kla.pid = kl.pid
+       order by blocked_pid, blocking_pid`
+    );
+    return res.rows.map((r) => ({
+      blockedPid: r.blocked_pid,
+      blockedQuery: r.blocked_query,
+      blockedUser: r.blocked_user,
+      blockedDatabase: r.blocked_database,
+      blockedState: r.blocked_state,
+      blockingPid: r.blocking_pid,
+      blockingQuery: r.blocking_query,
+      blockingUser: r.blocking_user,
+      blockingDatabase: r.blocking_database,
+      blockingState: r.blocking_state,
+      relation: r.relation || null,
+      lockMode: r.lock_mode,
+      waitSeconds: r.wait_seconds ? Number(r.wait_seconds) : null,
+    }));
+  });
+}
+
+export type MaintenanceMode = "vacuum" | "vacuumFull" | "analyze" | "vacuumAnalyze";
+
+export async function runMaintenance(
+  config: PostgresConfig,
+  database: string,
+  schema: string,
+  table: string,
+  mode: MaintenanceMode
+): Promise<void> {
+  const ident = tableIdent(
+    validateIdentifier(schema, "Schema"),
+    validateIdentifier(table, "Table")
+  );
+  let sql: string;
+  switch (mode) {
+    case "vacuum":
+      sql = `VACUUM ${ident}`;
+      break;
+    case "vacuumFull":
+      sql = `VACUUM FULL ${ident}`;
+      break;
+    case "analyze":
+      sql = `ANALYZE ${ident}`;
+      break;
+    case "vacuumAnalyze":
+      sql = `VACUUM ANALYZE ${ident}`;
+      break;
+  }
+  await withClient(config, database, async (client) => {
+    // VACUUM cannot run inside a transaction; pg client uses simple-query path
+    // so we just issue it directly.
+    await client.query(sql);
+  });
+}
+
+export async function reindexTable(
+  config: PostgresConfig,
+  database: string,
+  schema: string,
+  table: string
+): Promise<void> {
+  const ident = tableIdent(
+    validateIdentifier(schema, "Schema"),
+    validateIdentifier(table, "Table")
+  );
+  await withClient(config, database, async (client) => {
+    await client.query(`REINDEX TABLE ${ident}`);
+  });
+}
+
 const TYPE_NAMES: Record<number, string> = {
   16: "bool",
   20: "int8",

@@ -171,21 +171,131 @@ export async function inspectContainer(
   return client.getContainer(id).inspect();
 }
 
+export interface ReadLogsOptions {
+  tail?: number | "all";
+  since?: number; // unix seconds
+  timestamps?: boolean;
+}
+
 export async function readContainerLogs(
   config: DockerConfig,
   id: string,
-  tail = 200
+  tailOrOpts: number | ReadLogsOptions = 200
 ): Promise<string> {
+  const opts: ReadLogsOptions =
+    typeof tailOrOpts === "number" ? { tail: tailOrOpts } : tailOrOpts;
   const client = createDockerClient(config);
   const container = client.getContainer(id);
   const buf = (await container.logs({
     stdout: true,
     stderr: true,
-    tail,
+    // dockerode types want number; engine accepts "all"
+    tail: (opts.tail ?? 200) as unknown as number,
     follow: false,
-    timestamps: false,
+    timestamps: Boolean(opts.timestamps),
+    since: opts.since,
   })) as unknown as Buffer;
   return decodeDockerStream(buf);
+}
+
+export interface StreamLogsOptions {
+  tail?: number | "all";
+  since?: number;
+  timestamps?: boolean;
+}
+
+export interface StreamLogsHandle {
+  destroy: () => void;
+}
+
+export interface LogLine {
+  channel: "stdout" | "stderr";
+  text: string;
+}
+
+export async function streamContainerLogs(
+  config: DockerConfig,
+  id: string,
+  opts: StreamLogsOptions,
+  onLine: (line: LogLine) => void,
+  onError: (err: unknown) => void,
+  onEnd: () => void
+): Promise<StreamLogsHandle> {
+  const client = createDockerClient(config);
+  const container = client.getContainer(id);
+  const stream = (await container.logs({
+    stdout: true,
+    stderr: true,
+    follow: true,
+    tail: (opts.tail ?? 400) as unknown as number,
+    timestamps: Boolean(opts.timestamps),
+    since: opts.since,
+  })) as unknown as NodeJS.ReadableStream;
+
+  const makeWriter = (channel: "stdout" | "stderr") => {
+    let buffer = "";
+    const flushFinal = () => {
+      if (buffer.length > 0) {
+        onLine({ channel, text: buffer });
+        buffer = "";
+      }
+    };
+    return {
+      write: (chunk: Buffer | string, _enc?: unknown, cb?: () => void) => {
+        try {
+          buffer += typeof chunk === "string" ? chunk : chunk.toString("utf8");
+          let idx: number;
+          while ((idx = buffer.indexOf("\n")) >= 0) {
+            const line = buffer.slice(0, idx);
+            buffer = buffer.slice(idx + 1);
+            // Strip trailing \r (Windows-style line endings in container output)
+            onLine({
+              channel,
+              text: line.endsWith("\r") ? line.slice(0, -1) : line,
+            });
+          }
+        } catch {
+          // swallow — never let writer faults kill the stream
+        }
+        if (typeof cb === "function") cb();
+        return true;
+      },
+      end: () => {
+        flushFinal();
+      },
+      on: () => undefined,
+      once: () => undefined,
+      flushFinal,
+    };
+  };
+
+  const stdoutWriter = makeWriter("stdout");
+  const stderrWriter = makeWriter("stderr");
+
+  client.modem.demuxStream(
+    stream,
+    stdoutWriter as unknown as NodeJS.WritableStream,
+    stderrWriter as unknown as NodeJS.WritableStream
+  );
+
+  stream.once("end", () => {
+    stdoutWriter.flushFinal();
+    stderrWriter.flushFinal();
+    onEnd();
+  });
+  stream.once("error", (err) => {
+    onError(err);
+  });
+
+  return {
+    destroy: () => {
+      try {
+        (stream as unknown as { destroy?: () => void }).destroy?.();
+      } catch {
+        // ignore
+      }
+    },
+  };
 }
 
 function decodeDockerStream(input: Buffer): string {

@@ -1,8 +1,10 @@
 import {
   Kafka,
   logLevel,
+  ConfigResourceTypes,
   type SASLOptions,
   type ITopicConfig,
+  type Consumer,
 } from "kafkajs";
 import type { KafkaConfig } from "./types";
 
@@ -400,6 +402,224 @@ export async function listBrokers(config: KafkaConfig): Promise<BrokerInfo[]> {
       port: b.port,
       isController: b.nodeId === cluster.controller,
     }));
+  } finally {
+    await admin.disconnect().catch(() => undefined);
+  }
+}
+
+export async function alterTopicConfig(
+  config: KafkaConfig,
+  topic: string,
+  entries: { name: string; value: string }[]
+): Promise<void> {
+  const client = createKafkaClient(config);
+  const admin = client.admin();
+  await admin.connect();
+  try {
+    await admin.alterConfigs({
+      validateOnly: false,
+      resources: [
+        {
+          type: ConfigResourceTypes.TOPIC,
+          name: topic,
+          configEntries: entries.map((e) => ({ name: e.name, value: e.value })),
+        },
+      ],
+    });
+  } finally {
+    await admin.disconnect().catch(() => undefined);
+  }
+}
+
+export async function addTopicPartitions(
+  config: KafkaConfig,
+  topic: string,
+  totalPartitions: number
+): Promise<void> {
+  const client = createKafkaClient(config);
+  const admin = client.admin();
+  await admin.connect();
+  try {
+    await admin.createPartitions({
+      topicPartitions: [{ topic, count: totalPartitions }],
+    });
+  } finally {
+    await admin.disconnect().catch(() => undefined);
+  }
+}
+
+export async function emptyTopic(
+  config: KafkaConfig,
+  topic: string
+): Promise<void> {
+  const client = createKafkaClient(config);
+  const admin = client.admin();
+  await admin.connect();
+  try {
+    const meta = await admin.fetchTopicMetadata({ topics: [topic] });
+    const t = meta.topics[0];
+    if (!t) throw new Error("Topic not found");
+    const partitions = t.partitions.length;
+    const replicationFactor = t.partitions[0]?.replicas?.length ?? 1;
+    await admin.deleteTopics({ topics: [topic] });
+    // small delay so brokers settle the deletion before recreate
+    await new Promise((r) => setTimeout(r, 500));
+    await admin.createTopics({
+      waitForLeaders: true,
+      topics: [
+        { topic, numPartitions: partitions, replicationFactor } satisfies ITopicConfig,
+      ],
+    });
+  } finally {
+    await admin.disconnect().catch(() => undefined);
+  }
+}
+
+export interface TailMessage {
+  partition: number;
+  offset: string;
+  timestamp: string;
+  key: string | null;
+  value: string | null;
+  headers: Record<string, string>;
+}
+
+export interface TailHandle {
+  stop: () => Promise<void>;
+}
+
+function decodeHeaders(headers: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!headers || typeof headers !== "object") return out;
+  for (const [k, v] of Object.entries(headers as Record<string, unknown>)) {
+    if (v == null) out[k] = "";
+    else if (Buffer.isBuffer(v)) out[k] = v.toString("utf8");
+    else if (typeof v === "string") out[k] = v;
+    else if (Array.isArray(v))
+      out[k] = v
+        .map((p) => (Buffer.isBuffer(p) ? p.toString("utf8") : String(p)))
+        .join(",");
+    else out[k] = String(v);
+  }
+  return out;
+}
+
+export async function startMessageTail(
+  config: KafkaConfig,
+  opts: { topic: string; fromBeginning?: boolean; partition?: number },
+  onMessage: (m: TailMessage) => void,
+  onError: (err: unknown) => void
+): Promise<TailHandle> {
+  const client = createKafkaClient(config);
+  const groupId = `baklava-tail-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const consumer: Consumer = client.consumer({
+    groupId,
+    sessionTimeout: 10000,
+    heartbeatInterval: 3000,
+  });
+  await consumer.connect();
+  await consumer.subscribe({
+    topic: opts.topic,
+    fromBeginning: Boolean(opts.fromBeginning),
+  });
+  consumer
+    .run({
+      autoCommit: false,
+      eachMessage: async ({ partition, message }) => {
+        if (opts.partition != null && partition !== opts.partition) return;
+        onMessage({
+          partition,
+          offset: message.offset,
+          timestamp: message.timestamp,
+          key: message.key ? message.key.toString("utf8") : null,
+          value: message.value ? message.value.toString("utf8") : null,
+          headers: decodeHeaders(message.headers),
+        });
+      },
+    })
+    .catch((err) => onError(err));
+
+  return {
+    stop: async () => {
+      await consumer.disconnect().catch(() => undefined);
+      try {
+        const admin = client.admin();
+        await admin.connect();
+        try {
+          await admin.deleteGroups([groupId]);
+        } finally {
+          await admin.disconnect().catch(() => undefined);
+        }
+      } catch (err) {
+        console.warn("startMessageTail: failed to delete consumer group", err);
+      }
+    },
+  };
+}
+
+export type ResetOffsetTarget =
+  | { kind: "earliest" }
+  | { kind: "latest" }
+  | { kind: "timestamp"; timestamp: number }
+  | { kind: "offset"; offset: string };
+
+export async function resetGroupOffsets(
+  config: KafkaConfig,
+  groupId: string,
+  topic: string,
+  target: ResetOffsetTarget,
+  partitions?: number[]
+): Promise<void> {
+  const client = createKafkaClient(config);
+  const admin = client.admin();
+  await admin.connect();
+  try {
+    if (target.kind === "earliest" || target.kind === "latest") {
+      // resetOffsets requires the group to be empty
+      await admin.resetOffsets({
+        groupId,
+        topic,
+        earliest: target.kind === "earliest",
+      });
+    } else if (target.kind === "timestamp") {
+      const result = await admin.fetchTopicOffsetsByTimestamp(
+        topic,
+        target.timestamp
+      );
+      const entries = result
+        .filter(
+          (p) => !partitions || partitions.includes(p.partition)
+        )
+        .map((p) => ({ partition: p.partition, offset: p.offset }));
+      if (entries.length > 0) {
+        await admin.setOffsets({ groupId, topic, partitions: entries });
+      }
+    } else {
+      // specific offset
+      const meta = await admin.fetchTopicMetadata({ topics: [topic] });
+      const t = meta.topics[0];
+      if (!t) throw new Error("Topic not found");
+      const allPartitions = t.partitions.map((p) => p.partitionId);
+      const targets = (partitions ?? allPartitions).map((p) => ({
+        partition: p,
+        offset: target.offset,
+      }));
+      await admin.setOffsets({ groupId, topic, partitions: targets });
+    }
+  } finally {
+    await admin.disconnect().catch(() => undefined);
+  }
+}
+
+export async function deleteConsumerGroup(
+  config: KafkaConfig,
+  groupId: string
+): Promise<void> {
+  const client = createKafkaClient(config);
+  const admin = client.admin();
+  await admin.connect();
+  try {
+    await admin.deleteGroups([groupId]);
   } finally {
     await admin.disconnect().catch(() => undefined);
   }
