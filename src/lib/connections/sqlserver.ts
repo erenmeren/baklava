@@ -74,12 +74,14 @@ export async function getSqlServerOverview(
   config: SqlServerConfig
 ): Promise<SqlServerOverview> {
   return withPool(config, async (pool) => {
+    // Note: `current_user` is a reserved built-in function in T-SQL and
+    // can't be used as a bare column alias — use `login_name` instead.
     const headResult = await pool.request().query<{
       version: string;
       product_version: string;
       edition: string;
       server_name: string;
-      current_user: string;
+      login_name: string;
       collation: string;
     }>(`
       SELECT
@@ -87,7 +89,7 @@ export async function getSqlServerOverview(
         CONVERT(NVARCHAR(128), SERVERPROPERTY('ProductVersion')) AS product_version,
         CONVERT(NVARCHAR(256), SERVERPROPERTY('Edition')) AS edition,
         CONVERT(NVARCHAR(256), SERVERPROPERTY('ServerName')) AS server_name,
-        SUSER_SNAME() AS current_user,
+        SUSER_SNAME() AS login_name,
         CONVERT(NVARCHAR(128), SERVERPROPERTY('Collation')) AS collation
     `);
     const head = headResult.recordset[0] ?? {
@@ -95,7 +97,7 @@ export async function getSqlServerOverview(
       product_version: null,
       edition: null,
       server_name: null,
-      current_user: null,
+      login_name: null,
       collation: null,
     };
 
@@ -117,7 +119,7 @@ export async function getSqlServerOverview(
       productVersion: head.product_version ?? null,
       edition: head.edition ?? null,
       serverName: head.server_name ?? null,
-      currentUser: head.current_user ?? null,
+      currentUser: head.login_name ?? null,
       collation: head.collation ?? null,
       startTime,
       databaseCount: databases.length,
