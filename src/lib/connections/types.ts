@@ -11,7 +11,8 @@ export type TechId =
   | "nats"
   | "sqlite"
   | "etcd"
-  | "sqlserver";
+  | "sqlserver"
+  | "kubernetes";
 
 export type ConnectionStatus = "untested" | "ok" | "error";
 
@@ -140,4 +141,11 @@ export interface SqlServerConfig {
   encrypt: boolean;
   /** Trust self-signed/unknown certs (dev / private networks). */
   trustServerCertificate: boolean;
+}
+
+export interface KubernetesConfig {
+  /** Full kubeconfig YAML text. Lets users plug in kind / minikube / EKS / GKE / AKS without us caring how the auth works. */
+  kubeconfig: string;
+  /** Optional context name within the kubeconfig. Falls back to current-context. */
+  context?: string;
 }

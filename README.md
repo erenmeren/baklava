@@ -7,7 +7,7 @@ Open-source unified ops console. One UI for Docker, Kafka, PostgreSQL, MySQL, SQ
 - A grid of integrated technologies on the home screen.
 - Click in to configure and test a connection. A successful test stores it in memory.
 - "Open" a saved connection and you land in a full **workspace** with a sidebar and per-object detail views — same shape as the dedicated tool for that tech.
-- Connections are **never persisted to disk**. They live in the Node process and disappear on restart.
+- Connections persist to `~/.baklava/connections.json` (chmod 600) so they survive Next.js restarts. Override the location with `BAKLAVA_DATA_DIR`. Passwords are stored in plaintext — same posture as `~/.kube/config`, `~/.docker/config.json`, `~/.aws/credentials`.
 
 ## Workspaces
 

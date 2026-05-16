@@ -17,6 +17,7 @@ const nextConfig: NextConfig = {
     "etcd3",
     "mssql",
     "tedious",
+    "@kubernetes/client-node",
   ],
 };
 

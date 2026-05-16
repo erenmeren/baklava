@@ -14,7 +14,7 @@ Open-source unified ops console for Docker, Kafka, PostgreSQL (and more to come)
 - Tailwind v4, shadcn/ui (`base-nova` style — components wrap `@base-ui/react/*`, NOT classic Radix)
 - Drivers: `dockerode`, `kafkajs`, `pg`
 - Editors: `@uiw/react-codemirror` (SQL editor) and `@xterm/xterm` + `@xterm/addon-fit` (container terminal)
-- No DB. Connections live in an in-memory store on `globalThis` and vanish on server restart. This is intentional.
+- No DB. Connections live in an in-memory store on `globalThis` and are mirrored to `~/.baklava/connections.json` (override with `BAKLAVA_DATA_DIR`) so they survive Next.js restarts. Per-connection volatile state (terminal sessions, registries, etc.) still vanishes on restart.
 
 ## Routing model
 
@@ -28,11 +28,11 @@ Open-source unified ops console for Docker, Kafka, PostgreSQL (and more to come)
 
 ## In-memory stores (globalThis pattern)
 
-All persistent-feeling state is held in `Symbol.for("baklava.X")` slots on `globalThis` so it survives Next dev HMR but disappears on process restart:
+All persistent-feeling state is held in `Symbol.for("baklava.X")` slots on `globalThis` so it survives Next dev HMR:
 
-- `src/lib/connections/store.ts` — `baklava.connectionStore` (Docker / Kafka / Postgres connections)
-- `src/lib/connections/registries.ts` — `baklava.registries` (Docker registry creds per connection)
-- `src/lib/connections/terminal-sessions.ts` — `baklava.terminalSessions` (hijacked dockerode exec streams)
+- `src/lib/connections/store.ts` — `baklava.connectionStore` (connections for every tech). **Persists to `~/.baklava/connections.json`** on `saveConnection` / `deleteConnection`. `updateStatus` is in-memory only (it fires on every API request — flushing each one would thrash the disk). Loaded on first `getStore()` call after process restart.
+- `src/lib/connections/registries.ts` — `baklava.registries` (Docker registry creds per connection). In-memory only.
+- `src/lib/connections/terminal-sessions.ts` — `baklava.terminalSessions` (hijacked dockerode exec streams). In-memory only.
 
 `src/lib/connections/store.ts` is the single source of truth for connections. Use `redactConfig` / `publicView` before returning over the API — **passwords never leave the server**.
 

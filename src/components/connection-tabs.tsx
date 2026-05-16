@@ -27,6 +27,7 @@ const FIRST_PAGE: Record<TechId, string> = {
   nats: "streams",
   sqlite: "tables",
   etcd: "keys",
+  kubernetes: "pods",
 };
 
 const STORAGE_KEY = "baklava:open-tabs";

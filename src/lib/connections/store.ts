@@ -1,6 +1,68 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import type { ConnectionRecord, ConnectionStatus, TechId } from "./types";
 
 type AnyRecord = ConnectionRecord<unknown>;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Disk persistence
+//
+// Connections survive Next.js restarts by being mirrored to a JSON file under
+// the user's home directory. We persist on user-initiated mutations only
+// (saveConnection, deleteConnection) — NOT on every updateStatus, because
+// status flips on every API request and would thrash the disk.
+//
+// Override the location with the BAKLAVA_DATA_DIR env var.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const DATA_DIR =
+  process.env.BAKLAVA_DATA_DIR || path.join(os.homedir(), ".baklava");
+const FILE = path.join(DATA_DIR, "connections.json");
+
+interface PersistedShape {
+  version: 1;
+  connections: AnyRecord[];
+}
+
+function loadFromDisk(): AnyRecord[] {
+  try {
+    const raw = fs.readFileSync(FILE, "utf8");
+    const data = JSON.parse(raw) as Partial<PersistedShape>;
+    // Accept either the current { version: 1, connections } shape or a legacy
+    // { connections: [...] } shape (no version) from earlier experiments.
+    if (Array.isArray(data?.connections)) {
+      return data.connections as AnyRecord[];
+    }
+    console.warn(
+      `[baklava] ${FILE} has unexpected shape, ignoring (starting empty)`
+    );
+    return [];
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code !== "ENOENT") {
+      console.warn(`[baklava] could not read ${FILE}:`, err);
+    }
+    return [];
+  }
+}
+
+function persistToDisk(records: AnyRecord[]): void {
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true, mode: 0o700 });
+    const payload: PersistedShape = { version: 1, connections: records };
+    const tmp = `${FILE}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(payload, null, 2), { mode: 0o600 });
+    fs.renameSync(tmp, FILE);
+  } catch (err) {
+    // Logging only — don't fail the mutation just because we couldn't write.
+    console.error(`[baklava] could not persist ${FILE}:`, err);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// In-memory store (globalThis-scoped so it survives Next dev HMR)
+// ─────────────────────────────────────────────────────────────────────────────
 
 const globalKey = Symbol.for("baklava.connectionStore");
 
@@ -11,9 +73,17 @@ interface Store {
 function getStore(): Store {
   const g = globalThis as unknown as Record<symbol, Store>;
   if (!g[globalKey]) {
-    g[globalKey] = { byId: new Map() };
+    const byId = new Map<string, AnyRecord>();
+    for (const rec of loadFromDisk()) {
+      if (rec?.id) byId.set(rec.id, rec);
+    }
+    g[globalKey] = { byId };
   }
   return g[globalKey];
+}
+
+function flush(): void {
+  persistToDisk([...getStore().byId.values()]);
 }
 
 function genId() {
@@ -47,6 +117,7 @@ export function saveConnection<C>(input: {
     lastTestedAt: input.status === "untested" ? undefined : Date.now(),
   };
   getStore().byId.set(record.id, record as AnyRecord);
+  flush();
   return record;
 }
 
@@ -64,11 +135,15 @@ export function updateStatus(
     lastTestedAt: Date.now(),
   };
   getStore().byId.set(id, updated);
+  // Intentionally NOT calling flush() here — status updates fire on every API
+  // request and would thrash the disk. Status is recomputed on next probe.
   return updated;
 }
 
 export function deleteConnection(id: string): boolean {
-  return getStore().byId.delete(id);
+  const deleted = getStore().byId.delete(id);
+  if (deleted) flush();
+  return deleted;
 }
 
 export function redactConfig<C extends Record<string, unknown>>(config: C): C {

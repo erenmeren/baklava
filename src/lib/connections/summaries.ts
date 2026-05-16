@@ -5,6 +5,7 @@ import type {
   ElasticConfig,
   EtcdConfig,
   KafkaConfig,
+  KubernetesConfig,
   MongoConfig,
   MysqlConfig,
   NatsConfig,
@@ -74,5 +75,15 @@ export const connectionSummaries: Record<
   sqlserver: (r) => {
     const cfg = r.config as SqlServerConfig;
     return `${cfg.user}@${cfg.host}:${cfg.port}/${cfg.database}`;
+  },
+  kubernetes: (r) => {
+    const cfg = r.config as KubernetesConfig;
+    // Extract current-context (or the override) from the kubeconfig text without
+    // pulling in a YAML parser at module load.
+    const ctx =
+      cfg.context ||
+      cfg.kubeconfig.match(/current-context:\s*([^\n]+)/)?.[1]?.trim() ||
+      "kubeconfig";
+    return ctx;
   },
 };

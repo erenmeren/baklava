@@ -27,6 +27,7 @@ import { ClickhouseForm } from "@/app/clickhouse/clickhouse-form";
 import { NatsForm } from "@/app/nats/nats-form";
 import { SqliteForm } from "@/app/sqlite/sqlite-form";
 import { EtcdForm } from "@/app/etcd/etcd-form";
+import { KubernetesForm } from "@/app/kubernetes/kubernetes-form";
 
 interface Props {
   tech: TechMeta | null;
@@ -47,6 +48,7 @@ const FORMS: Record<TechId, React.ComponentType<{ onSaved?: () => void }>> = {
   nats: NatsForm,
   sqlite: SqliteForm,
   etcd: EtcdForm,
+  kubernetes: KubernetesForm,
 };
 
 export function ConnectionSheet({ tech, onOpenChange }: Props) {

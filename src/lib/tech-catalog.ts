@@ -146,6 +146,15 @@ export const TECH_CATALOG: TechMeta[] = [
     color: "from-lime-400 to-green-600",
     status: "available",
   },
+  {
+    id: "kubernetes",
+    name: "Kubernetes",
+    tagline: "Container orchestrator",
+    description: "Pods, deployments, services, nodes.",
+    category: "Runtime",
+    color: "from-blue-500 to-indigo-700",
+    status: "available",
+  },
 ];
 
 export function getTech(id: string): TechMeta | undefined {
