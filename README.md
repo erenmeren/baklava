@@ -104,7 +104,7 @@ npm install                                  # if you haven't yet
 node seed/vector-and-graph.cjs               # seeds qdrant, weaviate, chroma, milvus, neo4j
 ```
 
-Idempotent — wipes and recreates the demo collections / graph on each run.
+Both seeders are idempotent. See [`seed/README.md`](seed/README.md) for full details — schemas, row counts, and sample Cypher queries for the Neo4j graph.
 
 #### Connection details
 
