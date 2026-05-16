@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getConnection, updateStatus } from "@/lib/connections/store";
-import { createTopic, listTopics } from "@/lib/connections/kafka";
+import {
+  createTopic,
+  listTopics,
+  listTopicsWithStats,
+} from "@/lib/connections/kafka";
 import type { KafkaConfig } from "@/lib/connections/types";
 import { formatError } from "@/lib/errors";
 
@@ -17,8 +21,11 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
     return NextResponse.json({ error: "Connection not found" }, { status: 404 });
   }
   const includeInternal = req.nextUrl.searchParams.get("internal") === "1";
+  const stats = req.nextUrl.searchParams.get("stats") === "1";
   try {
-    const all = await listTopics(record.config as KafkaConfig);
+    const all = stats
+      ? await listTopicsWithStats(record.config as KafkaConfig)
+      : await listTopics(record.config as KafkaConfig);
     const topics = includeInternal ? all : all.filter((t) => !t.internal);
     updateStatus(id, "ok");
     return NextResponse.json({ topics });

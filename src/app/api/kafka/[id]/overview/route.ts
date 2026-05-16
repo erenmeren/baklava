@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getConnection, updateStatus } from "@/lib/connections/store";
-import {
-  listConsumerGroups,
-  listConsumerGroupsWithLag,
-} from "@/lib/connections/kafka";
+import { getClusterSummary } from "@/lib/connections/kafka";
 import type { KafkaConfig } from "@/lib/connections/types";
 import { formatError } from "@/lib/errors";
 
@@ -13,19 +10,16 @@ interface RouteContext {
   params: Promise<{ id: string }>;
 }
 
-export async function GET(req: NextRequest, ctx: RouteContext) {
+export async function GET(_req: NextRequest, ctx: RouteContext) {
   const { id } = await ctx.params;
   const record = getConnection(id);
   if (!record || record.tech !== "kafka") {
     return NextResponse.json({ error: "Connection not found" }, { status: 404 });
   }
-  const lag = req.nextUrl.searchParams.get("lag") === "1";
   try {
-    const groups = lag
-      ? await listConsumerGroupsWithLag(record.config as KafkaConfig)
-      : await listConsumerGroups(record.config as KafkaConfig);
+    const summary = await getClusterSummary(record.config as KafkaConfig);
     updateStatus(id, "ok");
-    return NextResponse.json({ groups });
+    return NextResponse.json(summary);
   } catch (err) {
     const message = formatError(err);
     updateStatus(id, "error", message);

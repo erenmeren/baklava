@@ -1,10 +1,10 @@
-import { redirect } from "next/navigation";
+import { OverviewClient } from "./overview-client";
 
 interface PageProps {
   params: Promise<{ connectionId: string }>;
 }
 
-export default async function KafkaWorkspaceIndex({ params }: PageProps) {
+export default async function KafkaOverviewPage({ params }: PageProps) {
   const { connectionId } = await params;
-  redirect(`/kafka/${connectionId}/topics`);
+  return <OverviewClient connectionId={connectionId} />;
 }

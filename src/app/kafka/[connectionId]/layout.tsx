@@ -6,7 +6,7 @@ import {
 import { getTech } from "@/lib/tech-catalog";
 import { requireConnection } from "@/lib/connections/server";
 import type { KafkaConfig } from "@/lib/connections/types";
-import { Server, Network, Users } from "lucide-react";
+import { Server, Network, Users, Activity } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +31,13 @@ export default async function KafkaWorkspaceLayout({
       subtitle={subtitle}
       sidebar={
         <SidebarSection>
+          <SidebarLink
+            href={`/kafka/${connectionId}`}
+            icon={<Activity className="size-4" />}
+            exact
+          >
+            Overview
+          </SidebarLink>
           <SidebarLink
             href={`/kafka/${connectionId}/topics`}
             icon={<Network className="size-4" />}

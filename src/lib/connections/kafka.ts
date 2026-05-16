@@ -624,3 +624,249 @@ export async function deleteConsumerGroup(
     await admin.disconnect().catch(() => undefined);
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Stats helpers (cluster overview / dense lists)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface KafkaClusterSummary {
+  brokers: BrokerInfo[];
+  controllerId: number | null;
+  userTopicCount: number;
+  internalTopicCount: number;
+  totalPartitions: number;
+  underReplicatedPartitions: number;
+  underReplicatedTopics: string[];
+  consumerGroupCount: number;
+  groupStates: Record<string, number>;
+  totalMessages: number;
+  topTopicsByVolume: { name: string; messages: number }[];
+}
+
+export async function getClusterSummary(
+  config: KafkaConfig
+): Promise<KafkaClusterSummary> {
+  const client = createKafkaClient(config);
+  const admin = client.admin();
+  await admin.connect();
+  try {
+    const [cluster, metadata, groupList] = await Promise.all([
+      admin.describeCluster(),
+      admin.fetchTopicMetadata(),
+      admin.listGroups(),
+    ]);
+
+    let totalPartitions = 0;
+    let underReplicatedPartitions = 0;
+    const underReplicatedTopics = new Set<string>();
+    let userTopicCount = 0;
+    let internalTopicCount = 0;
+
+    for (const t of metadata.topics) {
+      const internal = t.name.startsWith("__");
+      if (internal) internalTopicCount += 1;
+      else userTopicCount += 1;
+      totalPartitions += t.partitions.length;
+      for (const p of t.partitions) {
+        if (p.isr.length < p.replicas.length) {
+          underReplicatedPartitions += 1;
+          underReplicatedTopics.add(t.name);
+        }
+      }
+    }
+
+    // Per-topic message totals (sum high-low across partitions). Run in parallel.
+    const offsetResults = await Promise.all(
+      metadata.topics.map((t) =>
+        admin
+          .fetchTopicOffsets(t.name)
+          .then((rows) => ({ name: t.name, rows }))
+          .catch(() => ({ name: t.name, rows: [] as never[] }))
+      )
+    );
+
+    let totalMessages = 0;
+    const perTopicMessages = new Map<string, number>();
+    for (const { name, rows } of offsetResults) {
+      let sum = 0;
+      for (const r of rows) {
+        const h = Number(r.high);
+        const l = Number(r.low);
+        if (Number.isFinite(h) && Number.isFinite(l)) sum += Math.max(0, h - l);
+      }
+      perTopicMessages.set(name, sum);
+      totalMessages += sum;
+    }
+
+    const topTopicsByVolume = [...perTopicMessages.entries()]
+      .filter(([name]) => !name.startsWith("__"))
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([name, messages]) => ({ name, messages }));
+
+    // Group state breakdown (best-effort; describeGroups may be expensive).
+    const groupStates: Record<string, number> = {};
+    if (groupList.groups.length > 0) {
+      try {
+        const desc = await admin.describeGroups(
+          groupList.groups.map((g) => g.groupId)
+        );
+        for (const g of desc.groups) {
+          const s = g.state || "Unknown";
+          groupStates[s] = (groupStates[s] || 0) + 1;
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    return {
+      brokers: cluster.brokers.map((b) => ({
+        nodeId: b.nodeId,
+        host: b.host,
+        port: b.port,
+        isController: b.nodeId === cluster.controller,
+      })),
+      controllerId: cluster.controller ?? null,
+      userTopicCount,
+      internalTopicCount,
+      totalPartitions,
+      underReplicatedPartitions,
+      underReplicatedTopics: [...underReplicatedTopics].sort(),
+      consumerGroupCount: groupList.groups.length,
+      groupStates,
+      totalMessages,
+      topTopicsByVolume,
+    };
+  } finally {
+    await admin.disconnect().catch(() => undefined);
+  }
+}
+
+export interface KafkaTopicStat extends KafkaTopicSummary {
+  messages: number;
+  underReplicated: boolean;
+  partitionCounts: number[];
+}
+
+export async function listTopicsWithStats(
+  config: KafkaConfig
+): Promise<KafkaTopicStat[]> {
+  const client = createKafkaClient(config);
+  const admin = client.admin();
+  await admin.connect();
+  try {
+    const metadata = await admin.fetchTopicMetadata();
+    const offsetResults = await Promise.all(
+      metadata.topics.map((t) =>
+        admin
+          .fetchTopicOffsets(t.name)
+          .then((rows) => ({ name: t.name, rows }))
+          .catch(() => ({ name: t.name, rows: [] as never[] }))
+      )
+    );
+    const offsetsByTopic = new Map(
+      offsetResults.map(({ name, rows }) => [name, rows])
+    );
+
+    return metadata.topics
+      .map<KafkaTopicStat>((t) => {
+        const rows = offsetsByTopic.get(t.name) ?? [];
+        const partitionCounts: number[] = [];
+        let total = 0;
+        for (const r of rows) {
+          const h = Number(r.high);
+          const l = Number(r.low);
+          const c = Number.isFinite(h) && Number.isFinite(l) ? Math.max(0, h - l) : 0;
+          partitionCounts.push(c);
+          total += c;
+        }
+        const underReplicated = t.partitions.some(
+          (p) => p.isr.length < p.replicas.length
+        );
+        return {
+          name: t.name,
+          partitions: t.partitions.length,
+          replicas: t.partitions[0]?.replicas?.length ?? 0,
+          internal: t.name.startsWith("__"),
+          messages: total,
+          underReplicated,
+          partitionCounts,
+        };
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+  } finally {
+    await admin.disconnect().catch(() => undefined);
+  }
+}
+
+export interface KafkaGroupStat extends ConsumerGroupSummary {
+  memberCount: number;
+  topicCount: number;
+  totalLag: number;
+}
+
+export async function listConsumerGroupsWithLag(
+  config: KafkaConfig
+): Promise<KafkaGroupStat[]> {
+  const client = createKafkaClient(config);
+  const admin = client.admin();
+  await admin.connect();
+  try {
+    const list = await admin.listGroups();
+    if (list.groups.length === 0) return [];
+
+    const groupIds = list.groups.map((g) => g.groupId);
+    const desc = await admin.describeGroups(groupIds);
+    const memberInfo = new Map<
+      string,
+      { state: string; memberCount: number }
+    >();
+    for (const g of desc.groups) {
+      memberInfo.set(g.groupId, {
+        state: g.state,
+        memberCount: g.members.length,
+      });
+    }
+
+    // Fetch offsets for each group in parallel; collect needed topic high-water-marks once
+    const groupOffsets = await Promise.all(
+      groupIds.map((groupId) =>
+        admin
+          .fetchOffsets({ groupId, resolveOffsets: true })
+          .then((rows) => ({ groupId, rows }))
+          .catch(() => ({ groupId, rows: [] as never[] }))
+      )
+    );
+
+    return list.groups
+      .map((g) => {
+        const info = memberInfo.get(g.groupId);
+        const rows =
+          groupOffsets.find((o) => o.groupId === g.groupId)?.rows ?? [];
+        const topics = new Set<string>();
+        let totalLag = 0;
+        for (const t of rows) {
+          topics.add(t.topic);
+          for (const p of t.partitions) {
+            const high = Number(
+              (p as unknown as { high?: string }).high ?? "-1"
+            );
+            const off = Number(p.offset);
+            if (high >= 0 && off >= 0) totalLag += Math.max(0, high - off);
+          }
+        }
+        return {
+          groupId: g.groupId,
+          protocolType: g.protocolType,
+          state: info?.state,
+          memberCount: info?.memberCount ?? 0,
+          topicCount: topics.size,
+          totalLag,
+        };
+      })
+      .sort((a, b) => b.totalLag - a.totalLag);
+  } finally {
+    await admin.disconnect().catch(() => undefined);
+  }
+}
