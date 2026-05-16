@@ -148,3 +148,79 @@ export async function listMysqlDatabases(
     }));
   });
 }
+
+export interface MysqlTableSummary {
+  name: string;
+  engine: string | null;
+  rows: number;
+  sizeBytes: number;
+  collation: string | null;
+}
+
+export interface MysqlDatabaseDetail {
+  name: string;
+  charset: string | null;
+  collation: string | null;
+  sizeBytes: number;
+  tableCount: number;
+}
+
+export interface MysqlDatabaseDetailResult {
+  database: MysqlDatabaseDetail;
+  tables: MysqlTableSummary[];
+}
+
+export async function listMysqlTables(
+  config: MysqlConfig,
+  database: string
+): Promise<MysqlDatabaseDetailResult> {
+  return withConnection(config, async (conn) => {
+    const [schemaRows] = await conn.execute<RowDataPacket[]>(
+      `SELECT
+         SCHEMA_NAME AS name,
+         DEFAULT_CHARACTER_SET_NAME AS charset,
+         DEFAULT_COLLATION_NAME AS collation
+       FROM information_schema.SCHEMATA
+       WHERE SCHEMA_NAME = ?`,
+      [database]
+    );
+    if (schemaRows.length === 0) {
+      throw new Error(`Database "${database}" not found`);
+    }
+    const schema = schemaRows[0];
+
+    const [tableRows] = await conn.execute<RowDataPacket[]>(
+      `SELECT
+         TABLE_NAME AS name,
+         ENGINE AS engine,
+         COALESCE(TABLE_ROWS, 0) AS row_count,
+         COALESCE(DATA_LENGTH, 0) + COALESCE(INDEX_LENGTH, 0) AS size_bytes,
+         TABLE_COLLATION AS collation
+       FROM information_schema.TABLES
+       WHERE TABLE_SCHEMA = ?
+       ORDER BY TABLE_NAME`,
+      [database]
+    );
+
+    const tables: MysqlTableSummary[] = tableRows.map((row) => ({
+      name: String(row.name),
+      engine: row.engine != null ? String(row.engine) : null,
+      rows: Number(row.row_count ?? 0),
+      sizeBytes: Number(row.size_bytes ?? 0),
+      collation: row.collation != null ? String(row.collation) : null,
+    }));
+
+    const totalSize = tables.reduce((acc, t) => acc + t.sizeBytes, 0);
+
+    return {
+      database: {
+        name: String(schema.name),
+        charset: schema.charset != null ? String(schema.charset) : null,
+        collation: schema.collation != null ? String(schema.collation) : null,
+        sizeBytes: totalSize,
+        tableCount: tables.length,
+      },
+      tables,
+    };
+  });
+}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
@@ -190,7 +191,12 @@ export function TablesClient({ connectionId }: Props) {
               </thead>
               <tbody>
                 {filtered!.map((t) => (
-                  <TableRowItem key={t.name} t={t} maxRows={maxRows} />
+                  <TableRowItem
+                    key={t.name}
+                    t={t}
+                    maxRows={maxRows}
+                    connectionId={connectionId}
+                  />
                 ))}
               </tbody>
             </table>
@@ -203,13 +209,26 @@ export function TablesClient({ connectionId }: Props) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-function TableRowItem({ t, maxRows }: { t: TableRow; maxRows: number }) {
+function TableRowItem({
+  t,
+  maxRows,
+  connectionId,
+}: {
+  t: TableRow;
+  maxRows: number;
+  connectionId: string;
+}) {
   const pct = maxRows > 0 ? Math.min(100, (t.rows / maxRows) * 100) : 0;
   const ts = parseTimestamp(t.modifiedAt);
   return (
     <tr className="border-t border-border/40 hover:bg-muted/30">
       <td className="px-3 py-2 align-middle">
-        <span className="font-mono text-xs truncate">{t.name}</span>
+        <Link
+          href={`/clickhouse/${connectionId}/tables/${encodeURIComponent(t.name)}`}
+          className="font-mono text-xs truncate hover:underline"
+        >
+          {t.name}
+        </Link>
       </td>
       <td className="px-3 py-2 align-middle">
         <span

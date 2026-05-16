@@ -49,6 +49,43 @@ async function mgmtGet<T>(config: RabbitConfig, path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
+async function mgmtRequest<T>(
+  config: RabbitConfig,
+  path: string,
+  init: { method: string; body?: unknown }
+): Promise<T | undefined> {
+  const url = `${mgmtBase(config)}${path}`;
+  const headers: Record<string, string> = {
+    ...mgmtHeaders(config),
+  };
+  let body: string | undefined;
+  if (init.body !== undefined) {
+    body = JSON.stringify(init.body);
+    headers["content-type"] = "application/json";
+  }
+  const res = await fetch(url, {
+    method: init.method,
+    headers,
+    body,
+    cache: "no-store",
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(
+      `Management API ${res.status} ${res.statusText}${text ? ` — ${text.slice(0, 200)}` : ""}`
+    );
+  }
+  if (res.status === 204) return undefined;
+  const text = await res.text();
+  if (!text) return undefined;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return undefined;
+  }
+}
+
 function vhostSegment(vhost: string): string {
   return encodeURIComponent(vhost || "/");
 }
@@ -290,4 +327,219 @@ export async function listRabbitQueues(
       messageBytes: q.message_bytes,
     }))
     .sort((a, b) => b.messages - a.messages);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Queue detail / bindings / consumers / message peek
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface RateBlock {
+  rate?: number;
+}
+
+interface QueueDetailResponse extends QueueResponse {
+  message_stats?: {
+    publish?: number;
+    publish_details?: RateBlock;
+    deliver?: number;
+    deliver_details?: RateBlock;
+    deliver_get?: number;
+    deliver_get_details?: RateBlock;
+    ack?: number;
+    ack_details?: RateBlock;
+    redeliver?: number;
+    redeliver_details?: RateBlock;
+  };
+  consumer_details?: RabbitConsumerDetailResponse[];
+  policy?: string;
+  idle_since?: string;
+  recoverable_slaves?: string[];
+  slave_nodes?: string[];
+}
+
+interface RabbitConsumerDetailResponse {
+  consumer_tag: string;
+  ack_required?: boolean;
+  active?: boolean;
+  exclusive?: boolean;
+  prefetch_count?: number;
+  arguments?: Record<string, unknown>;
+  channel_details?: {
+    name?: string;
+    connection_name?: string;
+    peer_host?: string;
+    peer_port?: number;
+    user?: string;
+  };
+}
+
+export interface RabbitQueueDetail {
+  queue: QueueDetailResponse;
+  node?: string;
+  vhost: string;
+}
+
+export async function getRabbitQueue(
+  config: RabbitConfig,
+  name: string
+): Promise<RabbitQueueDetail> {
+  const vhost = config.vhost ?? "/";
+  const queue = await mgmtGet<QueueDetailResponse>(
+    config,
+    `/api/queues/${vhostSegment(vhost)}/${encodeURIComponent(name)}`
+  );
+  return { queue, node: queue.node, vhost };
+}
+
+export interface RabbitBinding {
+  source: string;
+  vhost: string;
+  destination: string;
+  destinationType: string;
+  routingKey: string;
+  arguments: Record<string, unknown>;
+  propertiesKey?: string;
+}
+
+interface BindingResponse {
+  source: string;
+  vhost: string;
+  destination: string;
+  destination_type: string;
+  routing_key: string;
+  arguments?: Record<string, unknown>;
+  properties_key?: string;
+}
+
+export async function getRabbitQueueBindings(
+  config: RabbitConfig,
+  name: string
+): Promise<RabbitBinding[]> {
+  const vhost = config.vhost ?? "/";
+  const bindings = await mgmtGet<BindingResponse[]>(
+    config,
+    `/api/queues/${vhostSegment(vhost)}/${encodeURIComponent(name)}/bindings`
+  );
+  return bindings.map((b) => ({
+    source: b.source,
+    vhost: b.vhost,
+    destination: b.destination,
+    destinationType: b.destination_type,
+    routingKey: b.routing_key,
+    arguments: b.arguments ?? {},
+    propertiesKey: b.properties_key,
+  }));
+}
+
+export interface RabbitConsumerDetail {
+  consumerTag: string;
+  ackRequired: boolean;
+  active: boolean;
+  exclusive: boolean;
+  prefetchCount: number;
+  channelName?: string;
+  connectionName?: string;
+  peerHost?: string;
+  peerPort?: number;
+  user?: string;
+  arguments: Record<string, unknown>;
+}
+
+export async function getRabbitQueueConsumers(
+  config: RabbitConfig,
+  name: string
+): Promise<RabbitConsumerDetail[]> {
+  const detail = await getRabbitQueue(config, name);
+  const list = detail.queue.consumer_details ?? [];
+  return list.map<RabbitConsumerDetail>((c) => ({
+    consumerTag: c.consumer_tag,
+    ackRequired: Boolean(c.ack_required),
+    active: Boolean(c.active),
+    exclusive: Boolean(c.exclusive),
+    prefetchCount: c.prefetch_count ?? 0,
+    channelName: c.channel_details?.name,
+    connectionName: c.channel_details?.connection_name,
+    peerHost: c.channel_details?.peer_host,
+    peerPort: c.channel_details?.peer_port,
+    user: c.channel_details?.user,
+    arguments: c.arguments ?? {},
+  }));
+}
+
+export interface RabbitPeekedMessage {
+  payload: string;
+  payloadBytes?: number;
+  payloadEncoding: string;
+  routingKey: string;
+  exchange: string;
+  redelivered: boolean;
+  properties: Record<string, unknown>;
+  messageCount?: number;
+}
+
+interface PeekedMessageResponse {
+  payload: string;
+  payload_bytes?: number;
+  payload_encoding: string;
+  routing_key: string;
+  exchange: string;
+  redelivered: boolean;
+  properties?: Record<string, unknown>;
+  message_count?: number;
+}
+
+export async function peekRabbitMessages(
+  config: RabbitConfig,
+  name: string,
+  count: number,
+  requeue = true
+): Promise<RabbitPeekedMessage[]> {
+  const vhost = config.vhost ?? "/";
+  const safeCount = Math.min(Math.max(1, Math.floor(count)), 100);
+  const body = {
+    count: safeCount,
+    ackmode: requeue ? "ack_requeue_true" : "ack_requeue_false",
+    encoding: "auto",
+    truncate: 50_000,
+  };
+  const result = await mgmtRequest<PeekedMessageResponse[]>(
+    config,
+    `/api/queues/${vhostSegment(vhost)}/${encodeURIComponent(name)}/get`,
+    { method: "POST", body }
+  );
+  const list = result ?? [];
+  return list.map<RabbitPeekedMessage>((m) => ({
+    payload: m.payload,
+    payloadBytes: m.payload_bytes,
+    payloadEncoding: m.payload_encoding,
+    routingKey: m.routing_key,
+    exchange: m.exchange,
+    redelivered: Boolean(m.redelivered),
+    properties: m.properties ?? {},
+    messageCount: m.message_count,
+  }));
+}
+
+export async function purgeRabbitQueue(
+  config: RabbitConfig,
+  name: string
+): Promise<void> {
+  const vhost = config.vhost ?? "/";
+  await mgmtRequest<unknown>(
+    config,
+    `/api/queues/${vhostSegment(vhost)}/${encodeURIComponent(name)}/contents`,
+    { method: "DELETE" }
+  );
+}
+
+export async function deleteRabbitQueue(
+  config: RabbitConfig,
+  name: string
+): Promise<void> {
+  const vhost = config.vhost ?? "/";
+  await mgmtRequest<unknown>(
+    config,
+    `/api/queues/${vhostSegment(vhost)}/${encodeURIComponent(name)}`,
+    { method: "DELETE" }
+  );
 }

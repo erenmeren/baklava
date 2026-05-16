@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -219,6 +220,7 @@ export function QueuesClient({ connectionId }: Props) {
                 {filtered!.map((q) => (
                   <QueueRow
                     key={`${q.vhost}/${q.name}`}
+                    connectionId={connectionId}
                     queue={q}
                     maxMessages={maxMessages}
                     showVhost={!showSingleVhost}
@@ -236,10 +238,12 @@ export function QueuesClient({ connectionId }: Props) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function QueueRow({
+  connectionId,
   queue,
   maxMessages,
   showVhost,
 }: {
+  connectionId: string;
   queue: QueueStat;
   maxMessages: number;
   showVhost: boolean;
@@ -256,9 +260,12 @@ function QueueRow({
   return (
     <tr className="border-t border-border/40 hover:bg-muted/30">
       <td className="px-3 py-2 align-middle">
-        <span className="font-mono text-xs truncate inline-block max-w-full">
+        <Link
+          href={`/rabbit/${connectionId}/queues/${encodeURIComponent(queue.name)}`}
+          className="font-mono text-xs truncate inline-block max-w-full hover:text-foreground hover:underline underline-offset-2 decoration-dotted"
+        >
           {queue.name}
-        </span>
+        </Link>
       </td>
       {showVhost ? (
         <td className="px-3 py-2 align-middle font-mono text-[11px] text-muted-foreground">

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -211,6 +212,7 @@ export function IndicesClient({ connectionId }: Props) {
                     key={idx.name}
                     idx={idx}
                     maxDocs={maxDocs}
+                    connectionId={connectionId}
                   />
                 ))}
               </tbody>
@@ -227,9 +229,11 @@ export function IndicesClient({ connectionId }: Props) {
 function IndexRowItem({
   idx,
   maxDocs,
+  connectionId,
 }: {
   idx: IndexRow;
   maxDocs: number;
+  connectionId: string;
 }) {
   const pct =
     maxDocs > 0 ? Math.min(100, (idx.docCount / maxDocs) * 100) : 0;
@@ -237,7 +241,12 @@ function IndexRowItem({
     <tr className="border-t border-border/40 hover:bg-muted/30">
       <td className="px-3 py-2 align-middle">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="font-mono text-xs truncate">{idx.name}</span>
+          <Link
+            href={`/elastic/${connectionId}/indices/${encodeURIComponent(idx.name)}`}
+            className="font-mono text-xs truncate hover:underline"
+          >
+            {idx.name}
+          </Link>
           {idx.system ? (
             <Badge
               variant="outline"

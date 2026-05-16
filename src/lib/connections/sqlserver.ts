@@ -185,3 +185,129 @@ async function fetchDatabaseStats(
   summaries.sort((a, b) => b.sizeBytes - a.sizeBytes);
   return summaries;
 }
+
+export interface SqlServerTableSummary {
+  name: string;
+  schema: string;
+  rows: number;
+  sizeBytes: number;
+}
+
+export interface SqlServerDatabaseDetail {
+  name: string;
+  state: string;
+  recoveryModel: string | null;
+  compatibilityLevel: number | null;
+  collation: string | null;
+  sizeBytes: number;
+  tableCount: number;
+}
+
+export interface SqlServerDatabaseDetailResult {
+  database: SqlServerDatabaseDetail;
+  tables: SqlServerTableSummary[];
+}
+
+// SQL Server identifier `[...]` quoting can't safely escape `]` inside the
+// name in every code path, so we whitelist database names to the conservative
+// SQL Server regular identifier alphabet. This is the only place we splice the
+// name into SQL (for `USE [name]`); every value-only use goes through @db.
+const SQLSERVER_DB_NAME_RE = /^[A-Za-z0-9_]+$/;
+
+export async function listSqlServerTables(
+  config: SqlServerConfig,
+  database: string
+): Promise<SqlServerDatabaseDetailResult> {
+  if (!SQLSERVER_DB_NAME_RE.test(database)) {
+    throw new Error(
+      "Invalid database name (only letters, digits, and underscores are supported)"
+    );
+  }
+
+  return withPool(config, async (pool) => {
+    // Per-DB metadata is read from sys.databases on the server connection.
+    // `sql.NVarChar` is attached at runtime via the dynamic types loop in
+    // mssql/lib/base/index.js but mssql ships no .d.ts, so cast through any.
+    const headResult = await pool
+      .request()
+      .input("db", (sql as unknown as { NVarChar: unknown }).NVarChar, database)
+      .query<{
+        name: string;
+        state_desc: string;
+        recovery_model_desc: string;
+        compatibility_level: number;
+        collation_name: string | null;
+        size_bytes: string | number | null;
+      }>(`
+        SELECT
+          d.name AS name,
+          d.state_desc AS state_desc,
+          d.recovery_model_desc AS recovery_model_desc,
+          d.compatibility_level AS compatibility_level,
+          d.collation_name AS collation_name,
+          (
+            SELECT SUM(CAST(size AS BIGINT) * 8192)
+            FROM sys.master_files mf
+            WHERE mf.database_id = d.database_id
+          ) AS size_bytes
+        FROM sys.databases d
+        WHERE d.name = @db
+      `);
+    if (headResult.recordset.length === 0) {
+      throw new Error(`Database "${database}" not found`);
+    }
+    const head = headResult.recordset[0];
+
+    // Per-table rows + reserved size. sys.tables / sys.schemas / sys.partitions
+    // / sys.allocation_units are per-database, so we switch context with
+    // `USE [dbname]`. The name has already been validated against
+    // SQLSERVER_DB_NAME_RE above.
+    const tablesResult = await pool.request().query<{
+      schema_name: string;
+      table_name: string;
+      row_count: string | number;
+      reserved_bytes: string | number | null;
+    }>(`
+      USE [${database}];
+      SELECT
+        s.name AS schema_name,
+        t.name AS table_name,
+        SUM(CASE WHEN p.index_id IN (0, 1) THEN p.rows ELSE 0 END) AS row_count,
+        SUM(CAST(a.total_pages AS BIGINT)) * 8192 AS reserved_bytes
+      FROM sys.tables t
+      INNER JOIN sys.schemas s ON s.schema_id = t.schema_id
+      LEFT JOIN sys.partitions p ON p.object_id = t.object_id
+      LEFT JOIN sys.allocation_units a ON a.container_id = p.partition_id
+      WHERE t.is_ms_shipped = 0
+      GROUP BY s.name, t.name
+      ORDER BY s.name, t.name;
+    `);
+
+    const tables: SqlServerTableSummary[] = tablesResult.recordset.map(
+      (row) => ({
+        schema: String(row.schema_name),
+        name: String(row.table_name),
+        rows: Number(row.row_count ?? 0),
+        sizeBytes: Number(row.reserved_bytes ?? 0),
+      })
+    );
+
+    return {
+      database: {
+        name: String(head.name),
+        state: String(head.state_desc ?? "UNKNOWN"),
+        recoveryModel: head.recovery_model_desc
+          ? String(head.recovery_model_desc)
+          : null,
+        compatibilityLevel:
+          head.compatibility_level != null
+            ? Number(head.compatibility_level)
+            : null,
+        collation: head.collation_name ? String(head.collation_name) : null,
+        sizeBytes: Number(head.size_bytes ?? 0),
+        tableCount: tables.length,
+      },
+      tables,
+    };
+  });
+}

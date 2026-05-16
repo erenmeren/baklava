@@ -195,3 +195,119 @@ export async function listMongoDatabases(
     return summaries.sort((a, b) => b.sizeOnDisk - a.sizeOnDisk);
   });
 }
+
+export interface MongoCollectionSummary {
+  name: string;
+  type: "collection" | "view" | "timeSeries";
+  docCount: number;
+  storageBytes: number;
+  avgDocSize: number;
+  indexCount: number;
+}
+
+export interface MongoDatabaseDetail {
+  database: {
+    name: string;
+    sizeBytes: number;
+    collectionCount: number;
+    indexCount: number;
+    docCount: number;
+  };
+  collections: MongoCollectionSummary[];
+}
+
+/**
+ * List collections for a database, fanning out `collStats` per collection with
+ * bounded concurrency (5) so a database with hundreds of collections doesn't
+ * stampede the server.
+ */
+export async function listMongoCollections(
+  config: MongoConfig,
+  database: string
+): Promise<MongoDatabaseDetail> {
+  return withClient(config, async (client) => {
+    const db = client.db(database);
+    const infos = (await db
+      .listCollections({}, { nameOnly: false })
+      .toArray()) as Array<{ name: string; type?: string }>;
+
+    const concurrency = 5;
+    const results: MongoCollectionSummary[] = new Array(infos.length);
+    let cursor = 0;
+    const workers = Array.from({ length: Math.min(concurrency, infos.length) }, async () => {
+      while (true) {
+        const idx = cursor++;
+        if (idx >= infos.length) return;
+        const info = infos[idx];
+        const rawType = String(info.type ?? "collection");
+        const type: MongoCollectionSummary["type"] =
+          rawType === "view"
+            ? "view"
+            : rawType === "timeseries" || rawType === "timeSeries"
+            ? "timeSeries"
+            : "collection";
+        let docCount = 0;
+        let storageBytes = 0;
+        let avgDocSize = 0;
+        let indexCount = 0;
+        try {
+          const stats = (await db.command({ collStats: info.name })) as Document & {
+            count?: number;
+            size?: number;
+            storageSize?: number;
+            avgObjSize?: number;
+            nindexes?: number;
+          };
+          docCount = Number(stats.count ?? 0);
+          storageBytes = Number(stats.storageSize ?? stats.size ?? 0);
+          avgDocSize = Number(stats.avgObjSize ?? 0);
+          indexCount = Number(stats.nindexes ?? 0);
+        } catch {
+          // Views and some system collections don't support collStats — try
+          // best-effort fallbacks so we still surface a row.
+          try {
+            const idx = await db.collection(info.name).indexes();
+            indexCount = idx.length;
+          } catch {
+            // ignore
+          }
+          try {
+            docCount = await db.collection(info.name).estimatedDocumentCount();
+          } catch {
+            // ignore
+          }
+        }
+        results[idx] = {
+          name: info.name,
+          type,
+          docCount,
+          storageBytes,
+          avgDocSize,
+          indexCount,
+        };
+      }
+    });
+    await Promise.all(workers);
+
+    const totals = results.reduce(
+      (acc, c) => {
+        acc.sizeBytes += c.storageBytes;
+        acc.indexCount += c.indexCount;
+        acc.docCount += c.docCount;
+        return acc;
+      },
+      { sizeBytes: 0, indexCount: 0, docCount: 0 }
+    );
+
+    return {
+      database: {
+        name: database,
+        sizeBytes: totals.sizeBytes,
+        collectionCount: results.length,
+        indexCount: totals.indexCount,
+        docCount: totals.docCount,
+      },
+      collections: results,
+    };
+  });
+}

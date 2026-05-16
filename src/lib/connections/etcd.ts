@@ -189,3 +189,51 @@ export async function listEtcdKeys(
     return { keys, total, limit, prefix };
   });
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Per-key detail
+// ──────────────────────────────────────────────────────────────────────────────
+
+export interface EtcdKeyDetail {
+  key: string;
+  value: string;
+  createRevision: string;
+  modRevision: string;
+  version: string;
+  lease: string;
+}
+
+/**
+ * Fetch a single etcd key with its full revision metadata. We use the raw
+ * IRangeResponse via `.exec()` rather than the convenience `.string()` form
+ * because we need the per-kv metadata (createRevision / modRevision / lease).
+ */
+export async function getEtcdKey(
+  config: EtcdConfig,
+  key: string
+): Promise<EtcdKeyDetail> {
+  return withClient(config, async (client) => {
+    const response = await client.get(key).exec();
+    const kv = response.kvs?.[0];
+    if (!kv) {
+      throw new Error("Key not found");
+    }
+    return {
+      key: kv.key.toString("utf8"),
+      value: kv.value ? kv.value.toString("utf8") : "",
+      createRevision: String(kv.create_revision ?? "0"),
+      modRevision: String(kv.mod_revision ?? "0"),
+      version: String(kv.version ?? "0"),
+      lease: String(kv.lease ?? "0"),
+    };
+  });
+}
+
+export async function deleteEtcdKey(
+  config: EtcdConfig,
+  key: string
+): Promise<void> {
+  await withClient(config, async (client) => {
+    await client.delete().key(key).exec();
+  });
+}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -9,6 +10,10 @@ import { WorkspacePage } from "@/components/workspace/workspace-page";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Loader2, RefreshCcw, Search, Clock, Infinity as InfIcon } from "lucide-react";
+
+// URLs over this length tend to be rejected by Next dev or fronting proxies.
+// Show a non-clickable row for those rather than a 404.
+const MAX_KEY_URL_LEN = 1500;
 
 interface KeyEntry {
   key: string;
@@ -201,7 +206,11 @@ export function KeysClient({ connectionId }: Props) {
               </thead>
               <tbody>
                 {keys.map((k, i) => (
-                  <KeyRow key={`${k.key}-${i}`} entry={k} />
+                  <KeyRow
+                    key={`${k.key}-${i}`}
+                    entry={k}
+                    connectionId={connectionId}
+                  />
                 ))}
               </tbody>
             </table>
@@ -233,17 +242,39 @@ export function KeysClient({ connectionId }: Props) {
   );
 }
 
-function KeyRow({ entry }: { entry: KeyEntry }) {
+function KeyRow({
+  entry,
+  connectionId,
+}: {
+  entry: KeyEntry;
+  connectionId: string;
+}) {
   const ttl = formatTtl(entry.ttl);
   const typeClass =
     TYPE_TONE[entry.type] ??
     "bg-muted text-muted-foreground border-border/60";
+  const encoded = encodeURIComponent(entry.key);
+  const tooLong = encoded.length > MAX_KEY_URL_LEN;
+  const href = `/redis/${connectionId}/keys/${encoded}`;
   return (
     <tr className="border-t border-border/40 hover:bg-muted/30">
       <td className="px-3 py-1.5 align-middle min-w-0">
-        <span className="font-mono text-xs truncate block max-w-[420px]" title={entry.key}>
-          {entry.key}
-        </span>
+        {tooLong ? (
+          <span
+            className="font-mono text-xs truncate block max-w-[420px] text-destructive cursor-not-allowed"
+            title={`${entry.key}\n\nKey too long to open in a URL (${encoded.length} chars).`}
+          >
+            {entry.key}
+          </span>
+        ) : (
+          <Link
+            href={href}
+            className="font-mono text-xs truncate block max-w-[420px] hover:text-primary hover:underline underline-offset-2"
+            title={entry.key}
+          >
+            {entry.key}
+          </Link>
+        )}
       </td>
       <td className="px-3 py-1.5 align-middle">
         <Badge

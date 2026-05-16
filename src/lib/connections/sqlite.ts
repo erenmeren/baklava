@@ -11,6 +11,23 @@ function quoteIdent(name: string): string {
   return `"${name.replace(/"/g, '""')}"`;
 }
 
+/**
+ * Strict identifier guard for any path that interpolates user-supplied names
+ * into a SQL string (e.g. `PRAGMA` calls — pragmas don't accept bound
+ * parameters for the table name, so we have to interpolate). Mirrors the
+ * postgres convention in `src/lib/connections/postgres.ts`.
+ */
+function validateIdentifier(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) throw new Error("Table name is required");
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(trimmed)) {
+    throw new Error(
+      "Table name must start with a letter or underscore and contain only letters, numbers, and underscores"
+    );
+  }
+  return trimmed;
+}
+
 function openDb(config: SqliteConfig): Database.Database {
   return new Database(config.filePath, {
     readonly: config.readonly,
@@ -243,5 +260,130 @@ export async function listSqliteTables(
       });
     }
     return summaries.sort((a, b) => b.estimatedBytes - a.estimatedBytes);
+  });
+}
+
+export interface SqliteColumnInfo {
+  name: string;
+  type: string;
+  notNull: boolean;
+  pk: number;
+  defaultValue: string | null;
+}
+
+export interface SqliteIndexInfo {
+  name: string;
+  unique: boolean;
+  partial: boolean;
+}
+
+export interface SqliteTableDetail {
+  table: {
+    name: string;
+    rowCount: number;
+    system: boolean;
+    ddl: string;
+  };
+  columns: SqliteColumnInfo[];
+  indexes: SqliteIndexInfo[];
+  data: {
+    columns: string[];
+    rows: unknown[][];
+  };
+}
+
+/**
+ * Full table detail: columns (PRAGMA table_info), indexes (PRAGMA index_list),
+ * the original CREATE statement from sqlite_master, the live row count, and a
+ * sample of up to 100 rows. `name` is validated against a strict identifier
+ * regex BEFORE any string interpolation (pragmas don't accept bound params).
+ */
+export async function describeSqliteTable(
+  config: SqliteConfig,
+  name: string
+): Promise<SqliteTableDetail> {
+  const tableName = validateIdentifier(name);
+  return withDb(config, (db) => {
+    const ident = quoteIdent(tableName);
+
+    // PRAGMA table_info — { cid, name, type, notnull, dflt_value, pk }
+    const rawCols = db
+      .prepare(`PRAGMA table_info(${ident})`)
+      .all() as Array<{
+      cid: number;
+      name: string;
+      type: string;
+      notnull: number;
+      dflt_value: string | null;
+      pk: number;
+    }>;
+    const columns: SqliteColumnInfo[] = rawCols.map((c) => ({
+      name: c.name,
+      type: c.type ?? "",
+      notNull: Boolean(c.notnull),
+      pk: Number(c.pk ?? 0),
+      defaultValue: c.dflt_value,
+    }));
+
+    // PRAGMA index_list — { seq, name, unique, origin, partial }
+    const rawIdx = db
+      .prepare(`PRAGMA index_list(${ident})`)
+      .all() as Array<{
+      seq: number;
+      name: string;
+      unique: number;
+      origin: string;
+      partial: number;
+    }>;
+    const indexes: SqliteIndexInfo[] = rawIdx.map((i) => ({
+      name: i.name,
+      unique: Boolean(i.unique),
+      partial: Boolean(i.partial),
+    }));
+
+    const ddlRow = db
+      .prepare(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name = ?"
+      )
+      .get(tableName) as { sql: string | null } | undefined;
+    const ddl = ddlRow?.sql ?? "";
+
+    let rowCount = 0;
+    try {
+      const r = db
+        .prepare(`SELECT count(*) AS c FROM ${ident}`)
+        .get() as { c: number } | undefined;
+      rowCount = Number(r?.c ?? 0);
+    } catch {
+      rowCount = 0;
+    }
+
+    let dataCols: string[] = columns.map((c) => c.name);
+    let dataRows: unknown[][] = [];
+    try {
+      const stmt = db.prepare(`SELECT * FROM ${ident} LIMIT 100`);
+      const rows = stmt.all() as Record<string, unknown>[];
+      if (rows.length > 0 && dataCols.length === 0) {
+        dataCols = Object.keys(rows[0]);
+      }
+      dataRows = rows.map((r) => dataCols.map((c) => r[c]));
+    } catch {
+      dataRows = [];
+    }
+
+    return {
+      table: {
+        name: tableName,
+        rowCount,
+        system: tableName.startsWith("sqlite_"),
+        ddl,
+      },
+      columns,
+      indexes,
+      data: {
+        columns: dataCols,
+        rows: dataRows,
+      },
+    };
   });
 }

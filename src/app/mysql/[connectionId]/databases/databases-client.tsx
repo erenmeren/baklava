@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -195,9 +196,12 @@ export function DatabasesClient({ connectionId }: Props) {
                     >
                       <td className="px-3 py-2 align-middle">
                         <div className="flex items-center gap-2 min-w-0">
-                          <span className="font-mono text-xs truncate">
+                          <Link
+                            href={`/mysql/${connectionId}/databases/${encodeURIComponent(d.name)}`}
+                            className="font-mono text-xs truncate hover:underline"
+                          >
                             {d.name}
-                          </span>
+                          </Link>
                           {d.isSystem ? (
                             <Badge
                               variant="secondary"

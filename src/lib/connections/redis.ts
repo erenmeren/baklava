@@ -257,3 +257,172 @@ export async function listRedisKeys(
     return { keys: entries, nextCursor, scanned: rawKeys.length };
   });
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Per-key detail
+// ──────────────────────────────────────────────────────────────────────────────
+
+export type RedisKeyType =
+  | "string"
+  | "list"
+  | "hash"
+  | "set"
+  | "zset"
+  | "stream"
+  | "none";
+
+export interface RedisZsetEntry {
+  member: string;
+  score: number;
+}
+
+export interface RedisStreamEntry {
+  id: string;
+  fields: Record<string, string>;
+}
+
+export type RedisKeyValue =
+  | string
+  | string[]
+  | Record<string, string>
+  | RedisZsetEntry[]
+  | RedisStreamEntry[]
+  | null;
+
+export interface RedisKeyDetail {
+  key: string;
+  type: RedisKeyType;
+  ttl: number;
+  memoryBytes: number | null;
+  value: RedisKeyValue;
+  truncated: boolean;
+}
+
+/**
+ * Display caps. List/set/zset use 500; streams a tighter 100 since each entry
+ * is itself a small object.
+ */
+const COLLECTION_CAP = 500;
+const STREAM_CAP = 100;
+
+/**
+ * Fetch a single key's type-aware value plus TTL + memory usage.
+ *
+ * Caps every variable-length collection so a 10M-entry list can't OOM the
+ * server. `truncated` is true when the on-server count exceeds the cap.
+ */
+export async function getRedisKey(
+  config: RedisConfig,
+  key: string
+): Promise<RedisKeyDetail> {
+  return withClient(config, async (client) => {
+    const type = (await client.type(key)) as RedisKeyType;
+    if (type === "none") {
+      throw new Error("Key not found");
+    }
+    const [ttl, memoryBytes] = await Promise.all([
+      client.ttl(key),
+      client
+        .memory("USAGE", key)
+        .then((n) => (typeof n === "number" ? n : null))
+        .catch(() => null),
+    ]);
+
+    let value: RedisKeyValue = null;
+    let truncated = false;
+
+    switch (type) {
+      case "string": {
+        value = (await client.get(key)) ?? "";
+        break;
+      }
+      case "list": {
+        const len = await client.llen(key);
+        const items = await client.lrange(key, 0, COLLECTION_CAP - 1);
+        value = items;
+        truncated = len > COLLECTION_CAP;
+        break;
+      }
+      case "hash": {
+        value = await client.hgetall(key);
+        break;
+      }
+      case "set": {
+        const card = await client.scard(key);
+        if (card <= COLLECTION_CAP) {
+          value = await client.smembers(key);
+        } else {
+          // SSCAN with COUNT so the server doesn't ship megabytes for the
+          // truncation preview. Loop until we hit the cap or scan completes.
+          const out: string[] = [];
+          let cursor = "0";
+          do {
+            const [next, batch] = await client.sscan(
+              key,
+              cursor,
+              "COUNT",
+              Math.min(200, COLLECTION_CAP - out.length)
+            );
+            out.push(...batch);
+            cursor = next;
+          } while (cursor !== "0" && out.length < COLLECTION_CAP);
+          value = out.slice(0, COLLECTION_CAP);
+          truncated = true;
+        }
+        break;
+      }
+      case "zset": {
+        const total = await client.zcard(key);
+        // ZRANGE … WITHSCORES returns [member, score, member, score, …].
+        const raw = await client.zrange(
+          key,
+          0,
+          COLLECTION_CAP - 1,
+          "WITHSCORES"
+        );
+        const entries: RedisZsetEntry[] = [];
+        for (let i = 0; i + 1 < raw.length; i += 2) {
+          entries.push({ member: raw[i], score: Number(raw[i + 1]) });
+        }
+        value = entries;
+        truncated = total > COLLECTION_CAP;
+        break;
+      }
+      case "stream": {
+        const total = await client.xlen(key);
+        // XRANGE returns [[id, [f1, v1, f2, v2, …]], …]
+        const raw = (await client.xrange(
+          key,
+          "-",
+          "+",
+          "COUNT",
+          STREAM_CAP
+        )) as Array<[string, string[]]>;
+        const entries: RedisStreamEntry[] = raw.map(([id, kvs]) => {
+          const fields: Record<string, string> = {};
+          for (let i = 0; i + 1 < kvs.length; i += 2) {
+            fields[kvs[i]] = kvs[i + 1];
+          }
+          return { id, fields };
+        });
+        value = entries;
+        truncated = total > STREAM_CAP;
+        break;
+      }
+      default:
+        // unknown type (older modules etc) — return nothing rather than crash.
+        value = null;
+    }
+
+    return { key, type, ttl, memoryBytes, value, truncated };
+  });
+}
+
+export async function deleteRedisKey(
+  config: RedisConfig,
+  key: string
+): Promise<void> {
+  await withClient(config, async (client) => {
+    await client.del(key);
+  });
+}

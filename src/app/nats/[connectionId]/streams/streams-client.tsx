@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -249,6 +250,7 @@ export function StreamsClient({ connectionId }: Props) {
                 {filtered!.map((s) => (
                   <StreamRow
                     key={s.name}
+                    connectionId={connectionId}
                     stream={s}
                     maxMessages={maxMessages}
                   />
@@ -265,9 +267,11 @@ export function StreamsClient({ connectionId }: Props) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function StreamRow({
+  connectionId,
   stream,
   maxMessages,
 }: {
+  connectionId: string;
   stream: StreamSummary;
   maxMessages: number;
 }) {
@@ -277,9 +281,12 @@ function StreamRow({
   return (
     <tr className="border-t border-border/40 hover:bg-muted/30">
       <td className="px-3 py-2 align-middle">
-        <span className="font-mono text-xs truncate inline-block max-w-full">
+        <Link
+          href={`/nats/${connectionId}/streams/${encodeURIComponent(stream.name)}`}
+          className="font-mono text-xs truncate inline-block max-w-full hover:text-foreground hover:underline underline-offset-2 decoration-dotted"
+        >
           {stream.name}
-        </span>
+        </Link>
       </td>
       <td className="px-3 py-2 align-middle">
         <SubjectsList subjects={stream.subjects} />

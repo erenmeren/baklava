@@ -16,6 +16,18 @@ export function createElasticClient(config: ElasticConfig): Client {
   });
 }
 
+async function withClient<T>(
+  config: ElasticConfig,
+  fn: (client: Client) => Promise<T>
+): Promise<T> {
+  const client = createElasticClient(config);
+  try {
+    return await fn(client);
+  } finally {
+    await client.close().catch(() => undefined);
+  }
+}
+
 export interface ElasticProbeResult {
   name: string;
   clusterName: string;
@@ -187,4 +199,227 @@ export async function listIndices(
   } finally {
     await client.close().catch(() => undefined);
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Index detail
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface ElasticShardRow {
+  shard: string;
+  prirep: "p" | "r" | string;
+  state: string;
+  docs: number;
+  store: number;
+  node: string;
+}
+
+export interface ElasticIndexDetailHeader {
+  name: string;
+  health: "green" | "yellow" | "red" | "unknown";
+  docs: number;
+  deletedDocs: number;
+  sizeBytes: number;
+  primarySizeBytes: number;
+  primaries: number;
+  replicas: number;
+  refreshInterval: string;
+  system: boolean;
+  aliases: string[];
+}
+
+export interface ElasticIndexDetail {
+  index: ElasticIndexDetailHeader;
+  mappings: Record<string, unknown>;
+  settings: Record<string, unknown>;
+  shards: ElasticShardRow[];
+}
+
+export async function getElasticIndex(
+  config: ElasticConfig,
+  name: string
+): Promise<ElasticIndexDetail> {
+  return withClient(config, async (client) => {
+    const getRes = (await client.indices.get({
+      index: name,
+      features: ["aliases", "mappings", "settings"],
+      flat_settings: false,
+      include_defaults: false,
+    })) as unknown as Record<
+      string,
+      {
+        aliases?: Record<string, unknown>;
+        mappings?: Record<string, unknown>;
+        settings?: { index?: Record<string, unknown> } & Record<
+          string,
+          unknown
+        >;
+      }
+    >;
+
+    const key = Object.keys(getRes)[0] ?? name;
+    const entry = getRes[key] ?? {};
+    const aliases = Object.keys(entry.aliases ?? {});
+    const mappings = (entry.mappings ?? {}) as Record<string, unknown>;
+    const settings = (entry.settings ?? {}) as Record<string, unknown>;
+    const indexSettings = (settings.index ?? {}) as Record<string, unknown>;
+    const primaries =
+      Number(
+        (indexSettings.number_of_shards as string | number | undefined) ?? 0
+      ) || 0;
+    const replicas =
+      Number(
+        (indexSettings.number_of_replicas as string | number | undefined) ?? 0
+      ) || 0;
+    const refreshInterval =
+      String(
+        (indexSettings.refresh_interval as string | undefined) ?? "1s"
+      ) || "1s";
+
+    const statsRes = (await client.indices.stats({
+      index: name,
+    })) as unknown as {
+      indices?: Record<
+        string,
+        {
+          primaries?: {
+            docs?: { count?: number; deleted?: number };
+            store?: { size_in_bytes?: number };
+          };
+          total?: {
+            docs?: { count?: number; deleted?: number };
+            store?: { size_in_bytes?: number };
+          };
+        }
+      >;
+    };
+    const idxStats = statsRes.indices?.[key] ?? statsRes.indices?.[name] ?? {};
+    const docs = idxStats.primaries?.docs?.count ?? 0;
+    const deletedDocs = idxStats.primaries?.docs?.deleted ?? 0;
+    const sizeBytes = idxStats.total?.store?.size_in_bytes ?? 0;
+    const primarySizeBytes = idxStats.primaries?.store?.size_in_bytes ?? 0;
+
+    const shardRows = (await client.cat.shards({
+      index: name,
+      format: "json",
+      bytes: "b",
+      h: "shard,prirep,state,docs,store,node",
+    })) as unknown as {
+      shard?: string;
+      prirep?: string;
+      state?: string;
+      docs?: string;
+      store?: string;
+      node?: string;
+    }[];
+    const shards: ElasticShardRow[] = (Array.isArray(shardRows) ? shardRows : [])
+      .map((r) => ({
+        shard: r.shard ?? "",
+        prirep: (r.prirep ?? "") as ElasticShardRow["prirep"],
+        state: r.state ?? "",
+        docs: Number(r.docs ?? 0) || 0,
+        store: Number(r.store ?? 0) || 0,
+        node: r.node ?? "",
+      }))
+      .sort((a, b) => {
+        if (a.shard !== b.shard) return a.shard.localeCompare(b.shard);
+        return a.prirep.localeCompare(b.prirep);
+      });
+
+    // Health derivation: green if all shards STARTED, yellow if any unassigned
+    // replica, red if any unassigned primary. We trust shards rather than
+    // cluster.health which is cluster-wide.
+    let health: ElasticIndexDetailHeader["health"] = "green";
+    for (const s of shards) {
+      if (s.state !== "STARTED") {
+        if (s.prirep === "p") {
+          health = "red";
+          break;
+        }
+        health = "yellow";
+      }
+    }
+    if (shards.length === 0) health = "unknown";
+
+    return {
+      index: {
+        name: key,
+        health,
+        docs,
+        deletedDocs,
+        sizeBytes,
+        primarySizeBytes,
+        primaries,
+        replicas,
+        refreshInterval,
+        system: key.startsWith("."),
+        aliases,
+      },
+      mappings,
+      settings,
+      shards,
+    };
+  });
+}
+
+export async function deleteElasticIndex(
+  config: ElasticConfig,
+  name: string
+): Promise<void> {
+  await withClient(config, async (client) => {
+    await client.indices.delete({ index: name });
+  });
+}
+
+export interface ElasticHit {
+  _id: string;
+  _score: number | null;
+  _source: unknown;
+}
+
+export interface ElasticSearchResult {
+  total: number;
+  hits: ElasticHit[];
+}
+
+export async function searchElasticIndex(
+  config: ElasticConfig,
+  name: string,
+  query: string,
+  size: number
+): Promise<ElasticSearchResult> {
+  return withClient(config, async (client) => {
+    const trimmed = (query ?? "").trim();
+    const safeSize = Math.max(1, Math.min(100, Math.floor(size) || 10));
+    const res = (await client.search({
+      index: name,
+      size: safeSize,
+      _source: true,
+      ...(trimmed
+        ? { q: trimmed }
+        : { query: { match_all: {} } }),
+    })) as unknown as {
+      hits?: {
+        total?: number | { value?: number };
+        hits?: {
+          _id?: string;
+          _score?: number | null;
+          _source?: unknown;
+        }[];
+      };
+    };
+    const totalRaw = res.hits?.total;
+    const total =
+      typeof totalRaw === "number"
+        ? totalRaw
+        : typeof totalRaw === "object" && totalRaw
+          ? Number(totalRaw.value ?? 0) || 0
+          : 0;
+    const hits: ElasticHit[] = (res.hits?.hits ?? []).map((h) => ({
+      _id: String(h._id ?? ""),
+      _score: h._score ?? null,
+      _source: h._source,
+    }));
+    return { total, hits };
+  });
 }
