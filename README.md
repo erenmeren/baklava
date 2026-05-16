@@ -1,6 +1,6 @@
 # Baklava
 
-Open-source unified ops console. One UI for Docker, Kafka, PostgreSQL and friends — modeled on the dedicated tools you already know (Docker Desktop, kafka-ui, pgAdmin) so you can stop juggling tabs.
+Open-source unified ops console. One UI for Docker, Kafka, PostgreSQL, MySQL, SQL Server, MongoDB, Redis, RabbitMQ, NATS, Elasticsearch, ClickHouse, SQLite, and etcd — modeled on the dedicated tools you already know (Docker Desktop, kafka-ui, pgAdmin) so you can stop juggling tabs.
 
 ## What it does
 
@@ -33,11 +33,29 @@ Tree sidebar: connection → databases → schemas → tables / views.
 
 ### Kafka (kafka-ui-style)
 
-Sidebar: Topics · Consumer groups · Brokers.
+Sidebar: Overview · Topics · Consumer groups · Brokers.
 
-- **Topics**: list with partition / replica counts, internal-topic toggle, create with partitions+RF, delete with confirm. Click into a topic for tabs: **Partitions** (leader, replicas, ISR, low/high watermarks, message count), **Messages** (consume up to 100, filter by partition, from-beginning toggle), **Produce** (key + value form), **Configs** (full config table with default flags).
-- **Consumer groups**: list with state badge, click into one for members + per-topic-partition offset/lag table.
+- **Overview** (mission-control dashboard): broker pulse strip, big stats (topics / partitions / messages / consumer groups), under-replicated-topic call-outs, top-volume leaderboard. Auto-refreshes every 15s.
+- **Topics**: dense list with message-count bars, partition-skew sparklines, ISR health pill. Click into a topic for tabs: Partitions, Messages (with key/value text filter + live tail + click-row-for-detail-drawer with JSON-pretty value + headers table), Produce, Configs.
+- **Consumer groups**: lag column with severity bar (green/amber/red), member count, topics-assigned. Click into one for member detail, per-partition offset/lag, and reset-offsets (with pre-flight state check).
 - **Brokers**: list with controller badge.
+
+### The other ten (MVP workspaces)
+
+Each ships a connection form, a mission-control overview (auto-refresh 15s), a primary browse list, and a per-object detail page:
+
+| Tech | Primary browse | Detail |
+|---|---|---|
+| **MySQL** | databases | tables (engine, rows, size bar, collation) |
+| **SQL Server** | databases | tables (`schema.name`, rows, reserved size, state pill) |
+| **MongoDB** | databases | collections (type pill, docs, storage bar, indexes) |
+| **SQLite** | tables | columns / data spreadsheet / DDL / indexes |
+| **Redis** | keys (SCAN paginated) | type-specific value viewer (string/list/hash/set/zset/stream) + TTL + memory + delete |
+| **etcd** | keys (prefix-filtered) | value + create/mod/version metadata + delete |
+| **RabbitMQ** | queues (severity bar) | overview / bindings / consumers / peek messages (with requeue toggle) |
+| **NATS** | streams (JetStream) | overview / subjects (live counts) / consumers / messages (walk back from `last_seq`) |
+| **Elasticsearch** | indices (health pill) | overview / mappings / settings / search (Lucene `q`) / shards |
+| **ClickHouse** | tables (engine pill) | columns / sample / partitions / DDL + truncate + drop |
 
 ## Stack
 
@@ -45,7 +63,7 @@ Sidebar: Topics · Consumer groups · Brokers.
 - TypeScript
 - Tailwind CSS v4
 - shadcn/ui (Radix / Base UI) + Lucide icons + Sonner toasts
-- Drivers: `dockerode`, `kafkajs`, `pg`
+- Drivers: `dockerode`, `kafkajs`, `pg`, `mysql2`, `mssql`, `mongodb`, `better-sqlite3`, `ioredis`, `etcd3`, `amqplib`, `nats`, `@elastic/elasticsearch`, `@clickhouse/client`
 
 ## Run
 
@@ -54,25 +72,45 @@ npm install
 npm run dev
 ```
 
-Open <http://localhost:3000>. To try the workspaces with real services:
+Open <http://localhost:3000>. Docker is reachable out of the box at `unix:///var/run/docker.sock` on macOS / Linux.
+
+### Test stack (every supported tech)
+
+A `compose.yaml` at the project root spins up one local instance of every tech Baklava integrates with:
 
 ```bash
-docker run -d --name pg -e POSTGRES_PASSWORD=secret -e POSTGRES_DB=demo -p 5432:5432 postgres:16-alpine
-docker run -d --name kafka -p 9092:9092 \
-  -e KAFKA_NODE_ID=1 -e KAFKA_PROCESS_ROLES=broker,controller \
-  -e KAFKA_LISTENERS=PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093 \
-  -e KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://localhost:9092 \
-  -e KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER \
-  -e KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT \
-  -e KAFKA_CONTROLLER_QUORUM_VOTERS=1@localhost:9093 \
-  -e KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1 \
-  -e KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1 \
-  -e KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1 \
-  -e CLUSTER_ID=YbAkUvK2QaWdh1lUdN6Vlw \
-  apache/kafka:3.8.0
+docker compose up -d           # everything
+docker compose up -d redis     # just one service
+docker compose down -v         # stop + wipe data
 ```
 
-Docker is reachable out of the box at `unix:///var/run/docker.sock` on macOS / Linux.
+SQLite is file-backed (no daemon). Generate a seeded demo database with:
+
+```bash
+bash seed/sqlite.sh            # writes /tmp/baklava-data/demo.sqlite
+```
+
+#### Connection details
+
+All credentials are throwaway and for local dev only. Plug these into the connection forms in the UI.
+
+| Tech | Host | Port | User | Password | Notes |
+|---|---|---:|---|---|---|
+| **Docker** | — | — | — | — | uses `unix:///var/run/docker.sock` automatically |
+| **PostgreSQL** | localhost | 5432 | `postgres` | `Baklava123!` | database `demo` |
+| **MySQL** | localhost | 3306 | `root` | `Baklava123!` | database `demo` |
+| **SQL Server** | localhost | 1433 | `sa` | `Baklava123!` | encrypt: on, trustServerCertificate: on |
+| **SQLite** | — | — | — | — | file `/tmp/baklava-data/demo.sqlite` (run `seed/sqlite.sh` first) |
+| **MongoDB** | localhost | 27017 | — | — | no auth |
+| **Redis** | localhost | 6379 | — | — | TLS off, db 0 |
+| **etcd** | — | — | — | — | host `http://localhost:2379` |
+| **Kafka** | — | — | — | — | broker `localhost:9092` |
+| **RabbitMQ** | localhost | 5672 | `guest` | `guest` | vhost `/`, mgmt port `15672` |
+| **NATS** | — | — | — | — | server `nats://localhost:4222` (JetStream enabled) |
+| **Elasticsearch** | — | — | — | — | node `http://localhost:9200` (security off) |
+| **ClickHouse** | — | — | `default` | *(blank)* | url `http://localhost:8123`, database `default` |
+
+SQL Server runs under `linux/amd64` (Rosetta on Apple Silicon) — startup is ~30s and uses ~2GB RAM. Elasticsearch is heap-capped at 512MB.
 
 ## Project layout
 

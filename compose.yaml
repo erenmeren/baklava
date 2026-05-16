@@ -1,0 +1,162 @@
+# Baklava dev/test stack — one local instance of every supported tech.
+#
+#   docker compose up -d         # start everything
+#   docker compose down -v       # stop and wipe data
+#   docker compose up -d <svc>   # just one service (postgres, redis, etc.)
+#
+# All credentials are throwaway and meant ONLY for local development. Default
+# baseline: user `baklava` / password `Baklava123!` where auth is required.
+# Services without sensible no-auth defaults stick to their built-in guest /
+# default accounts (rabbit guest:guest, clickhouse default).
+#
+# Ports map 1:1 to the host so the Baklava UI can reach each service at
+# localhost:<default_port>.
+
+services:
+  # ── Runtime ────────────────────────────────────────────────────────────────
+  # Docker itself is the host daemon — no container needed. Baklava reads
+  # unix:///var/run/docker.sock by default on macOS/Linux.
+
+  # ── Relational ─────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: Baklava123!
+      POSTGRES_DB: demo
+    ports: ["5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  mysql:
+    image: mysql:8
+    environment:
+      MYSQL_ROOT_PASSWORD: Baklava123!
+      MYSQL_DATABASE: demo
+    ports: ["3306:3306"]
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-pBaklava123!"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    # Microsoft SQL Server ships x86_64-only. Runs on Apple Silicon via Rosetta.
+    platform: linux/amd64
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: Baklava123!
+    ports: ["1433:1433"]
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P Baklava123! -No -Q 'SELECT 1' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  # SQLite is file-backed, no daemon needed. Run `bash seed/sqlite.sh` to
+  # generate /tmp/baklava-data/demo.sqlite, then point Baklava at that path.
+
+  # ── Document / KV ──────────────────────────────────────────────────────────
+  mongo:
+    image: mongo:7
+    ports: ["27017:27017"]
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand({ping:1}).ok"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "PING"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.16
+    command:
+      - etcd
+      - --name=baklava
+      - --listen-client-urls=http://0.0.0.0:2379
+      - --advertise-client-urls=http://0.0.0.0:2379
+      - --listen-peer-urls=http://0.0.0.0:2380
+    ports:
+      - "2379:2379"
+      - "2380:2380"
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ── Streaming / Messaging ──────────────────────────────────────────────────
+  kafka:
+    image: apache/kafka:3.8.0
+    ports: ["9092:9092"]
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      CLUSTER_ID: YbAkUvK2QaWdh1lUdN6Vlw
+
+  rabbit:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"    # AMQP
+      - "15672:15672"  # Management HTTP API + UI
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  nats:
+    image: nats:latest
+    # -js enables JetStream (required by Baklava's NATS workspace).
+    # -m 8222 exposes the monitoring HTTP endpoint.
+    command: ["-js", "-m", "8222"]
+    ports:
+      - "4222:4222"  # NATS protocol
+      - "8222:8222"  # HTTP monitoring
+
+  # ── Search / OLAP ──────────────────────────────────────────────────────────
+  elastic:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.13.0
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ports: ["9200:9200"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200 >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24-alpine
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    ports:
+      - "8123:8123"  # HTTP
+      - "9000:9000"  # native protocol
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider 'http://localhost:8123/?query=SELECT+1' || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
