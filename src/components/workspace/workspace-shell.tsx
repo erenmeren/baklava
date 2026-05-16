@@ -1,4 +1,4 @@
-import type { TechMeta } from "@/lib/tech-catalog";
+import { techIconUrl, type TechMeta } from "@/lib/tech-catalog";
 
 interface WorkspaceShellProps {
   tech: TechMeta;
@@ -15,7 +15,6 @@ export function WorkspaceShell({
   sidebar,
   children,
 }: WorkspaceShellProps) {
-  const Icon = tech.icon;
   return (
     <div className="flex h-[calc(100vh-3rem)] w-full">
       <aside className="w-64 shrink-0 border-r border-border/60 flex flex-col bg-sidebar">
@@ -24,7 +23,14 @@ export function WorkspaceShell({
             <div
               className={`inline-flex items-center justify-center size-8 rounded-lg bg-gradient-to-br ${tech.color} text-white shrink-0 ring-1 ring-white/10 shadow-sm shadow-black/10`}
             >
-              <Icon className="size-4" />
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={techIconUrl(tech)}
+                alt=""
+                aria-hidden
+                draggable={false}
+                className="size-4 select-none brightness-0 invert"
+              />
             </div>
             <div className="min-w-0">
               <div className="font-semibold text-sm leading-tight truncate">

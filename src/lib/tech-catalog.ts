@@ -1,13 +1,3 @@
-import type { LucideIcon } from "lucide-react";
-import {
-  Boxes,
-  Container,
-  Database,
-  HardDrive,
-  Network,
-  Search,
-} from "lucide-react";
-
 export type TechCategory =
   | "Runtime"
   | "Database"
@@ -33,9 +23,6 @@ export interface TechMeta {
   tagline: string;
   description: string;
   category: TechCategory;
-  icon: LucideIcon;
-  /** simpleicons.org slug — used for the colorful home tile artwork */
-  slug: string;
   /** Tailwind gradient classes — used by tech page / workspace shells */
   color: string;
   status: "available" | "coming-soon";
@@ -48,8 +35,6 @@ export const TECH_CATALOG: TechMeta[] = [
     tagline: "Container engine",
     description: "Inspect and manage containers, images, networks and volumes.",
     category: "Runtime",
-    icon: Container,
-    slug: "docker",
     color: "from-sky-400 to-blue-600",
     status: "available",
   },
@@ -59,8 +44,6 @@ export const TECH_CATALOG: TechMeta[] = [
     tagline: "Relational database",
     description: "Run queries, browse schemas and inspect tables.",
     category: "Database",
-    icon: Database,
-    slug: "postgresql",
     color: "from-indigo-400 to-violet-600",
     status: "available",
   },
@@ -70,8 +53,6 @@ export const TECH_CATALOG: TechMeta[] = [
     tagline: "Streaming platform",
     description: "Browse topics, partitions and consumer groups.",
     category: "Streaming",
-    icon: Network,
-    slug: "apachekafka",
     color: "from-orange-400 to-red-600",
     status: "available",
   },
@@ -81,8 +62,6 @@ export const TECH_CATALOG: TechMeta[] = [
     tagline: "Key-value cache",
     description: "Keys, streams, pub/sub.",
     category: "Cache",
-    icon: HardDrive,
-    slug: "redis",
     color: "from-rose-400 to-red-600",
     status: "available",
   },
@@ -92,8 +71,6 @@ export const TECH_CATALOG: TechMeta[] = [
     tagline: "Relational database",
     description: "Tables, queries, replication.",
     category: "Database",
-    icon: Database,
-    slug: "mysql",
     color: "from-cyan-400 to-blue-600",
     status: "available",
   },
@@ -103,9 +80,6 @@ export const TECH_CATALOG: TechMeta[] = [
     tagline: "Microsoft relational database",
     description: "Databases, tables, queries.",
     category: "Database",
-    icon: Database,
-    // simpleicons removed Microsoft SQL Server in v11 — served locally from /public/icons
-    slug: "local:sqlserver",
     color: "from-red-400 to-rose-600",
     status: "available",
   },
@@ -115,8 +89,6 @@ export const TECH_CATALOG: TechMeta[] = [
     tagline: "Document database",
     description: "Collections, documents, aggregations.",
     category: "Database",
-    icon: Database,
-    slug: "mongodb",
     color: "from-emerald-400 to-green-600",
     status: "available",
   },
@@ -126,8 +98,6 @@ export const TECH_CATALOG: TechMeta[] = [
     tagline: "Message broker",
     description: "Queues, exchanges, bindings.",
     category: "Streaming",
-    icon: Network,
-    slug: "rabbitmq",
     color: "from-amber-400 to-orange-600",
     status: "available",
   },
@@ -137,8 +107,6 @@ export const TECH_CATALOG: TechMeta[] = [
     tagline: "Search engine",
     description: "Indices, search, mappings.",
     category: "Search",
-    icon: Search,
-    slug: "elasticsearch",
     color: "from-teal-400 to-cyan-600",
     status: "available",
   },
@@ -148,8 +116,6 @@ export const TECH_CATALOG: TechMeta[] = [
     tagline: "OLAP database",
     description: "Tables, parts, columnar queries.",
     category: "Database",
-    icon: Database,
-    slug: "clickhouse",
     color: "from-yellow-400 to-orange-500",
     status: "available",
   },
@@ -159,8 +125,6 @@ export const TECH_CATALOG: TechMeta[] = [
     tagline: "Messaging system",
     description: "Subjects, JetStream, KV.",
     category: "Streaming",
-    icon: Network,
-    slug: "natsdotio",
     color: "from-sky-400 to-indigo-600",
     status: "available",
   },
@@ -170,8 +134,6 @@ export const TECH_CATALOG: TechMeta[] = [
     tagline: "Embedded database",
     description: "File-backed databases.",
     category: "Database",
-    icon: Database,
-    slug: "sqlite",
     color: "from-blue-400 to-indigo-600",
     status: "available",
   },
@@ -181,8 +143,6 @@ export const TECH_CATALOG: TechMeta[] = [
     tagline: "Key-value store",
     description: "Leases, watches, distributed config.",
     category: "Other",
-    icon: Boxes,
-    slug: "etcd",
     color: "from-lime-400 to-green-600",
     status: "available",
   },
@@ -193,15 +153,12 @@ export function getTech(id: string): TechMeta | undefined {
 }
 
 /**
- * Returns the URL for a tech's colorful brand artwork.
+ * Returns the local URL of a tech's brand SVG.
  *
- * Most techs come from simpleicons.org's CDN. Some brands aren't in
- * simpleicons (e.g. Microsoft SQL Server was removed in v11) — for those
- * we prefix the slug with `local:` and ship the SVG under `/public/icons/`.
+ * All brand icons live under `/public/icons/<id>.svg` so we never depend on
+ * an external CDN at runtime. Add a new tech by saving its SVG to that
+ * folder using the tech `id` as the filename.
  */
-export function techIconUrl(tech: { slug: string }): string {
-  if (tech.slug.startsWith("local:")) {
-    return `/icons/${tech.slug.slice("local:".length)}.svg`;
-  }
-  return `https://cdn.simpleicons.org/${tech.slug}`;
+export function techIconUrl(tech: { id: string }): string {
+  return `/icons/${tech.id}.svg`;
 }
