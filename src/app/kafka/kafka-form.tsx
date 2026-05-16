@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { toast } from "sonner";
 import { Loader2, PlugZap } from "lucide-react";
@@ -120,24 +121,24 @@ export function KafkaForm({ onSaved }: Props) {
         />
       </div>
 
-      <label className="flex items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          checked={ssl}
-          onChange={(e) => setSsl(e.target.checked)}
-        />
-        Use SSL/TLS
-      </label>
+      <div className="flex items-center justify-between text-sm">
+        <Label htmlFor="kafka-ssl" className="cursor-pointer">
+          Use SSL/TLS
+        </Label>
+        <Switch id="kafka-ssl" checked={ssl} onCheckedChange={setSsl} />
+      </div>
 
       <div className="rounded-lg border border-border/60 p-3 space-y-3">
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
+        <div className="flex items-center justify-between text-sm">
+          <Label htmlFor="kafka-sasl" className="cursor-pointer">
+            SASL authentication
+          </Label>
+          <Switch
+            id="kafka-sasl"
             checked={useSasl}
-            onChange={(e) => setUseSasl(e.target.checked)}
+            onCheckedChange={setUseSasl}
           />
-          SASL authentication
-        </label>
+        </div>
         {useSasl ? (
           <div className="space-y-3">
             <div className="space-y-2">

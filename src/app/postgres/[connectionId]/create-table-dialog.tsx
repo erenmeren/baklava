@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Loader2, Plus, X } from "lucide-react";
@@ -288,14 +289,20 @@ export function CreateTableDialog({
             </p>
           </div>
 
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
+          <div className="flex items-center gap-2 text-sm">
+            <Switch
+              id="ct-if-not-exists"
+              size="sm"
               checked={ifNotExists}
-              onChange={(e) => setIfNotExists(e.target.checked)}
+              onCheckedChange={setIfNotExists}
             />
-            <span className="font-mono text-xs">IF NOT EXISTS</span>
-          </label>
+            <Label
+              htmlFor="ct-if-not-exists"
+              className="cursor-pointer font-mono text-xs font-normal"
+            >
+              IF NOT EXISTS
+            </Label>
+          </div>
 
           {error ? (
             <Alert variant="destructive">

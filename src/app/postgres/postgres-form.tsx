@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { toast } from "sonner";
@@ -138,14 +139,12 @@ export function PostgresForm({ onSaved }: Props) {
         </div>
       </div>
 
-      <label className="flex items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          checked={ssl}
-          onChange={(e) => setSsl(e.target.checked)}
-        />
-        Use SSL
-      </label>
+      <div className="flex items-center justify-between text-sm">
+        <Label htmlFor="pg-ssl" className="cursor-pointer">
+          Use SSL
+        </Label>
+        <Switch id="pg-ssl" checked={ssl} onCheckedChange={setSsl} />
+      </div>
 
       <div className="flex flex-wrap gap-2 pt-2">
         <Button

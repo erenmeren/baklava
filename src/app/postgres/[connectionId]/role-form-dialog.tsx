@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -192,30 +193,34 @@ export function RoleFormDialog(props: Props) {
 
           <div className="grid grid-cols-2 gap-x-3 gap-y-2 rounded-md border border-border/60 p-3">
             {ATTR_KEYS.map(([key, label, hint]) => (
-              <label
+              <div
                 key={key}
                 className={cn(
-                  "flex items-start gap-2 cursor-pointer select-none rounded px-1.5 py-1 hover:bg-muted/40",
+                  "flex items-start gap-2.5 rounded px-1.5 py-1 hover:bg-muted/40",
                 )}
               >
-                <input
-                  type="checkbox"
+                <Switch
+                  id={`role-priv-${key}`}
+                  size="sm"
                   checked={form[key] as boolean}
-                  onChange={(e) =>
-                    update(key, e.target.checked as RoleFormSeed[typeof key])
+                  onCheckedChange={(v) =>
+                    update(key, v as RoleFormSeed[typeof key])
                   }
                   disabled={submitting}
-                  className="mt-1 size-3.5 accent-brand"
+                  className="mt-0.5"
                 />
-                <span className="min-w-0">
+                <Label
+                  htmlFor={`role-priv-${key}`}
+                  className="min-w-0 cursor-pointer block font-normal"
+                >
                   <span className="block text-[12.5px] font-medium leading-tight">
                     {label}
                   </span>
                   <span className="block text-[11px] text-muted-foreground leading-tight mt-0.5">
                     {hint}
                   </span>
-                </span>
-              </label>
+                </Label>
+              </div>
             ))}
           </div>
 
@@ -254,16 +259,21 @@ export function RoleFormDialog(props: Props) {
                 placeholder={mode === "edit" ? "unchanged" : ""}
               />
               {mode === "edit" ? (
-                <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground cursor-pointer">
-                  <input
-                    type="checkbox"
+                <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                  <Switch
+                    id="role-no-password"
+                    size="sm"
                     checked={setNoPassword}
-                    onChange={(e) => setSetNoPassword(e.target.checked)}
+                    onCheckedChange={setSetNoPassword}
                     disabled={submitting}
-                    className="size-3 accent-brand"
                   />
-                  remove password (PASSWORD NULL)
-                </label>
+                  <Label
+                    htmlFor="role-no-password"
+                    className="cursor-pointer text-[11px] font-normal text-muted-foreground"
+                  >
+                    remove password (PASSWORD NULL)
+                  </Label>
+                </div>
               ) : null}
             </div>
           </div>

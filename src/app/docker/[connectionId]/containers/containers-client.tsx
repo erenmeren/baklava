@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Table,
   TableBody,
@@ -160,15 +162,20 @@ export function ContainersClient({ connectionId }: Props) {
       }
       actions={
         <>
-          <label className="flex items-center gap-2 text-sm text-muted-foreground">
-            <input
-              type="checkbox"
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Switch
+              id="show-all-containers"
+              size="sm"
               checked={showAll}
-              onChange={(e) => setShowAll(e.target.checked)}
-              className="size-3.5"
+              onCheckedChange={setShowAll}
             />
-            Include stopped
-          </label>
+            <Label
+              htmlFor="show-all-containers"
+              className="cursor-pointer text-sm font-normal text-muted-foreground"
+            >
+              Include stopped
+            </Label>
+          </div>
           <Button size="sm" variant="outline" onClick={load}>
             <RefreshCcw className="size-3.5" />
             Refresh

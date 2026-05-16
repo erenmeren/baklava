@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Loader2, X, Plus } from "lucide-react";
 import { toast } from "sonner";
@@ -247,31 +248,39 @@ export function CreateIndexDialog({
               </select>
             </div>
             <div className="space-y-2 pt-6">
-              <label className="flex items-center gap-2 cursor-pointer select-none">
-                <input
-                  type="checkbox"
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="idx-unique"
+                  size="sm"
                   checked={unique}
-                  onChange={(e) => setUnique(e.target.checked)}
+                  onCheckedChange={setUnique}
                   disabled={submitting}
-                  className="size-3.5 accent-brand"
                 />
-                <span className="text-[12.5px]">Unique</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer select-none">
-                <input
-                  type="checkbox"
+                <Label
+                  htmlFor="idx-unique"
+                  className="cursor-pointer text-[12.5px] font-normal"
+                >
+                  Unique
+                </Label>
+              </div>
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="idx-concurrent"
+                  size="sm"
                   checked={concurrent}
-                  onChange={(e) => setConcurrent(e.target.checked)}
+                  onCheckedChange={setConcurrent}
                   disabled={submitting}
-                  className="size-3.5 accent-brand"
                 />
-                <span className="text-[12.5px]">
+                <Label
+                  htmlFor="idx-concurrent"
+                  className="cursor-pointer text-[12.5px] font-normal"
+                >
                   Concurrently
                   <span className="ml-1 text-muted-foreground text-[11px]">
                     (non-blocking)
                   </span>
-                </span>
-              </label>
+                </Label>
+              </div>
             </div>
           </div>
 

@@ -148,7 +148,9 @@ export function GroupDetailClient({ connectionId, group }: Props) {
         setResetOpen(false);
         await load();
       } else {
-        toast.error(data.error || "Could not reset");
+        toast.error(data.error || "Could not reset", {
+          description: data.hint,
+        });
       }
     } finally {
       setBusy(false);

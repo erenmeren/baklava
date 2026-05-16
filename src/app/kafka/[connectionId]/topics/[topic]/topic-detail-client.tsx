@@ -9,6 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -464,14 +465,20 @@ export function TopicDetailClient({ connectionId, topic }: Props) {
                 ))}
               </select>
             </div>
-            <label className="flex items-center gap-2 text-xs text-muted-foreground select-none">
-              <input
-                type="checkbox"
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Switch
+                id="from-beginning"
+                size="sm"
                 checked={fromBeginning}
-                onChange={(e) => setFromBeginning(e.target.checked)}
+                onCheckedChange={setFromBeginning}
               />
-              From beginning
-            </label>
+              <Label
+                htmlFor="from-beginning"
+                className="cursor-pointer text-xs font-normal text-muted-foreground"
+              >
+                From beginning
+              </Label>
+            </div>
             <Button
               size="sm"
               variant={live ? "default" : "outline"}

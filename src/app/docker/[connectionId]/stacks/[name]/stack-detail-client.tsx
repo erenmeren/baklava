@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Table,
   TableBody,
@@ -347,14 +349,17 @@ export function StackDetailClient({ connectionId, name }: Props) {
               stack&rsquo;s networks. Volumes are kept by default.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
+          <div className="flex items-center gap-2 text-sm">
+            <Switch
+              id="remove-volumes"
+              size="sm"
               checked={removeVolumes}
-              onChange={(e) => setRemoveVolumes(e.target.checked)}
+              onCheckedChange={setRemoveVolumes}
             />
-            Also remove volumes (data loss — cannot be undone)
-          </label>
+            <Label htmlFor="remove-volumes" className="cursor-pointer font-normal">
+              Also remove volumes (data loss — cannot be undone)
+            </Label>
+          </div>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={teardown} disabled={busy}>

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getConnection } from "@/lib/connections/store";
 import {
+  getConsumerGroupState,
   resetGroupOffsets,
   type ResetOffsetTarget,
 } from "@/lib/connections/kafka";
@@ -36,10 +37,37 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
       { status: 400 }
     );
   }
+  const groupId = decodeURIComponent(group);
+
+  // Pre-flight: Kafka requires the group to be Empty before any reset.
+  // Check up front so we can return a friendly error instead of a raw
+  // GroupNotEmptyException message from the broker.
+  try {
+    const state = await getConsumerGroupState(
+      record.config as KafkaConfig,
+      groupId
+    );
+    if (state && state !== "Empty") {
+      return NextResponse.json(
+        {
+          error: `Group is ${state}, not Empty`,
+          state,
+          hint:
+            state === "Stable"
+              ? "Stop all consumers in this group, then try again."
+              : "Group is rebalancing — wait ~10s for it to settle, then try again.",
+        },
+        { status: 409 }
+      );
+    }
+  } catch (err) {
+    return NextResponse.json({ error: formatError(err) }, { status: 502 });
+  }
+
   try {
     await resetGroupOffsets(
       record.config as KafkaConfig,
-      decodeURIComponent(group),
+      groupId,
       body.topic,
       body.target as ResetOffsetTarget,
       body.partitions

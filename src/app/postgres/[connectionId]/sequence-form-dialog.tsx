@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -245,16 +246,21 @@ export function SequenceFormDialog(props: Props) {
                 placeholder="1"
               />
             </div>
-            <label className="flex items-center gap-2 cursor-pointer select-none px-1.5 py-2">
-              <input
-                type="checkbox"
+            <div className="flex items-center gap-2 px-1.5 py-2">
+              <Switch
+                id="seq-cycle"
+                size="sm"
                 checked={form.cycle}
-                onChange={(e) => update("cycle", e.target.checked)}
+                onCheckedChange={(v) => update("cycle", v)}
                 disabled={submitting}
-                className="size-3.5 accent-brand"
               />
-              <span className="text-[12.5px]">Cycle on overflow</span>
-            </label>
+              <Label
+                htmlFor="seq-cycle"
+                className="cursor-pointer text-[12.5px] font-normal"
+              >
+                Cycle on overflow
+              </Label>
+            </div>
           </div>
 
           <DialogFooter>

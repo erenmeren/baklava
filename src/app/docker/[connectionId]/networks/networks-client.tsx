@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import {
   Table,
   TableBody,
@@ -259,14 +260,16 @@ export function NetworksClient({ connectionId }: Props) {
                 />
               </div>
             </div>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
+            <div className="flex items-center justify-between text-sm">
+              <Label htmlFor="net-internal" className="cursor-pointer">
+                Internal (no external connectivity)
+              </Label>
+              <Switch
+                id="net-internal"
                 checked={createInternal}
-                onChange={(e) => setCreateInternal(e.target.checked)}
+                onCheckedChange={setCreateInternal}
               />
-              Internal (no external connectivity)
-            </label>
+            </div>
           </div>
           <DialogFooter>
             <Button

@@ -348,13 +348,36 @@ export async function describeConsumerGroup(
   const admin = client.admin();
   await admin.connect();
   try {
-    const desc = await admin.describeGroups([groupId]);
+    // Run describeGroups + fetchOffsets in parallel. Crucially we do NOT pass
+    // resolveOffsets:true — that triggers a per-group temporary consumer join
+    // inside kafkajs and can take 5+ seconds per group. Instead we fetch the
+    // high-water-marks separately via fetchTopicOffsets (admin RPC, no join).
+    const [desc, offsetsRaw] = await Promise.all([
+      admin.describeGroups([groupId]),
+      admin.fetchOffsets({ groupId }),
+    ]);
     const g = desc.groups[0];
-    const offsetsRaw = await admin.fetchOffsets({ groupId, resolveOffsets: true });
+    const topics = [...new Set(offsetsRaw.map((t) => t.topic))];
+    const highWaterMarks = await Promise.all(
+      topics.map((t) =>
+        admin
+          .fetchTopicOffsets(t)
+          .then((rows) => ({ topic: t, rows }))
+          .catch(() => ({ topic: t, rows: [] as never[] }))
+      )
+    );
+    const highByTopicPartition = new Map<string, string>();
+    for (const { topic, rows } of highWaterMarks) {
+      for (const r of rows) {
+        highByTopicPartition.set(`${topic}/${r.partition}`, r.high);
+      }
+    }
+
     const offsets: ConsumerGroupDetail["offsets"] = [];
     for (const t of offsetsRaw) {
       for (const p of t.partitions) {
-        const high = (p as unknown as { high?: string }).high ?? "-1";
+        const high =
+          highByTopicPartition.get(`${t.topic}/${p.partition}`) ?? "-1";
         const off = p.offset;
         const offNum = Number(off);
         const highNum = Number(high);
@@ -563,6 +586,74 @@ export type ResetOffsetTarget =
   | { kind: "timestamp"; timestamp: number }
   | { kind: "offset"; offset: string };
 
+/**
+ * Returns the current state of a consumer group, or null if it doesn't exist.
+ * Used as a pre-flight check before reset operations so we can surface a
+ * friendly error instead of letting the broker reject the request.
+ */
+export async function getConsumerGroupState(
+  config: KafkaConfig,
+  groupId: string
+): Promise<string | null> {
+  const client = createKafkaClient(config);
+  const admin = client.admin();
+  await admin.connect();
+  try {
+    const desc = await admin.describeGroups([groupId]);
+    return desc.groups[0]?.state ?? null;
+  } finally {
+    await admin.disconnect().catch(() => undefined);
+  }
+}
+
+/**
+ * Commit explicit offsets for a group + topic by briefly joining the group as
+ * a consumer, committing, then sending LeaveGroup on disconnect.
+ *
+ * Why not `admin.setOffsets()`? kafkajs's admin.setOffsets internally spins up
+ * a Consumer to join the group, but doesn't reliably send LeaveGroup on
+ * disconnect — phantom members accumulate every call. Managing the consumer
+ * lifecycle ourselves guarantees the group transitions back to Empty within
+ * a couple seconds.
+ */
+async function commitGroupOffsetsClean(
+  config: KafkaConfig,
+  groupId: string,
+  topic: string,
+  partitionEntries: { partition: number; offset: string }[]
+): Promise<void> {
+  if (partitionEntries.length === 0) return;
+  const client = createKafkaClient(config);
+  const consumer = client.consumer({
+    groupId,
+    sessionTimeout: 10_000,
+    heartbeatInterval: 3_000,
+  });
+  let connected = false;
+  let running = false;
+  try {
+    await consumer.connect();
+    connected = true;
+    await consumer.subscribe({ topic, fromBeginning: false });
+    // Start the runner so we join the group and receive an assignment.
+    // eachMessage is a no-op — we don't actually want to consume anything.
+    await consumer.run({ autoCommit: false, eachMessage: async () => {} });
+    running = true;
+    // Wait for the group join + assignment to settle.
+    await new Promise((r) => setTimeout(r, 1500));
+    await consumer.commitOffsets(
+      partitionEntries.map((p) => ({
+        topic,
+        partition: p.partition,
+        offset: p.offset,
+      }))
+    );
+  } finally {
+    if (running) await consumer.stop().catch(() => undefined);
+    if (connected) await consumer.disconnect().catch(() => undefined);
+  }
+}
+
 export async function resetGroupOffsets(
   config: KafkaConfig,
   groupId: string,
@@ -575,37 +666,42 @@ export async function resetGroupOffsets(
   await admin.connect();
   try {
     if (target.kind === "earliest" || target.kind === "latest") {
-      // resetOffsets requires the group to be empty
+      // admin.resetOffsets uses the broker's reset RPC — no consumer join,
+      // no phantom members. Requires the group to be Empty (broker-enforced).
       await admin.resetOffsets({
         groupId,
         topic,
         earliest: target.kind === "earliest",
       });
-    } else if (target.kind === "timestamp") {
+      return;
+    }
+
+    // For timestamp / explicit-offset, resolve the target offsets first,
+    // then commit via a properly-managed consumer (not admin.setOffsets).
+    let entries: { partition: number; offset: string }[];
+    if (target.kind === "timestamp") {
       const result = await admin.fetchTopicOffsetsByTimestamp(
         topic,
         target.timestamp
       );
-      const entries = result
-        .filter(
-          (p) => !partitions || partitions.includes(p.partition)
-        )
+      entries = result
+        .filter((p) => !partitions || partitions.includes(p.partition))
         .map((p) => ({ partition: p.partition, offset: p.offset }));
-      if (entries.length > 0) {
-        await admin.setOffsets({ groupId, topic, partitions: entries });
-      }
     } else {
-      // specific offset
       const meta = await admin.fetchTopicMetadata({ topics: [topic] });
       const t = meta.topics[0];
       if (!t) throw new Error("Topic not found");
       const allPartitions = t.partitions.map((p) => p.partitionId);
-      const targets = (partitions ?? allPartitions).map((p) => ({
+      entries = (partitions ?? allPartitions).map((p) => ({
         partition: p,
         offset: target.offset,
       }));
-      await admin.setOffsets({ groupId, topic, partitions: targets });
     }
+
+    // Release the admin connection before joining as a consumer.
+    await admin.disconnect().catch(() => undefined);
+    await commitGroupOffsetsClean(config, groupId, topic, entries);
+    return;
   } finally {
     await admin.disconnect().catch(() => undefined);
   }
@@ -829,15 +925,37 @@ export async function listConsumerGroupsWithLag(
       });
     }
 
-    // Fetch offsets for each group in parallel; collect needed topic high-water-marks once
+    // Fetch committed offsets per group (WITHOUT resolveOffsets:true — that
+    // would trigger a temporary consumer join inside kafkajs costing 5+ s
+    // per group). High-water-marks are fetched separately, deduplicated by
+    // topic, so groups that share a topic only pay the cost once.
     const groupOffsets = await Promise.all(
       groupIds.map((groupId) =>
         admin
-          .fetchOffsets({ groupId, resolveOffsets: true })
+          .fetchOffsets({ groupId })
           .then((rows) => ({ groupId, rows }))
           .catch(() => ({ groupId, rows: [] as never[] }))
       )
     );
+
+    const allTopics = new Set<string>();
+    for (const { rows } of groupOffsets) {
+      for (const t of rows) allTopics.add(t.topic);
+    }
+    const highWaterMarks = await Promise.all(
+      [...allTopics].map((t) =>
+        admin
+          .fetchTopicOffsets(t)
+          .then((rows) => ({ topic: t, rows }))
+          .catch(() => ({ topic: t, rows: [] as never[] }))
+      )
+    );
+    const highByTopicPartition = new Map<string, number>();
+    for (const { topic, rows } of highWaterMarks) {
+      for (const r of rows) {
+        highByTopicPartition.set(`${topic}/${r.partition}`, Number(r.high));
+      }
+    }
 
     return list.groups
       .map((g) => {
@@ -849,9 +967,8 @@ export async function listConsumerGroupsWithLag(
         for (const t of rows) {
           topics.add(t.topic);
           for (const p of t.partitions) {
-            const high = Number(
-              (p as unknown as { high?: string }).high ?? "-1"
-            );
+            const high =
+              highByTopicPartition.get(`${t.topic}/${p.partition}`) ?? -1;
             const off = Number(p.offset);
             if (high >= 0 && off >= 0) totalLag += Math.max(0, high - off);
           }

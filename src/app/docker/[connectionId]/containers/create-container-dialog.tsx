@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   Dialog,
@@ -405,14 +406,16 @@ export function CreateContainerDialog({
             ))}
           </div>
 
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
+          <div className="flex items-center justify-between text-sm">
+            <Label htmlFor="auto-start" className="cursor-pointer">
+              Start immediately after creation
+            </Label>
+            <Switch
+              id="auto-start"
               checked={autoStart}
-              onChange={(e) => setAutoStart(e.target.checked)}
+              onCheckedChange={setAutoStart}
             />
-            Start immediately after creation
-          </label>
+          </div>
 
           {error ? (
             <Alert variant="destructive">

@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -228,15 +229,20 @@ export function TopicsClient({ connectionId }: Props) {
               { value: "empty", label: "Empty" },
             ]}
           />
-          <label className="flex items-center gap-2 text-xs text-muted-foreground select-none">
-            <input
-              type="checkbox"
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Switch
+              id="show-internal"
+              size="sm"
               checked={includeInternal}
-              onChange={(e) => setIncludeInternal(e.target.checked)}
-              className="size-3.5"
+              onCheckedChange={setIncludeInternal}
             />
-            Show internal
-          </label>
+            <Label
+              htmlFor="show-internal"
+              className="cursor-pointer text-xs font-normal text-muted-foreground"
+            >
+              Show internal
+            </Label>
+          </div>
         </div>
 
         {/* ── Topics table ───────────────────────────────────────────────── */}

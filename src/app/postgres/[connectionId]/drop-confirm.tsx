@@ -11,6 +11,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -135,15 +137,16 @@ export function DropConfirm({
           </AlertDialogDescription>
         </AlertDialogHeader>
 
-        <label className="flex items-center gap-2 select-none rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-[12.5px]">
-          <input
-            type="checkbox"
+        <div className="flex items-center gap-2 rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-[12.5px]">
+          <Switch
+            id="drop-cascade"
+            size="sm"
             checked={cascade}
             disabled={working}
-            onChange={(e) => setCascade(e.target.checked)}
-            className="size-3.5 accent-destructive"
+            onCheckedChange={setCascade}
+            className="data-checked:bg-destructive"
           />
-          <span>
+          <Label htmlFor="drop-cascade" className="cursor-pointer font-normal">
             <span className="font-medium capitalize">{cascadeLabel}</span>
             <span className="text-muted-foreground">
               {" — "}
@@ -151,8 +154,8 @@ export function DropConfirm({
                 ? cascadeHint
                 : `also drop dependent objects (${cascadeHint})`}
             </span>
-          </span>
-        </label>
+          </Label>
+        </div>
 
         <AlertDialogFooter>
           <AlertDialogCancel disabled={working}>Cancel</AlertDialogCancel>
