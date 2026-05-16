@@ -1,18 +1,22 @@
 export type TechCategory =
   | "Runtime"
   | "Database"
+  | "Vector"
   | "Streaming"
   | "Cache"
   | "Search"
+  | "Platform"
   | "Other";
 
 export const TECH_CATEGORIES = [
   "All",
   "Runtime",
   "Database",
+  "Vector",
   "Streaming",
   "Cache",
   "Search",
+  "Platform",
 ] as const;
 
 export type TechCategoryFilter = (typeof TECH_CATEGORIES)[number];
@@ -153,6 +157,60 @@ export const TECH_CATALOG: TechMeta[] = [
     description: "Pods, deployments, services, nodes.",
     category: "Runtime",
     color: "from-blue-500 to-indigo-700",
+    status: "available",
+  },
+  {
+    id: "supabase",
+    name: "Supabase",
+    tagline: "Postgres + auth + storage + functions",
+    description: "Auth users, storage buckets, edge functions.",
+    category: "Platform",
+    color: "from-emerald-400 to-green-600",
+    status: "available",
+  },
+  {
+    id: "neo4j",
+    name: "Neo4j",
+    tagline: "Graph database",
+    description: "Cypher queries, labels, relationships.",
+    category: "Database",
+    color: "from-cyan-500 to-blue-700",
+    status: "available",
+  },
+  {
+    id: "qdrant",
+    name: "Qdrant",
+    tagline: "Vector search engine",
+    description: "Collections, vectors, payloads.",
+    category: "Vector",
+    color: "from-red-500 to-pink-600",
+    status: "available",
+  },
+  {
+    id: "weaviate",
+    name: "Weaviate",
+    tagline: "Vector database",
+    description: "Classes, objects, hybrid search.",
+    category: "Vector",
+    color: "from-green-500 to-teal-600",
+    status: "available",
+  },
+  {
+    id: "milvus",
+    name: "Milvus",
+    tagline: "Vector database",
+    description: "Collections, partitions, indexes.",
+    category: "Vector",
+    color: "from-indigo-500 to-purple-700",
+    status: "available",
+  },
+  {
+    id: "chroma",
+    name: "Chroma",
+    tagline: "Embedding database",
+    description: "Collections, documents, embeddings.",
+    category: "Vector",
+    color: "from-pink-500 to-rose-600",
     status: "available",
   },
 ];

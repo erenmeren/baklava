@@ -12,7 +12,13 @@ export type TechId =
   | "sqlite"
   | "etcd"
   | "sqlserver"
-  | "kubernetes";
+  | "kubernetes"
+  | "supabase"
+  | "neo4j"
+  | "qdrant"
+  | "weaviate"
+  | "milvus"
+  | "chroma";
 
 export type ConnectionStatus = "untested" | "ok" | "error";
 
@@ -148,4 +154,53 @@ export interface KubernetesConfig {
   kubeconfig: string;
   /** Optional context name within the kubeconfig. Falls back to current-context. */
   context?: string;
+}
+
+export interface SupabaseConfig {
+  /** e.g. https://abcdefgh.supabase.co */
+  url: string;
+  /** service_role key (JWT) — admin level, never anon. Used for management APIs. */
+  serviceRoleKey: string;
+  /** Optional Postgres connection string for the SQL passthrough. */
+  databaseUrl?: string;
+}
+
+export interface Neo4jConfig {
+  /** bolt://host:7687  •  neo4j+s://host  •  bolt+s://host */
+  uri: string;
+  user: string;
+  password: string;
+  /** Optional default database (Neo4j 4.x+ supports multi-db). */
+  database?: string;
+}
+
+export interface QdrantConfig {
+  /** REST URL, e.g. http://localhost:6333 */
+  url: string;
+  /** Optional API key (Qdrant Cloud / secured deployments). */
+  apiKey?: string;
+}
+
+export interface WeaviateConfig {
+  /** REST scheme+host+port, e.g. http://localhost:8080 */
+  url: string;
+  /** Optional API key. */
+  apiKey?: string;
+}
+
+export interface MilvusConfig {
+  /** host:port — gRPC address. */
+  address: string;
+  /** Optional auth token (username:password or Zilliz Cloud token). */
+  token?: string;
+  ssl: boolean;
+}
+
+export interface ChromaConfig {
+  /** REST URL, e.g. http://localhost:8000 */
+  url: string;
+  tenant?: string;
+  database?: string;
+  /** Optional auth token for Chroma Cloud. */
+  authToken?: string;
 }

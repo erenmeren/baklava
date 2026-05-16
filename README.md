@@ -1,6 +1,6 @@
 # Baklava
 
-Open-source unified ops console. One UI for Docker, Kafka, PostgreSQL, MySQL, SQL Server, MongoDB, Redis, RabbitMQ, NATS, Elasticsearch, ClickHouse, SQLite, and etcd — modeled on the dedicated tools you already know (Docker Desktop, kafka-ui, pgAdmin) so you can stop juggling tabs.
+Open-source unified ops console. One UI for Docker, Kubernetes, Postgres, MySQL, SQL Server, MongoDB, SQLite, Redis, etcd, Kafka, RabbitMQ, NATS, Elasticsearch, ClickHouse, Supabase, Neo4j, and four vector DBs (Qdrant, Weaviate, Milvus, Chroma) — modeled on the dedicated tools you already know (Docker Desktop, kafka-ui, pgAdmin) so you can stop juggling tabs.
 
 ## What it does
 
@@ -40,12 +40,13 @@ Sidebar: Overview · Topics · Consumer groups · Brokers.
 - **Consumer groups**: lag column with severity bar (green/amber/red), member count, topics-assigned. Click into one for member detail, per-partition offset/lag, and reset-offsets (with pre-flight state check).
 - **Brokers**: list with controller badge.
 
-### The other ten (MVP workspaces)
+### The other workspaces (MVP)
 
 Each ships a connection form, a mission-control overview (auto-refresh 15s), a primary browse list, and a per-object detail page:
 
 | Tech | Primary browse | Detail |
 |---|---|---|
+| **Kubernetes** | pods (namespace-filtered) | overview / containers / logs / events / YAML |
 | **MySQL** | databases | tables (engine, rows, size bar, collation) |
 | **SQL Server** | databases | tables (`schema.name`, rows, reserved size, state pill) |
 | **MongoDB** | databases | collections (type pill, docs, storage bar, indexes) |
@@ -56,6 +57,12 @@ Each ships a connection form, a mission-control overview (auto-refresh 15s), a p
 | **NATS** | streams (JetStream) | overview / subjects (live counts) / consumers / messages (walk back from `last_seq`) |
 | **Elasticsearch** | indices (health pill) | overview / mappings / settings / search (Lucene `q`) / shards |
 | **ClickHouse** | tables (engine pill) | columns / sample / partitions / DDL + truncate + drop |
+| **Supabase** | overview lands first | 4-section workspace: Auth users (paginated) / Storage buckets → file browser / Edge functions (with friendly Management-API explainer) |
+| **Neo4j** | databases | labels / relationship types / indexes / constraints / **Cypher editor** with Read/Write mode toggle and typed-result drawer |
+| **Qdrant** | collections | schema / sample (deterministic scroll) / config; vector vs point distinction |
+| **Weaviate** | collections | properties / sample / schema; graceful gRPC-unavailable fallback |
+| **Milvus** | collections | schema / sample / indexes / stats; pre-flight `getLoadState` check, never auto-loads |
+| **Chroma** | collections | schema / sample / config; vector head/tail/dim summary, on-demand full vector fetch |
 
 ## Stack
 
@@ -63,7 +70,7 @@ Each ships a connection form, a mission-control overview (auto-refresh 15s), a p
 - TypeScript
 - Tailwind CSS v4
 - shadcn/ui (Radix / Base UI) + Lucide icons + Sonner toasts
-- Drivers: `dockerode`, `kafkajs`, `pg`, `mysql2`, `mssql`, `mongodb`, `better-sqlite3`, `ioredis`, `etcd3`, `amqplib`, `nats`, `@elastic/elasticsearch`, `@clickhouse/client`
+- Drivers: `dockerode`, `@kubernetes/client-node`, `kafkajs`, `pg`, `mysql2`, `mssql`, `mongodb`, `better-sqlite3`, `ioredis`, `etcd3`, `amqplib`, `nats`, `@elastic/elasticsearch`, `@clickhouse/client`, `@supabase/supabase-js`, `neo4j-driver`, `@qdrant/js-client-rest`, `weaviate-client`, `@zilliz/milvus2-sdk-node`, `chromadb`
 
 ## Run
 
@@ -97,6 +104,7 @@ All credentials are throwaway and for local dev only. Plug these into the connec
 | Tech | Host | Port | User | Password | Notes |
 |---|---|---:|---|---|---|
 | **Docker** | — | — | — | — | uses `unix:///var/run/docker.sock` automatically |
+| **Kubernetes** | — | — | — | — | paste your kubeconfig YAML (works with kind / minikube / EKS / GKE / AKS) |
 | **PostgreSQL** | localhost | 5432 | `postgres` | `Baklava123!` | database `demo` |
 | **MySQL** | localhost | 3306 | `root` | `Baklava123!` | database `demo` |
 | **SQL Server** | localhost | 1433 | `sa` | `Baklava123!` | encrypt: on, trustServerCertificate: on |
@@ -109,8 +117,16 @@ All credentials are throwaway and for local dev only. Plug these into the connec
 | **NATS** | — | — | — | — | server `nats://localhost:4222` (JetStream enabled) |
 | **Elasticsearch** | — | — | — | — | node `http://localhost:9200` (security off) |
 | **ClickHouse** | — | — | `default` | *(blank)* | url `http://localhost:8123`, database `default` |
+| **Supabase** | — | — | — | — | use `supabase start` CLI; URL `http://localhost:54321` + service_role key from CLI output |
+| **Neo4j** | localhost | 7687 | `neo4j` | `Baklava123!` | URI `bolt://localhost:7687`; HTTP browser at `7474` |
+| **Qdrant** | — | — | — | — | url `http://localhost:6333` (REST) |
+| **Weaviate** | — | — | — | — | url `http://localhost:8080` (REST) + gRPC `50051`; anonymous access on |
+| **Milvus** | — | — | — | — | address `localhost:19530` (gRPC); no auth |
+| **Chroma** | — | — | — | — | url `http://localhost:8000`; tenant `default_tenant`, database `default_database` |
 
-SQL Server runs under `linux/amd64` (Rosetta on Apple Silicon) — startup is ~30s and uses ~2GB RAM. Elasticsearch is heap-capped at 512MB.
+SQL Server runs under `linux/amd64` (Rosetta on Apple Silicon) — startup is ~30s and uses ~2GB RAM. Elasticsearch is heap-capped at 512MB. Milvus is a multi-container standalone deployment (~60s cold start) — its internal etcd and minio bind to no host ports so they don't collide with the standalone etcd service.
+
+**Supabase** is a 10-service stack — instead of inlining it in `compose.yaml`, install the official CLI (`brew install supabase/tap/supabase`) and run `supabase start` in any directory. The CLI prints the API URL and service_role key to paste into Baklava's Supabase form.
 
 ## Project layout
 

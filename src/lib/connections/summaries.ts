@@ -1,4 +1,5 @@
 import type {
+  ChromaConfig,
   ClickhouseConfig,
   ConnectionRecord,
   DockerConfig,
@@ -6,15 +7,20 @@ import type {
   EtcdConfig,
   KafkaConfig,
   KubernetesConfig,
+  MilvusConfig,
   MongoConfig,
   MysqlConfig,
   NatsConfig,
+  Neo4jConfig,
   PostgresConfig,
+  QdrantConfig,
   RabbitConfig,
   RedisConfig,
   SqliteConfig,
   SqlServerConfig,
+  SupabaseConfig,
   TechId,
+  WeaviateConfig,
 } from "./types";
 
 export const connectionSummaries: Record<
@@ -85,5 +91,29 @@ export const connectionSummaries: Record<
       cfg.kubeconfig.match(/current-context:\s*([^\n]+)/)?.[1]?.trim() ||
       "kubeconfig";
     return ctx;
+  },
+  supabase: (r) => {
+    const cfg = r.config as SupabaseConfig;
+    return cfg.url.replace(/^https?:\/\//, "");
+  },
+  neo4j: (r) => {
+    const cfg = r.config as Neo4jConfig;
+    return `${cfg.user}@${cfg.uri}${cfg.database ? `/${cfg.database}` : ""}`;
+  },
+  qdrant: (r) => {
+    const cfg = r.config as QdrantConfig;
+    return cfg.url;
+  },
+  weaviate: (r) => {
+    const cfg = r.config as WeaviateConfig;
+    return cfg.url;
+  },
+  milvus: (r) => {
+    const cfg = r.config as MilvusConfig;
+    return cfg.address;
+  },
+  chroma: (r) => {
+    const cfg = r.config as ChromaConfig;
+    return `${cfg.url}${cfg.database ? ` (${cfg.tenant ?? "default"}/${cfg.database})` : ""}`;
   },
 };

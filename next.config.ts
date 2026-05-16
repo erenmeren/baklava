@@ -18,6 +18,12 @@ const nextConfig: NextConfig = {
     "mssql",
     "tedious",
     "@kubernetes/client-node",
+    "@supabase/supabase-js",
+    "neo4j-driver",
+    "@qdrant/js-client-rest",
+    "weaviate-client",
+    "@zilliz/milvus2-sdk-node",
+    "chromadb",
   ],
 };
 

@@ -28,6 +28,12 @@ import { NatsForm } from "@/app/nats/nats-form";
 import { SqliteForm } from "@/app/sqlite/sqlite-form";
 import { EtcdForm } from "@/app/etcd/etcd-form";
 import { KubernetesForm } from "@/app/kubernetes/kubernetes-form";
+import { SupabaseForm } from "@/app/supabase/supabase-form";
+import { Neo4jForm } from "@/app/neo4j/neo4j-form";
+import { QdrantForm } from "@/app/qdrant/qdrant-form";
+import { WeaviateForm } from "@/app/weaviate/weaviate-form";
+import { MilvusForm } from "@/app/milvus/milvus-form";
+import { ChromaForm } from "@/app/chroma/chroma-form";
 
 interface Props {
   tech: TechMeta | null;
@@ -49,6 +55,12 @@ const FORMS: Record<TechId, React.ComponentType<{ onSaved?: () => void }>> = {
   sqlite: SqliteForm,
   etcd: EtcdForm,
   kubernetes: KubernetesForm,
+  supabase: SupabaseForm,
+  neo4j: Neo4jForm,
+  qdrant: QdrantForm,
+  weaviate: WeaviateForm,
+  milvus: MilvusForm,
+  chroma: ChromaForm,
 };
 
 export function ConnectionSheet({ tech, onOpenChange }: Props) {

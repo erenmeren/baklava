@@ -28,6 +28,12 @@ const FIRST_PAGE: Record<TechId, string> = {
   sqlite: "tables",
   etcd: "keys",
   kubernetes: "pods",
+  supabase: "",
+  neo4j: "databases",
+  qdrant: "collections",
+  weaviate: "collections",
+  milvus: "collections",
+  chroma: "collections",
 };
 
 const STORAGE_KEY = "baklava:open-tabs";
