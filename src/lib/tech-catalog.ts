@@ -84,7 +84,7 @@ export const TECH_CATALOG: TechMeta[] = [
     icon: HardDrive,
     slug: "redis",
     color: "from-rose-400 to-red-600",
-    status: "coming-soon",
+    status: "available",
   },
   {
     id: "mysql",
@@ -95,7 +95,19 @@ export const TECH_CATALOG: TechMeta[] = [
     icon: Database,
     slug: "mysql",
     color: "from-cyan-400 to-blue-600",
-    status: "coming-soon",
+    status: "available",
+  },
+  {
+    id: "sqlserver",
+    name: "SQL Server",
+    tagline: "Microsoft relational database",
+    description: "Databases, tables, queries.",
+    category: "Database",
+    icon: Database,
+    // simpleicons removed Microsoft SQL Server in v11 — served locally from /public/icons
+    slug: "local:sqlserver",
+    color: "from-red-400 to-rose-600",
+    status: "available",
   },
   {
     id: "mongo",
@@ -106,7 +118,7 @@ export const TECH_CATALOG: TechMeta[] = [
     icon: Database,
     slug: "mongodb",
     color: "from-emerald-400 to-green-600",
-    status: "coming-soon",
+    status: "available",
   },
   {
     id: "rabbit",
@@ -117,7 +129,7 @@ export const TECH_CATALOG: TechMeta[] = [
     icon: Network,
     slug: "rabbitmq",
     color: "from-amber-400 to-orange-600",
-    status: "coming-soon",
+    status: "available",
   },
   {
     id: "elastic",
@@ -128,7 +140,7 @@ export const TECH_CATALOG: TechMeta[] = [
     icon: Search,
     slug: "elasticsearch",
     color: "from-teal-400 to-cyan-600",
-    status: "coming-soon",
+    status: "available",
   },
   {
     id: "clickhouse",
@@ -139,7 +151,7 @@ export const TECH_CATALOG: TechMeta[] = [
     icon: Database,
     slug: "clickhouse",
     color: "from-yellow-400 to-orange-500",
-    status: "coming-soon",
+    status: "available",
   },
   {
     id: "nats",
@@ -150,7 +162,7 @@ export const TECH_CATALOG: TechMeta[] = [
     icon: Network,
     slug: "natsdotio",
     color: "from-sky-400 to-indigo-600",
-    status: "coming-soon",
+    status: "available",
   },
   {
     id: "sqlite",
@@ -161,7 +173,7 @@ export const TECH_CATALOG: TechMeta[] = [
     icon: Database,
     slug: "sqlite",
     color: "from-blue-400 to-indigo-600",
-    status: "coming-soon",
+    status: "available",
   },
   {
     id: "etcd",
@@ -172,10 +184,24 @@ export const TECH_CATALOG: TechMeta[] = [
     icon: Boxes,
     slug: "etcd",
     color: "from-lime-400 to-green-600",
-    status: "coming-soon",
+    status: "available",
   },
 ];
 
 export function getTech(id: string): TechMeta | undefined {
   return TECH_CATALOG.find((t) => t.id === id);
+}
+
+/**
+ * Returns the URL for a tech's colorful brand artwork.
+ *
+ * Most techs come from simpleicons.org's CDN. Some brands aren't in
+ * simpleicons (e.g. Microsoft SQL Server was removed in v11) — for those
+ * we prefix the slug with `local:` and ship the SVG under `/public/icons/`.
+ */
+export function techIconUrl(tech: { slug: string }): string {
+  if (tech.slug.startsWith("local:")) {
+    return `/icons/${tech.slug.slice("local:".length)}.svg`;
+  }
+  return `https://cdn.simpleicons.org/${tech.slug}`;
 }

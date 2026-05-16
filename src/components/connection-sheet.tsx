@@ -13,10 +13,20 @@ import { Button } from "@/components/ui/button";
 import { ConnectionsList } from "@/components/connections-list";
 import { connectionSummaries } from "@/lib/connections/summaries";
 import type { TechId } from "@/lib/connections/types";
-import type { TechMeta } from "@/lib/tech-catalog";
+import { techIconUrl, type TechMeta } from "@/lib/tech-catalog";
 import { DockerForm } from "@/app/docker/docker-form";
 import { PostgresForm } from "@/app/postgres/postgres-form";
 import { KafkaForm } from "@/app/kafka/kafka-form";
+import { RedisForm } from "@/app/redis/redis-form";
+import { MysqlForm } from "@/app/mysql/mysql-form";
+import { SqlServerForm } from "@/app/sqlserver/sqlserver-form";
+import { MongoForm } from "@/app/mongo/mongo-form";
+import { RabbitForm } from "@/app/rabbit/rabbit-form";
+import { ElasticForm } from "@/app/elastic/elastic-form";
+import { ClickhouseForm } from "@/app/clickhouse/clickhouse-form";
+import { NatsForm } from "@/app/nats/nats-form";
+import { SqliteForm } from "@/app/sqlite/sqlite-form";
+import { EtcdForm } from "@/app/etcd/etcd-form";
 
 interface Props {
   tech: TechMeta | null;
@@ -27,6 +37,16 @@ const FORMS: Record<TechId, React.ComponentType<{ onSaved?: () => void }>> = {
   docker: DockerForm,
   postgres: PostgresForm,
   kafka: KafkaForm,
+  redis: RedisForm,
+  mysql: MysqlForm,
+  sqlserver: SqlServerForm,
+  mongo: MongoForm,
+  rabbit: RabbitForm,
+  elastic: ElasticForm,
+  clickhouse: ClickhouseForm,
+  nats: NatsForm,
+  sqlite: SqliteForm,
+  etcd: EtcdForm,
 };
 
 export function ConnectionSheet({ tech, onOpenChange }: Props) {
@@ -53,7 +73,7 @@ export function ConnectionSheet({ tech, onOpenChange }: Props) {
             <div className="flex items-center gap-3">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={`https://cdn.simpleicons.org/${tech.slug}`}
+                src={techIconUrl(tech)}
                 alt=""
                 className="size-9 select-none dark:brightness-0 dark:invert"
                 aria-hidden

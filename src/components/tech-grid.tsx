@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   TECH_CATALOG,
   TECH_CATEGORIES,
+  techIconUrl,
   type TechCategoryFilter,
   type TechMeta,
 } from "@/lib/tech-catalog";
@@ -140,7 +141,7 @@ export function TechGrid() {
               <div className="size-20 grid place-items-center transition-transform duration-200 group-hover:scale-105">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={`https://cdn.simpleicons.org/${tech.slug}`}
+                  src={techIconUrl(tech)}
                   alt=""
                   width={64}
                   height={64}

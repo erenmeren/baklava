@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Plus, X, ArrowUpRight } from "lucide-react";
 import type { ConnectionRecord, TechId } from "@/lib/connections/types";
-import { TECH_CATALOG } from "@/lib/tech-catalog";
+import { TECH_CATALOG, techIconUrl } from "@/lib/tech-catalog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,7 +16,17 @@ import { cn } from "@/lib/utils";
 const FIRST_PAGE: Record<TechId, string> = {
   docker: "containers",
   postgres: "",
-  kafka: "topics",
+  kafka: "",
+  redis: "keys",
+  mysql: "databases",
+  sqlserver: "databases",
+  mongo: "databases",
+  rabbit: "queues",
+  elastic: "indices",
+  clickhouse: "tables",
+  nats: "streams",
+  sqlite: "tables",
+  etcd: "keys",
 };
 
 const STORAGE_KEY = "baklava:open-tabs";
@@ -189,7 +199,7 @@ export function ConnectionTabs() {
             icon={
               // eslint-disable-next-line @next/next/no-img-element
               <img
-                src={`https://cdn.simpleicons.org/${tech.slug}`}
+                src={techIconUrl(tech)}
                 alt=""
                 width={14}
                 height={14}
@@ -247,7 +257,7 @@ export function ConnectionTabs() {
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
-                        src={`https://cdn.simpleicons.org/${tech.slug}`}
+                        src={techIconUrl(tech)}
                         alt=""
                         width={18}
                         height={18}
