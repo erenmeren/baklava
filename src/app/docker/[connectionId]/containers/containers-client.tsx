@@ -25,14 +25,16 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { WorkspacePage } from "@/components/workspace/workspace-page";
 import { RelativeTime } from "@/components/workspace/relative-time";
 import { CreateContainerDialog } from "./create-container-dialog";
+import { ContainerLogsDock } from "./container-logs-dock";
+import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import {
   Loader2,
   Play,
   Plus,
+  ScrollText,
   Square,
   RotateCcw,
   Trash2,
@@ -64,6 +66,7 @@ export function ContainersClient({ connectionId }: Props) {
   const [confirmRemove, setConfirmRemove] = useState<ContainerSummary | null>(
     null
   );
+  const [logsFor, setLogsFor] = useState<ContainerSummary | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -86,6 +89,19 @@ export function ContainersClient({ connectionId }: Props) {
     const i = setInterval(load, 5000);
     return () => clearInterval(i);
   }, [load]);
+
+  // Keep the docked logs panel's header in sync with poll updates.
+  useEffect(() => {
+    if (!logsFor || !containers) return;
+    const fresh = containers.find((c) => c.id === logsFor.id);
+    if (!fresh) {
+      setLogsFor(null);
+      return;
+    }
+    if (fresh.state !== logsFor.state || fresh.status !== logsFor.status) {
+      setLogsFor(fresh);
+    }
+  }, [containers, logsFor]);
 
   const setBusyFor = (id: string, value: boolean) =>
     setBusy((b) => ({ ...b, [id]: value }));
@@ -150,18 +166,24 @@ export function ContainersClient({ connectionId }: Props) {
     return parts.join(", ");
   };
 
+  const description = containers
+    ? `${containers.length} container${
+        containers.length === 1 ? "" : "s"
+      }${showAll ? "" : " running"}`
+    : undefined;
+
   return (
-    <WorkspacePage
-      title="Containers"
-      description={
-        containers
-          ? `${containers.length} container${
-              containers.length === 1 ? "" : "s"
-            }${showAll ? "" : " running"}`
-          : undefined
-      }
-      actions={
-        <>
+    <div className="flex flex-col h-full overflow-hidden">
+      <header className="px-6 py-4 border-b border-border/60 flex items-start justify-between gap-4 shrink-0">
+        <div className="min-w-0">
+          <h1 className="text-xl font-semibold truncate">Containers</h1>
+          {description ? (
+            <p className="text-sm text-muted-foreground mt-0.5">
+              {description}
+            </p>
+          ) : null}
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Switch
               id="show-all-containers"
@@ -184,9 +206,10 @@ export function ContainersClient({ connectionId }: Props) {
             <Plus className="size-3.5" />
             Create
           </Button>
-        </>
-      }
-    >
+        </div>
+      </header>
+
+      <div className="flex-1 min-h-0 overflow-auto p-6">
       {containers === null ? (
         <div className="space-y-2">
           {Array.from({ length: 5 }).map((_, i) => (
@@ -214,8 +237,16 @@ export function ContainersClient({ connectionId }: Props) {
               {containers.map((c) => {
                 const isRunning = c.state === "running";
                 const isBusy = busy[c.id];
+                const isOpenLogs = logsFor?.id === c.id;
                 return (
-                  <TableRow key={c.id}>
+                  <TableRow
+                    key={c.id}
+                    className={cn(
+                      "transition-colors",
+                      isOpenLogs &&
+                        "bg-brand/[0.06] hover:bg-brand/[0.08] data-[state=selected]:bg-brand/10",
+                    )}
+                  >
                     <TableCell>
                       <Link
                         href={`/docker/${connectionId}/containers/${c.id}`}
@@ -251,6 +282,36 @@ export function ContainersClient({ connectionId }: Props) {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="inline-flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setLogsFor((prev) =>
+                              prev?.id === c.id ? null : c,
+                            )
+                          }
+                          title={
+                            isOpenLogs ? "Close logs panel" : "View logs"
+                          }
+                          aria-label={
+                            isOpenLogs ? "Close logs panel" : "View logs"
+                          }
+                          aria-pressed={isOpenLogs}
+                          className={cn(
+                            "group/logs relative inline-flex size-7 items-center justify-center rounded-md",
+                            "transition-colors duration-150",
+                            isOpenLogs
+                              ? "bg-brand/15 text-brand ring-1 ring-brand/40 shadow-[0_0_10px_-2px_oklch(from_var(--brand)_l_c_h/0.45)]"
+                              : "text-muted-foreground hover:text-foreground hover:bg-foreground/[0.06]",
+                          )}
+                        >
+                          <ScrollText className="size-3.5" />
+                          {isOpenLogs ? (
+                            <span
+                              className="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-brand status-pulse"
+                              aria-hidden
+                            />
+                          ) : null}
+                        </button>
                         {isRunning ? (
                           <>
                             <Button
@@ -305,6 +366,16 @@ export function ContainersClient({ connectionId }: Props) {
           </Table>
         </div>
       )}
+      </div>
+
+      {logsFor ? (
+        <ContainerLogsDock
+          connectionId={connectionId}
+          container={logsFor}
+          onClose={() => setLogsFor(null)}
+        />
+      ) : null}
+
       <CreateContainerDialog
         connectionId={connectionId}
         open={createOpen}
@@ -334,6 +405,6 @@ export function ContainersClient({ connectionId }: Props) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </WorkspacePage>
+    </div>
   );
 }

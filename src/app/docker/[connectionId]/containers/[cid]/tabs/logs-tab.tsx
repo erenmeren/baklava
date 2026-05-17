@@ -360,7 +360,7 @@ export function LogsTab({ connectionId, cid, active, onOpenTerminal }: Props) {
   }, [status]);
 
   return (
-    <div className="flex flex-col h-[68vh] gap-2">
+    <div className="flex flex-col h-full min-h-0 gap-2">
       <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-border/60 bg-card/40 px-2 py-1.5">
         {statusPill}
         <Divider />
