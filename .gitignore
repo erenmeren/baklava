@@ -46,3 +46,5 @@ next-env.d.ts
 
 # Playwright MCP browser artifacts
 .playwright-mcp/
+/playwright-report
+/test-results

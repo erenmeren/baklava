@@ -7,7 +7,8 @@ import type { SqliteConfig } from "./types";
  * embedded `"` must be doubled. We use this to safely build the
  * `SELECT count(*) FROM "<name>"` and `PRAGMA table_info("<name>")` queries.
  */
-function quoteIdent(name: string): string {
+/** @internal — exported for tests. */
+export function quoteIdent(name: string): string {
   return `"${name.replace(/"/g, '""')}"`;
 }
 
@@ -17,7 +18,8 @@ function quoteIdent(name: string): string {
  * parameters for the table name, so we have to interpolate). Mirrors the
  * postgres convention in `src/lib/connections/postgres.ts`.
  */
-function validateIdentifier(name: string): string {
+/** @internal — exported for tests. */
+export function validateIdentifier(name: string): string {
   const trimmed = name.trim();
   if (!trimmed) throw new Error("Table name is required");
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(trimmed)) {

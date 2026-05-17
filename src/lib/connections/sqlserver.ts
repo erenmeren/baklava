@@ -214,7 +214,17 @@ export interface SqlServerDatabaseDetailResult {
 // name in every code path, so we whitelist database names to the conservative
 // SQL Server regular identifier alphabet. This is the only place we splice the
 // name into SQL (for `USE [name]`); every value-only use goes through @db.
-const SQLSERVER_DB_NAME_RE = /^[A-Za-z0-9_]+$/;
+export const SQLSERVER_DB_NAME_RE = /^[A-Za-z0-9_]+$/;
+
+/** @internal — exported for tests. */
+export function validateSqlServerDatabaseName(name: string): string {
+  if (!SQLSERVER_DB_NAME_RE.test(name)) {
+    throw new Error(
+      "Invalid database name (only letters, digits, and underscores are supported)",
+    );
+  }
+  return name;
+}
 
 export async function listSqlServerTables(
   config: SqlServerConfig,

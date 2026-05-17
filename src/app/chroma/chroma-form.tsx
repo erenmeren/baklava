@@ -101,7 +101,7 @@ export function ChromaForm({ onSaved, initial }: Props) {
         </h2>
         <p className="text-sm text-muted-foreground">
           Point Baklava at a Chroma REST endpoint. Tenant + database default to
-          Chroma's standard names if your server is single-tenant.
+          Chroma&apos;s standard names if your server is single-tenant.
         </p>
       </div>
 

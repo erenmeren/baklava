@@ -576,7 +576,8 @@ export interface PrimaryKeyValue {
   value: unknown;
 }
 
-function quoteIdent(name: string): string {
+/** @internal — exported for tests; SQL-safety helpers. */
+export function quoteIdent(name: string): string {
   return `"${name.replace(/"/g, '""')}"`;
 }
 
@@ -1270,7 +1271,8 @@ export async function getTableDDL(
   return [create, ...indexLines].join("\n\n");
 }
 
-function validateIdentifier(name: string, kind: string): string {
+/** @internal — exported for tests. */
+export function validateIdentifier(name: string, kind: string): string {
   const trimmed = name.trim();
   if (!trimmed) throw new Error(`${kind} name is required`);
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(trimmed)) {
@@ -1284,7 +1286,8 @@ function validateIdentifier(name: string, kind: string): string {
 // Reject `;` in free-form SQL fragments (types, default exprs, USING clauses,
 // partial-index predicates, function arg signatures). `;` is the only character
 // that lets a fragment escape to a second statement in pg's simple-query path.
-function requireNoStatementTerminator(value: string, fieldName: string): string {
+/** @internal — exported for tests. */
+export function requireNoStatementTerminator(value: string, fieldName: string): string {
   if (value.includes(";")) {
     throw new Error(`${fieldName} cannot contain ';'`);
   }

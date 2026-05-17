@@ -10,7 +10,6 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { formatBytes } from "@/components/workspace/format";
 import {
-  Activity,
   Database,
   HardDrive,
   Layers,
@@ -166,7 +165,7 @@ export function OverviewClient({ connectionId }: Props) {
             <StatTile
               icon={<Zap className="size-3.5" />}
               label="Messages stored"
-              value={overview.account.streams === 0 ? 0 : sumTop(overview.topStreams, "messages")}
+              value={overview.account.streams === 0 ? 0 : sumTop(overview.topStreams)}
               valueCompact
               sub="across known streams"
             />
@@ -208,7 +207,7 @@ export function OverviewClient({ connectionId }: Props) {
   );
 }
 
-function sumTop(rows: { messages: number }[], _key: "messages"): number {
+function sumTop(rows: { messages: number }[]): number {
   return rows.reduce((s, r) => s + r.messages, 0);
 }
 

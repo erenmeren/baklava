@@ -26,7 +26,8 @@ async function queryRows<T>(
 
 const IDENT_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
-function requireSafeIdentifier(name: string, kind: string): string {
+/** @internal — exported for tests. */
+export function requireSafeIdentifier(name: string, kind: string): string {
   if (!IDENT_RE.test(name)) {
     throw new Error(`Invalid ${kind} name: ${name}`);
   }

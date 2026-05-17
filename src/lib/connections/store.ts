@@ -213,19 +213,32 @@ export function deleteConnection(id: string): boolean {
   return deleted;
 }
 
-export function redactConfig<C extends Record<string, unknown>>(config: C): C {
-  const cloned: Record<string, unknown> = { ...config };
-  if (typeof cloned.password === "string" && cloned.password.length > 0) {
-    cloned.password = "•".repeat(Math.min(cloned.password.length, 8));
-  }
-  if (cloned.sasl && typeof cloned.sasl === "object") {
-    const sasl = { ...(cloned.sasl as Record<string, unknown>) };
-    if (typeof sasl.password === "string" && sasl.password.length > 0) {
-      sasl.password = "•".repeat(Math.min(sasl.password.length, 8));
+function maskSecret(value: string): string {
+  return "•".repeat(Math.min(value.length, 8));
+}
+
+function redactRecord(input: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(input)) {
+    if (SECRET_KEYS.has(key) && typeof value === "string" && value.length > 0) {
+      out[key] = maskSecret(value);
+    } else if (
+      value &&
+      typeof value === "object" &&
+      !Array.isArray(value)
+    ) {
+      // Recurse into nested objects (Kafka SASL, etc.) so nested
+      // secrets are caught by the same single rule.
+      out[key] = redactRecord(value as Record<string, unknown>);
+    } else {
+      out[key] = value;
     }
-    cloned.sasl = sasl;
   }
-  return cloned as C;
+  return out;
+}
+
+export function redactConfig<C extends Record<string, unknown>>(config: C): C {
+  return redactRecord(config) as C;
 }
 
 export function publicView(record: AnyRecord) {
