@@ -7,18 +7,22 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { toast } from "sonner";
-import { Loader2, PlugZap } from "lucide-react";
-import type { ChromaConfig } from "@/lib/connections/types";
+import { Loader2, PlugZap, Save } from "lucide-react";
+import type { ChromaConfig, ConnectionRecord } from "@/lib/connections/types";
 
 interface Props {
   onSaved?: () => void;
+  initial?: ConnectionRecord;
 }
 
-export function ChromaForm({ onSaved }: Props) {
-  const [name, setName] = useState("Local Chroma");
-  const [url, setUrl] = useState("http://localhost:8000");
-  const [tenant, setTenant] = useState("default_tenant");
-  const [database, setDatabase] = useState("default_database");
+export function ChromaForm({ onSaved, initial }: Props) {
+  const editing = Boolean(initial);
+  const init = initial?.config as ChromaConfig | undefined;
+
+  const [name, setName] = useState(initial?.name ?? "Local Chroma");
+  const [url, setUrl] = useState(init?.url ?? "http://localhost:8000");
+  const [tenant, setTenant] = useState(init?.tenant ?? "default_tenant");
+  const [database, setDatabase] = useState(init?.database ?? "default_database");
   const [authToken, setAuthToken] = useState("");
 
   const [testing, setTesting] = useState(false);
@@ -28,18 +32,38 @@ export function ChromaForm({ onSaved }: Props) {
     collectionCount: number;
   } | null>(null);
 
-  const buildConfig = (): ChromaConfig => ({
-    url: url.trim(),
-    tenant: tenant.trim() || "default_tenant",
-    database: database.trim() || "default_database",
-    authToken: authToken.trim() || undefined,
-  });
+  const buildConfig = (): Record<string, unknown> => {
+    const cfg: Record<string, unknown> = {
+      url: url.trim(),
+      tenant: tenant.trim() || "default_tenant",
+      database: database.trim() || "default_database",
+    };
+    if (authToken.trim()) cfg.authToken = authToken.trim();
+    else if (!editing) cfg.authToken = undefined;
+    return cfg;
+  };
 
   const test = async (save: boolean) => {
     setTesting(true);
     setError(null);
     setProbe(null);
     try {
+      if (save && editing && initial) {
+        const res = await fetch(`/api/connections/${initial.id}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ name, config: buildConfig() }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          toast.success("Connection updated");
+          onSaved?.();
+        } else {
+          setError(data.error || "Update failed");
+          toast.error("Update failed", { description: data.error });
+        }
+        return;
+      }
       const res = await fetch("/api/chroma/test", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -72,7 +96,9 @@ export function ChromaForm({ onSaved }: Props) {
   return (
     <Card className="p-6 space-y-5">
       <div className="space-y-1">
-        <h2 className="font-semibold">New connection</h2>
+        <h2 className="font-semibold">
+          {editing ? "Edit connection" : "New connection"}
+        </h2>
         <p className="text-sm text-muted-foreground">
           Point Baklava at a Chroma REST endpoint. Tenant + database default to
           Chroma's standard names if your server is single-tenant.
@@ -128,7 +154,11 @@ export function ChromaForm({ onSaved }: Props) {
           type="password"
           value={authToken}
           onChange={(e) => setAuthToken(e.target.value)}
-          placeholder="Chroma Cloud / token-auth deployments"
+          placeholder={
+            editing && init?.authToken
+              ? "(unchanged — leave blank to keep)"
+              : "Chroma Cloud / token-auth deployments"
+          }
           spellCheck={false}
         />
       </div>
@@ -147,7 +177,8 @@ export function ChromaForm({ onSaved }: Props) {
           Test
         </Button>
         <Button onClick={() => test(true)} disabled={testing || !url.trim()}>
-          Test &amp; save
+          {editing ? <Save className="size-4" /> : null}
+          {editing ? "Save changes" : "Test & save"}
         </Button>
       </div>
 

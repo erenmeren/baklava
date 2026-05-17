@@ -8,44 +8,63 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { toast } from "sonner";
-import { Loader2, PlugZap } from "lucide-react";
-import type { PostgresConfig } from "@/lib/connections/types";
+import { Loader2, PlugZap, Save } from "lucide-react";
+import type {
+  ConnectionRecord,
+  PostgresConfig,
+} from "@/lib/connections/types";
 
 interface Props {
   onSaved?: () => void;
+  initial?: ConnectionRecord;
 }
 
-export function PostgresForm({ onSaved }: Props) {
-  const [name, setName] = useState("Local Postgres");
-  const [host, setHost] = useState("localhost");
-  const [port, setPort] = useState("5432");
-  const [database, setDatabase] = useState("postgres");
-  const [user, setUser] = useState("postgres");
-  const [password, setPassword] = useState("");
-  const [ssl, setSsl] = useState(false);
+export function PostgresForm({ onSaved, initial }: Props) {
+  const editing = Boolean(initial);
+  const init = initial?.config as PostgresConfig | undefined;
 
-  const [testing, setTesting] = useState(false);
+  const [name, setName] = useState(initial?.name ?? "Local Postgres");
+  const [host, setHost] = useState(init?.host ?? "localhost");
+  const [port, setPort] = useState(String(init?.port ?? "5432"));
+  const [database, setDatabase] = useState(init?.database ?? "postgres");
+  const [user, setUser] = useState(init?.user ?? "postgres");
+  const [password, setPassword] = useState("");
+  const [ssl, setSsl] = useState(init?.ssl ?? false);
+
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [probeText, setProbeText] = useState<string | null>(null);
 
-  const buildConfig = (): PostgresConfig => ({
-    host,
-    port: Number(port),
-    database,
-    user,
-    password,
-    ssl,
-  });
+  const buildConfig = (): Record<string, unknown> => {
+    const cfg: Record<string, unknown> = {
+      host,
+      port: Number(port),
+      database,
+      user,
+      ssl,
+    };
+    // Only include password when the user actually typed one — empty means
+    // "keep existing" on edit, or no auth on create.
+    if (password) cfg.password = password;
+    else if (!editing) cfg.password = "";
+    return cfg;
+  };
 
-  const test = async (save: boolean) => {
-    setTesting(true);
+  // Probe with current values (no save). Works in both modes.
+  const test = async () => {
+    setBusy(true);
     setError(null);
     setProbeText(null);
     try {
+      const probePassword = password || (editing ? init?.password ?? "" : "");
       const res = await fetch("/api/postgres/test", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name, config: buildConfig(), save }),
+        body: JSON.stringify({
+          name,
+          config: { ...buildConfig(), password: probePassword },
+          save: false,
+        }),
       });
       const data = await res.json();
       if (data.ok) {
@@ -53,12 +72,7 @@ export function PostgresForm({ onSaved }: Props) {
         setProbeText(
           `Postgres ${v} · db ${data.probe.currentDatabase} · user ${data.probe.currentUser}`,
         );
-        if (save) {
-          toast.success("Connection saved");
-          onSaved?.();
-        } else {
-          toast.success("Connection works");
-        }
+        toast.success("Connection works");
       } else {
         setError(data.error || "Connection failed");
         toast.error("Connection failed", { description: data.error });
@@ -68,14 +82,64 @@ export function PostgresForm({ onSaved }: Props) {
       setError(msg);
       toast.error("Request failed", { description: msg });
     } finally {
-      setTesting(false);
+      setBusy(false);
+    }
+  };
+
+  // Create: probe + save. Edit: PATCH (no probe — backend marks untested).
+  const save = async () => {
+    setBusy(true);
+    setError(null);
+    setProbeText(null);
+    try {
+      if (editing && initial) {
+        const res = await fetch(`/api/connections/${initial.id}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ name, config: buildConfig() }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          toast.success("Connection updated");
+          onSaved?.();
+        } else {
+          setError(data.error || "Update failed");
+          toast.error("Update failed", { description: data.error });
+        }
+        return;
+      }
+      const res = await fetch("/api/postgres/test", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name,
+          config: { ...buildConfig(), password },
+          save: true,
+        }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        toast.success("Connection saved");
+        onSaved?.();
+      } else {
+        setError(data.error || "Connection failed");
+        toast.error("Connection failed", { description: data.error });
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(msg);
+      toast.error("Request failed", { description: msg });
+    } finally {
+      setBusy(false);
     }
   };
 
   return (
     <Card className="p-6 space-y-5">
       <div className="space-y-1">
-        <h2 className="font-semibold">New connection</h2>
+        <h2 className="font-semibold">
+          {editing ? "Edit connection" : "New connection"}
+        </h2>
         <p className="text-sm text-muted-foreground">
           Connect to any PostgreSQL-compatible server.
         </p>
@@ -135,6 +199,7 @@ export function PostgresForm({ onSaved }: Props) {
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            placeholder={editing ? "(unchanged — leave blank to keep)" : ""}
           />
         </div>
       </div>
@@ -147,20 +212,17 @@ export function PostgresForm({ onSaved }: Props) {
       </div>
 
       <div className="flex flex-wrap gap-2 pt-2">
-        <Button
-          onClick={() => test(false)}
-          disabled={testing}
-          variant="outline"
-        >
-          {testing ? (
+        <Button onClick={test} disabled={busy} variant="outline">
+          {busy ? (
             <Loader2 className="size-4 animate-spin" />
           ) : (
             <PlugZap className="size-4" />
           )}
           Test
         </Button>
-        <Button onClick={() => test(true)} disabled={testing}>
-          Test &amp; save
+        <Button onClick={save} disabled={busy}>
+          {editing ? <Save className="size-4" /> : null}
+          {editing ? "Save changes" : "Test & save"}
         </Button>
       </div>
 

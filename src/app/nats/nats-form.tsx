@@ -9,21 +9,31 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { toast } from "sonner";
-import { Loader2, PlugZap } from "lucide-react";
-import type { NatsConfig } from "@/lib/connections/types";
+import { Loader2, PlugZap, Save } from "lucide-react";
+import type { ConnectionRecord, NatsConfig } from "@/lib/connections/types";
 
 interface Props {
   onSaved?: () => void;
+  initial?: ConnectionRecord;
 }
 
 type AuthMode = "userpass" | "token";
 
-export function NatsForm({ onSaved }: Props) {
-  const [name, setName] = useState("Local NATS");
-  const [servers, setServers] = useState("nats://localhost:4222");
-  const [useAuth, setUseAuth] = useState(false);
-  const [authMode, setAuthMode] = useState<AuthMode>("userpass");
-  const [user, setUser] = useState("");
+export function NatsForm({ onSaved, initial }: Props) {
+  const editing = Boolean(initial);
+  const init = initial?.config as NatsConfig | undefined;
+
+  const [name, setName] = useState(initial?.name ?? "Local NATS");
+  const [servers, setServers] = useState(
+    init?.servers?.join("\n") ?? "nats://localhost:4222",
+  );
+  const [useAuth, setUseAuth] = useState(
+    Boolean(init?.user || init?.token),
+  );
+  const [authMode, setAuthMode] = useState<AuthMode>(
+    init?.token ? "token" : "userpass",
+  );
+  const [user, setUser] = useState(init?.user ?? "");
   const [password, setPassword] = useState("");
   const [token, setToken] = useState("");
 
@@ -42,15 +52,25 @@ export function NatsForm({ onSaved }: Props) {
       .map((s) => s.trim())
       .filter(Boolean);
 
-  const buildConfig = (): NatsConfig => {
-    const cfg: NatsConfig = { servers: parseServers() };
+  const buildConfig = (): Record<string, unknown> => {
+    const cfg: Record<string, unknown> = { servers: parseServers() };
     if (useAuth) {
       if (authMode === "token") {
+        cfg.user = undefined;
+        cfg.password = undefined;
         if (token) cfg.token = token;
+        else if (!editing) cfg.token = undefined;
       } else {
+        cfg.token = undefined;
         if (user) cfg.user = user;
         if (password) cfg.password = password;
+        else if (!editing) cfg.password = undefined;
       }
+    } else {
+      // Auth toggled off → clear all auth fields on the existing record.
+      cfg.user = undefined;
+      cfg.password = undefined;
+      cfg.token = undefined;
     }
     return cfg;
   };
@@ -60,6 +80,22 @@ export function NatsForm({ onSaved }: Props) {
     setError(null);
     setProbe(null);
     try {
+      if (save && editing && initial) {
+        const res = await fetch(`/api/connections/${initial.id}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ name, config: buildConfig() }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          toast.success("Connection updated");
+          onSaved?.();
+        } else {
+          setError(data.error || "Update failed");
+          toast.error("Update failed", { description: data.error });
+        }
+        return;
+      }
       const res = await fetch("/api/nats/test", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -94,7 +130,9 @@ export function NatsForm({ onSaved }: Props) {
   return (
     <Card className="p-6 space-y-5">
       <div className="space-y-1">
-        <h2 className="font-semibold">New connection</h2>
+        <h2 className="font-semibold">
+          {editing ? "Edit connection" : "New connection"}
+        </h2>
         <p className="text-sm text-muted-foreground">
           Connect to one or more NATS servers. JetStream is auto-detected.
         </p>
@@ -181,6 +219,11 @@ export function NatsForm({ onSaved }: Props) {
                     type="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
+                    placeholder={
+                      editing && init?.password
+                        ? "(unchanged — leave blank to keep)"
+                        : ""
+                    }
                   />
                 </div>
               </div>
@@ -193,6 +236,11 @@ export function NatsForm({ onSaved }: Props) {
                   value={token}
                   onChange={(e) => setToken(e.target.value)}
                   spellCheck={false}
+                  placeholder={
+                    editing && init?.token
+                      ? "(unchanged — leave blank to keep)"
+                      : ""
+                  }
                 />
               </div>
             )}
@@ -217,7 +265,8 @@ export function NatsForm({ onSaved }: Props) {
           onClick={() => test(true)}
           disabled={testing || parseServers().length === 0}
         >
-          Test &amp; save
+          {editing ? <Save className="size-4" /> : null}
+          {editing ? "Save changes" : "Test & save"}
         </Button>
       </div>
 

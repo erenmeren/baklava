@@ -8,22 +8,28 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { toast } from "sonner";
-import { Loader2, PlugZap } from "lucide-react";
-import type { RabbitConfig } from "@/lib/connections/types";
+import { Loader2, PlugZap, Save } from "lucide-react";
+import type { ConnectionRecord, RabbitConfig } from "@/lib/connections/types";
 
 interface Props {
   onSaved?: () => void;
+  initial?: ConnectionRecord;
 }
 
-export function RabbitForm({ onSaved }: Props) {
-  const [name, setName] = useState("Local RabbitMQ");
-  const [host, setHost] = useState("localhost");
-  const [port, setPort] = useState("5672");
-  const [vhost, setVhost] = useState("/");
-  const [user, setUser] = useState("guest");
-  const [password, setPassword] = useState("guest");
-  const [tls, setTls] = useState(false);
-  const [managementPort, setManagementPort] = useState("15672");
+export function RabbitForm({ onSaved, initial }: Props) {
+  const editing = Boolean(initial);
+  const init = initial?.config as RabbitConfig | undefined;
+
+  const [name, setName] = useState(initial?.name ?? "Local RabbitMQ");
+  const [host, setHost] = useState(init?.host ?? "localhost");
+  const [port, setPort] = useState(String(init?.port ?? "5672"));
+  const [vhost, setVhost] = useState(init?.vhost ?? "/");
+  const [user, setUser] = useState(init?.user ?? "guest");
+  const [password, setPassword] = useState(editing ? "" : "guest");
+  const [tls, setTls] = useState(init?.tls ?? false);
+  const [managementPort, setManagementPort] = useState(
+    String(init?.managementPort ?? "15672"),
+  );
 
   const [testing, setTesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -34,15 +40,19 @@ export function RabbitForm({ onSaved }: Props) {
     clusterName?: string;
   } | null>(null);
 
-  const buildConfig = (): RabbitConfig => ({
-    host: host.trim(),
-    port: Math.max(1, Number(port) || 5672),
-    vhost: vhost || "/",
-    user: user || "guest",
-    password,
-    tls,
-    managementPort: Math.max(1, Number(managementPort) || 15672),
-  });
+  const buildConfig = (): Record<string, unknown> => {
+    const cfg: Record<string, unknown> = {
+      host: host.trim(),
+      port: Math.max(1, Number(port) || 5672),
+      vhost: vhost || "/",
+      user: user || "guest",
+      tls,
+      managementPort: Math.max(1, Number(managementPort) || 15672),
+    };
+    if (password) cfg.password = password;
+    else if (!editing) cfg.password = "";
+    return cfg;
+  };
 
   const test = async (save: boolean) => {
     setTesting(true);
@@ -50,6 +60,22 @@ export function RabbitForm({ onSaved }: Props) {
     setMgmtWarning(null);
     setOkInfo(null);
     try {
+      if (save && editing && initial) {
+        const res = await fetch(`/api/connections/${initial.id}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ name, config: buildConfig() }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          toast.success("Connection updated");
+          onSaved?.();
+        } else {
+          setError(data.error || "Update failed");
+          toast.error("Update failed", { description: data.error });
+        }
+        return;
+      }
       const res = await fetch("/api/rabbit/test", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -91,7 +117,9 @@ export function RabbitForm({ onSaved }: Props) {
   return (
     <Card className="p-6 space-y-5">
       <div className="space-y-1">
-        <h2 className="font-semibold">New connection</h2>
+        <h2 className="font-semibold">
+          {editing ? "Edit connection" : "New connection"}
+        </h2>
         <p className="text-sm text-muted-foreground">
           Connect to a RabbitMQ broker. Listings use the management HTTP API.
         </p>
@@ -157,6 +185,7 @@ export function RabbitForm({ onSaved }: Props) {
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            placeholder={editing ? "(unchanged — leave blank to keep)" : ""}
           />
         </div>
       </div>
@@ -198,7 +227,8 @@ export function RabbitForm({ onSaved }: Props) {
           Test
         </Button>
         <Button onClick={() => test(true)} disabled={testing}>
-          Test &amp; save
+          {editing ? <Save className="size-4" /> : null}
+          {editing ? "Save changes" : "Test & save"}
         </Button>
       </div>
 

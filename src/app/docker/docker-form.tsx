@@ -8,8 +8,8 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { toast } from "sonner";
-import { Loader2, PlugZap } from "lucide-react";
-import type { DockerConfig } from "@/lib/connections/types";
+import { Loader2, PlugZap, Save } from "lucide-react";
+import type { ConnectionRecord, DockerConfig } from "@/lib/connections/types";
 
 interface DockerInfo {
   version: string;
@@ -20,15 +20,23 @@ interface DockerInfo {
 
 interface Props {
   onSaved?: () => void;
+  initial?: ConnectionRecord;
 }
 
-export function DockerForm({ onSaved }: Props) {
-  const [mode, setMode] = useState<"socket" | "tcp">("socket");
-  const [name, setName] = useState("Local Docker");
-  const [socketPath, setSocketPath] = useState("/var/run/docker.sock");
-  const [host, setHost] = useState("127.0.0.1");
-  const [port, setPort] = useState("2375");
-  const [protocol, setProtocol] = useState<"http" | "https">("http");
+export function DockerForm({ onSaved, initial }: Props) {
+  const editing = Boolean(initial);
+  const init = initial?.config as DockerConfig | undefined;
+
+  const [mode, setMode] = useState<"socket" | "tcp">(init?.mode ?? "socket");
+  const [name, setName] = useState(initial?.name ?? "Local Docker");
+  const [socketPath, setSocketPath] = useState(
+    init?.socketPath ?? "/var/run/docker.sock",
+  );
+  const [host, setHost] = useState(init?.host ?? "127.0.0.1");
+  const [port, setPort] = useState(String(init?.port ?? "2375"));
+  const [protocol, setProtocol] = useState<"http" | "https">(
+    init?.protocol ?? "http",
+  );
 
   const [testing, setTesting] = useState(false);
   const [info, setInfo] = useState<DockerInfo | null>(null);
@@ -44,6 +52,22 @@ export function DockerForm({ onSaved }: Props) {
     setError(null);
     setInfo(null);
     try {
+      if (save && editing && initial) {
+        const res = await fetch(`/api/connections/${initial.id}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ name, config: buildConfig() }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          toast.success("Connection updated");
+          onSaved?.();
+        } else {
+          setError(data.error || "Update failed");
+          toast.error("Update failed", { description: data.error });
+        }
+        return;
+      }
       const res = await fetch("/api/docker/test", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -74,7 +98,9 @@ export function DockerForm({ onSaved }: Props) {
   return (
     <Card className="p-6 space-y-5">
       <div className="space-y-1">
-        <h2 className="font-semibold">New connection</h2>
+        <h2 className="font-semibold">
+          {editing ? "Edit connection" : "New connection"}
+        </h2>
         <p className="text-sm text-muted-foreground">
           Connect via the local Docker socket or a remote daemon over TCP.
         </p>
@@ -156,7 +182,8 @@ export function DockerForm({ onSaved }: Props) {
           Test
         </Button>
         <Button onClick={() => test(true)} disabled={testing}>
-          Test &amp; save
+          {editing ? <Save className="size-4" /> : null}
+          {editing ? "Save changes" : "Test & save"}
         </Button>
       </div>
 

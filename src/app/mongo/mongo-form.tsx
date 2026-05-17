@@ -9,26 +9,32 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { toast } from "sonner";
-import { Loader2, PlugZap } from "lucide-react";
-import type { MongoConfig } from "@/lib/connections/types";
+import { Loader2, PlugZap, Save } from "lucide-react";
+import type { ConnectionRecord, MongoConfig } from "@/lib/connections/types";
 
 interface Props {
   onSaved?: () => void;
+  initial?: ConnectionRecord;
 }
 
-export function MongoForm({ onSaved }: Props) {
-  const [name, setName] = useState("Local Mongo");
+export function MongoForm({ onSaved, initial }: Props) {
+  const editing = Boolean(initial);
+  const init = initial?.config as MongoConfig | undefined;
 
-  const [useUri, setUseUri] = useState(false);
+  const [name, setName] = useState(initial?.name ?? "Local Mongo");
+
+  // Default the toggle to the mode the existing record uses (URI vs structured).
+  const [useUri, setUseUri] = useState(Boolean(init?.uri));
+  // The URI string can embed credentials inline — treat it like a secret.
   const [uri, setUri] = useState("");
 
-  const [host, setHost] = useState("localhost");
-  const [port, setPort] = useState("27017");
-  const [user, setUser] = useState("");
+  const [host, setHost] = useState(init?.host ?? "localhost");
+  const [port, setPort] = useState(String(init?.port ?? "27017"));
+  const [user, setUser] = useState(init?.user ?? "");
   const [password, setPassword] = useState("");
-  const [database, setDatabase] = useState("");
-  const [authSource, setAuthSource] = useState("admin");
-  const [tls, setTls] = useState(false);
+  const [database, setDatabase] = useState(init?.database ?? "");
+  const [authSource, setAuthSource] = useState(init?.authSource ?? "admin");
+  const [tls, setTls] = useState(init?.tls ?? false);
 
   const [testing, setTesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -37,19 +43,26 @@ export function MongoForm({ onSaved }: Props) {
     databaseCount: number;
   } | null>(null);
 
-  const buildConfig = (): MongoConfig => {
-    if (useUri && uri.trim()) {
-      return { uri: uri.trim() };
+  const buildConfig = (): Record<string, unknown> => {
+    if (useUri) {
+      // Editing and user left URI blank → omit so backend keeps existing.
+      // Creating → always send the (possibly empty) URI.
+      const trimmed = uri.trim();
+      if (trimmed) return { uri: trimmed };
+      if (editing) return {};
+      return { uri: "" };
     }
-    return {
+    const cfg: Record<string, unknown> = {
       host,
       port: Number(port) || 27017,
       user: user || undefined,
-      password: password || undefined,
       database: database || undefined,
       authSource: authSource || undefined,
       tls,
     };
+    if (password) cfg.password = password;
+    else if (!editing) cfg.password = undefined;
+    return cfg;
   };
 
   const test = async (save: boolean) => {
@@ -57,6 +70,22 @@ export function MongoForm({ onSaved }: Props) {
     setError(null);
     setProbe(null);
     try {
+      if (save && editing && initial) {
+        const res = await fetch(`/api/connections/${initial.id}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ name, config: buildConfig() }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          toast.success("Connection updated");
+          onSaved?.();
+        } else {
+          setError(data.error || "Update failed");
+          toast.error("Update failed", { description: data.error });
+        }
+        return;
+      }
       const res = await fetch("/api/mongo/test", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -89,7 +118,9 @@ export function MongoForm({ onSaved }: Props) {
   return (
     <Card className="p-6 space-y-5">
       <div className="space-y-1">
-        <h2 className="font-semibold">New connection</h2>
+        <h2 className="font-semibold">
+          {editing ? "Edit connection" : "New connection"}
+        </h2>
         <p className="text-sm text-muted-foreground">
           Connect to a MongoDB server using a connection string or structured fields.
         </p>
@@ -122,7 +153,11 @@ export function MongoForm({ onSaved }: Props) {
               id="mongo-uri"
               value={uri}
               onChange={(e) => setUri(e.target.value)}
-              placeholder="mongodb://user:pass@host:port/db?authSource=admin"
+              placeholder={
+                editing && init?.uri
+                  ? "(unchanged — leave blank to keep)"
+                  : "mongodb://user:pass@host:port/db?authSource=admin"
+              }
               spellCheck={false}
               rows={3}
               className="font-mono text-xs"
@@ -171,6 +206,9 @@ export function MongoForm({ onSaved }: Props) {
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                  placeholder={
+                    editing ? "(unchanged — leave blank to keep)" : ""
+                  }
                 />
               </div>
             </div>
@@ -223,7 +261,8 @@ export function MongoForm({ onSaved }: Props) {
           Test
         </Button>
         <Button onClick={() => test(true)} disabled={testing}>
-          Test &amp; save
+          {editing ? <Save className="size-4" /> : null}
+          {editing ? "Save changes" : "Test & save"}
         </Button>
       </div>
 

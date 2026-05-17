@@ -7,36 +7,63 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { toast } from "sonner";
-import { Loader2, PlugZap } from "lucide-react";
-import type { ClickhouseConfig } from "@/lib/connections/types";
+import { Loader2, PlugZap, Save } from "lucide-react";
+import type {
+  ClickhouseConfig,
+  ConnectionRecord,
+} from "@/lib/connections/types";
 
 interface Props {
   onSaved?: () => void;
+  initial?: ConnectionRecord;
 }
 
-export function ClickhouseForm({ onSaved }: Props) {
-  const [name, setName] = useState("Local ClickHouse");
-  const [url, setUrl] = useState("http://localhost:8123");
-  const [user, setUser] = useState("default");
+export function ClickhouseForm({ onSaved, initial }: Props) {
+  const editing = Boolean(initial);
+  const init = initial?.config as ClickhouseConfig | undefined;
+
+  const [name, setName] = useState(initial?.name ?? "Local ClickHouse");
+  const [url, setUrl] = useState(init?.url ?? "http://localhost:8123");
+  const [user, setUser] = useState(init?.user ?? "default");
   const [password, setPassword] = useState("");
-  const [database, setDatabase] = useState("default");
+  const [database, setDatabase] = useState(init?.database ?? "default");
 
   const [testing, setTesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [version, setVersion] = useState<string | null>(null);
 
-  const buildConfig = (): ClickhouseConfig => ({
-    url: url.trim(),
-    user: user.trim() || "default",
-    password,
-    database: database.trim() || "default",
-  });
+  const buildConfig = (): Record<string, unknown> => {
+    const cfg: Record<string, unknown> = {
+      url: url.trim(),
+      user: user.trim() || "default",
+      database: database.trim() || "default",
+    };
+    if (password) cfg.password = password;
+    else if (!editing) cfg.password = "";
+    return cfg;
+  };
 
   const test = async (save: boolean) => {
     setTesting(true);
     setError(null);
     setVersion(null);
     try {
+      if (save && editing && initial) {
+        const res = await fetch(`/api/connections/${initial.id}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ name, config: buildConfig() }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          toast.success("Connection updated");
+          onSaved?.();
+        } else {
+          setError(data.error || "Update failed");
+          toast.error("Update failed", { description: data.error });
+        }
+        return;
+      }
       const res = await fetch("/api/clickhouse/test", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -69,7 +96,9 @@ export function ClickhouseForm({ onSaved }: Props) {
   return (
     <Card className="p-6 space-y-5">
       <div className="space-y-1">
-        <h2 className="font-semibold">New connection</h2>
+        <h2 className="font-semibold">
+          {editing ? "Edit connection" : "New connection"}
+        </h2>
         <p className="text-sm text-muted-foreground">
           Connect to a ClickHouse server over its HTTP interface (port 8123 by
           default).
@@ -112,6 +141,7 @@ export function ClickhouseForm({ onSaved }: Props) {
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            placeholder={editing ? "(unchanged — leave blank to keep)" : ""}
           />
         </div>
       </div>
@@ -139,7 +169,8 @@ export function ClickhouseForm({ onSaved }: Props) {
           Test
         </Button>
         <Button onClick={() => test(true)} disabled={testing}>
-          Test &amp; save
+          {editing ? <Save className="size-4" /> : null}
+          {editing ? "Save changes" : "Test & save"}
         </Button>
       </div>
 

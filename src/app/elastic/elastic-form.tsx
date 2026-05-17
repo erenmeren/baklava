@@ -9,18 +9,25 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { toast } from "sonner";
-import { Loader2, PlugZap } from "lucide-react";
-import type { ElasticConfig } from "@/lib/connections/types";
+import { Loader2, PlugZap, Save } from "lucide-react";
+import type { ConnectionRecord, ElasticConfig } from "@/lib/connections/types";
 
 interface Props {
   onSaved?: () => void;
+  initial?: ConnectionRecord;
 }
 
-export function ElasticForm({ onSaved }: Props) {
-  const [name, setName] = useState("Local Elasticsearch");
-  const [nodesText, setNodesText] = useState("http://localhost:9200");
-  const [useApiKey, setUseApiKey] = useState(false);
-  const [user, setUser] = useState("");
+export function ElasticForm({ onSaved, initial }: Props) {
+  const editing = Boolean(initial);
+  const init = initial?.config as ElasticConfig | undefined;
+
+  const [name, setName] = useState(initial?.name ?? "Local Elasticsearch");
+  const [nodesText, setNodesText] = useState(
+    init?.nodes?.join("\n") ?? "http://localhost:9200",
+  );
+  // Default the toggle to whichever mode the existing record uses.
+  const [useApiKey, setUseApiKey] = useState(Boolean(init?.apiKey));
+  const [user, setUser] = useState(init?.user ?? "");
   const [password, setPassword] = useState("");
   const [apiKey, setApiKey] = useState("");
 
@@ -32,21 +39,48 @@ export function ElasticForm({ onSaved }: Props) {
     version: string;
   } | null>(null);
 
-  const buildConfig = (): ElasticConfig => ({
-    nodes: nodesText
-      .split(/[\n,]/)
-      .map((s) => s.trim())
-      .filter(Boolean),
-    user: useApiKey ? undefined : user || undefined,
-    password: useApiKey ? undefined : password || undefined,
-    apiKey: useApiKey ? apiKey || undefined : undefined,
-  });
+  const buildConfig = (): Record<string, unknown> => {
+    const cfg: Record<string, unknown> = {
+      nodes: nodesText
+        .split(/[\n,]/)
+        .map((s) => s.trim())
+        .filter(Boolean),
+    };
+    if (useApiKey) {
+      cfg.user = undefined;
+      cfg.password = undefined;
+      if (apiKey) cfg.apiKey = apiKey;
+      else if (!editing) cfg.apiKey = undefined;
+    } else {
+      cfg.user = user || undefined;
+      cfg.apiKey = undefined;
+      if (password) cfg.password = password;
+      else if (!editing) cfg.password = undefined;
+    }
+    return cfg;
+  };
 
   const test = async (save: boolean) => {
     setTesting(true);
     setError(null);
     setProbe(null);
     try {
+      if (save && editing && initial) {
+        const res = await fetch(`/api/connections/${initial.id}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ name, config: buildConfig() }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          toast.success("Connection updated");
+          onSaved?.();
+        } else {
+          setError(data.error || "Update failed");
+          toast.error("Update failed", { description: data.error });
+        }
+        return;
+      }
       const res = await fetch("/api/elastic/test", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -79,7 +113,9 @@ export function ElasticForm({ onSaved }: Props) {
   return (
     <Card className="p-6 space-y-5">
       <div className="space-y-1">
-        <h2 className="font-semibold">New connection</h2>
+        <h2 className="font-semibold">
+          {editing ? "Edit connection" : "New connection"}
+        </h2>
         <p className="text-sm text-muted-foreground">
           Connect to an Elasticsearch cluster. One node URL per line.
         </p>
@@ -125,9 +161,14 @@ export function ElasticForm({ onSaved }: Props) {
             <Label htmlFor="es-apikey">API key</Label>
             <Input
               id="es-apikey"
+              type="password"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
-              placeholder="base64-encoded id:api_key"
+              placeholder={
+                editing && init?.apiKey
+                  ? "(unchanged — leave blank to keep)"
+                  : "base64-encoded id:api_key"
+              }
               spellCheck={false}
             />
           </div>
@@ -149,6 +190,11 @@ export function ElasticForm({ onSaved }: Props) {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                placeholder={
+                  editing && init?.password
+                    ? "(unchanged — leave blank to keep)"
+                    : ""
+                }
               />
             </div>
           </div>
@@ -169,7 +215,8 @@ export function ElasticForm({ onSaved }: Props) {
           Test
         </Button>
         <Button onClick={() => test(true)} disabled={testing}>
-          Test &amp; save
+          {editing ? <Save className="size-4" /> : null}
+          {editing ? "Save changes" : "Test & save"}
         </Button>
       </div>
 

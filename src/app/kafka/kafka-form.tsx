@@ -8,51 +8,80 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { toast } from "sonner";
-import { Loader2, PlugZap } from "lucide-react";
-import type { KafkaConfig } from "@/lib/connections/types";
+import { Loader2, PlugZap, Save } from "lucide-react";
+import type { ConnectionRecord, KafkaConfig } from "@/lib/connections/types";
 
 type SaslMechanism = "plain" | "scram-sha-256" | "scram-sha-512";
 
 interface Props {
   onSaved?: () => void;
+  initial?: ConnectionRecord;
 }
 
-export function KafkaForm({ onSaved }: Props) {
-  const [name, setName] = useState("Local Kafka");
-  const [clientId, setClientId] = useState("baklava");
-  const [brokers, setBrokers] = useState("localhost:9092");
-  const [ssl, setSsl] = useState(false);
-  const [useSasl, setUseSasl] = useState(false);
-  const [saslMechanism, setSaslMechanism] = useState<SaslMechanism>("plain");
-  const [saslUsername, setSaslUsername] = useState("");
+export function KafkaForm({ onSaved, initial }: Props) {
+  const editing = Boolean(initial);
+  const init = initial?.config as KafkaConfig | undefined;
+
+  const [name, setName] = useState(initial?.name ?? "Local Kafka");
+  const [clientId, setClientId] = useState(init?.clientId ?? "baklava");
+  const [brokers, setBrokers] = useState(
+    init?.brokers?.join(", ") ?? "localhost:9092",
+  );
+  const [ssl, setSsl] = useState(init?.ssl ?? false);
+  const [useSasl, setUseSasl] = useState(Boolean(init?.sasl));
+  const [saslMechanism, setSaslMechanism] = useState<SaslMechanism>(
+    init?.sasl?.mechanism ?? "plain",
+  );
+  const [saslUsername, setSaslUsername] = useState(init?.sasl?.username ?? "");
   const [saslPassword, setSaslPassword] = useState("");
 
   const [testing, setTesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [brokerCount, setBrokerCount] = useState<number | null>(null);
 
-  const buildConfig = (): KafkaConfig => ({
-    clientId,
-    brokers: brokers
-      .split(",")
-      .map((b) => b.trim())
-      .filter(Boolean),
-    ssl,
-    sasl:
-      useSasl && saslUsername
-        ? {
-            mechanism: saslMechanism,
-            username: saslUsername,
-            password: saslPassword,
-          }
-        : undefined,
-  });
+  const buildConfig = (): Record<string, unknown> => {
+    const cfg: Record<string, unknown> = {
+      clientId,
+      brokers: brokers
+        .split(",")
+        .map((b) => b.trim())
+        .filter(Boolean),
+      ssl,
+    };
+    if (useSasl && saslUsername) {
+      const sasl: Record<string, unknown> = {
+        mechanism: saslMechanism,
+        username: saslUsername,
+      };
+      // When editing, omit password if blank so the backend keeps the existing nested secret.
+      if (saslPassword) sasl.password = saslPassword;
+      else if (!editing) sasl.password = "";
+      cfg.sasl = sasl;
+    }
+    return cfg;
+  };
 
   const test = async (save: boolean) => {
     setTesting(true);
     setError(null);
     setBrokerCount(null);
     try {
+      if (save && editing && initial) {
+        const res = await fetch(`/api/connections/${initial.id}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ name, config: buildConfig() }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          toast.success("Connection updated");
+          onSaved?.();
+        } else {
+          setError(data.error || "Update failed");
+          toast.error("Update failed", { description: data.error });
+        }
+        return;
+      }
       const res = await fetch("/api/kafka/test", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -82,10 +111,15 @@ export function KafkaForm({ onSaved }: Props) {
     }
   };
 
+  const testDisabled =
+    testing || (editing && useSasl && !saslPassword && Boolean(init?.sasl));
+
   return (
     <Card className="p-6 space-y-5">
       <div className="space-y-1">
-        <h2 className="font-semibold">New connection</h2>
+        <h2 className="font-semibold">
+          {editing ? "Edit connection" : "New connection"}
+        </h2>
         <p className="text-sm text-muted-foreground">
           Connect to one or more Kafka brokers. SASL is optional.
         </p>
@@ -172,6 +206,11 @@ export function KafkaForm({ onSaved }: Props) {
                   type="password"
                   value={saslPassword}
                   onChange={(e) => setSaslPassword(e.target.value)}
+                  placeholder={
+                    editing && init?.sasl
+                      ? "(unchanged — leave blank to keep)"
+                      : ""
+                  }
                 />
               </div>
             </div>
@@ -182,8 +221,13 @@ export function KafkaForm({ onSaved }: Props) {
       <div className="flex flex-wrap gap-2 pt-2">
         <Button
           onClick={() => test(false)}
-          disabled={testing}
+          disabled={testDisabled}
           variant="outline"
+          title={
+            editing && useSasl && !saslPassword && Boolean(init?.sasl)
+              ? "Type the SASL password to test"
+              : undefined
+          }
         >
           {testing ? (
             <Loader2 className="size-4 animate-spin" />
@@ -193,7 +237,8 @@ export function KafkaForm({ onSaved }: Props) {
           Test
         </Button>
         <Button onClick={() => test(true)} disabled={testing}>
-          Test &amp; save
+          {editing ? <Save className="size-4" /> : null}
+          {editing ? "Save changes" : "Test & save"}
         </Button>
       </div>
 

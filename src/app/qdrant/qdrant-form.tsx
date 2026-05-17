@@ -7,32 +7,54 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { toast } from "sonner";
-import { Loader2, PlugZap } from "lucide-react";
-import type { QdrantConfig } from "@/lib/connections/types";
+import { Loader2, PlugZap, Save } from "lucide-react";
+import type { ConnectionRecord, QdrantConfig } from "@/lib/connections/types";
 
 interface Props {
   onSaved?: () => void;
+  initial?: ConnectionRecord;
 }
 
-export function QdrantForm({ onSaved }: Props) {
-  const [name, setName] = useState("Local Qdrant");
-  const [url, setUrl] = useState("http://localhost:6333");
+export function QdrantForm({ onSaved, initial }: Props) {
+  const editing = Boolean(initial);
+  const init = initial?.config as QdrantConfig | undefined;
+
+  const [name, setName] = useState(initial?.name ?? "Local Qdrant");
+  const [url, setUrl] = useState(init?.url ?? "http://localhost:6333");
   const [apiKey, setApiKey] = useState("");
 
   const [testing, setTesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [collectionCount, setCollectionCount] = useState<number | null>(null);
 
-  const buildConfig = (): QdrantConfig => ({
-    url: url.trim(),
-    apiKey: apiKey.trim() || undefined,
-  });
+  const buildConfig = (): Record<string, unknown> => {
+    const cfg: Record<string, unknown> = { url: url.trim() };
+    if (apiKey.trim()) cfg.apiKey = apiKey.trim();
+    else if (!editing) cfg.apiKey = undefined;
+    return cfg;
+  };
 
   const test = async (save: boolean) => {
     setTesting(true);
     setError(null);
     setCollectionCount(null);
     try {
+      if (save && editing && initial) {
+        const res = await fetch(`/api/connections/${initial.id}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ name, config: buildConfig() }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          toast.success("Connection updated");
+          onSaved?.();
+        } else {
+          setError(data.error || "Update failed");
+          toast.error("Update failed", { description: data.error });
+        }
+        return;
+      }
       const res = await fetch("/api/qdrant/test", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -65,7 +87,9 @@ export function QdrantForm({ onSaved }: Props) {
   return (
     <Card className="p-6 space-y-5">
       <div className="space-y-1">
-        <h2 className="font-semibold">New connection</h2>
+        <h2 className="font-semibold">
+          {editing ? "Edit connection" : "New connection"}
+        </h2>
         <p className="text-sm text-muted-foreground">
           Point Baklava at a Qdrant REST endpoint. API key is optional for
           local / unsecured deployments.
@@ -99,7 +123,11 @@ export function QdrantForm({ onSaved }: Props) {
           type="password"
           value={apiKey}
           onChange={(e) => setApiKey(e.target.value)}
-          placeholder="leave blank for unsecured"
+          placeholder={
+            editing && init?.apiKey
+              ? "(unchanged — leave blank to keep)"
+              : "leave blank for unsecured"
+          }
           spellCheck={false}
         />
       </div>
@@ -118,7 +146,8 @@ export function QdrantForm({ onSaved }: Props) {
           Test
         </Button>
         <Button onClick={() => test(true)} disabled={testing}>
-          Test &amp; save
+          {editing ? <Save className="size-4" /> : null}
+          {editing ? "Save changes" : "Test & save"}
         </Button>
       </div>
 

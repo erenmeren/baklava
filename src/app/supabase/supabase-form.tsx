@@ -8,11 +8,15 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { toast } from "sonner";
-import { ChevronDown, ChevronRight, Loader2, PlugZap, ShieldAlert } from "lucide-react";
-import type { SupabaseConfig } from "@/lib/connections/types";
+import { ChevronDown, ChevronRight, Loader2, PlugZap, Save, ShieldAlert } from "lucide-react";
+import type {
+  ConnectionRecord,
+  SupabaseConfig,
+} from "@/lib/connections/types";
 
 interface Props {
   onSaved?: () => void;
+  initial?: ConnectionRecord;
 }
 
 function deriveRef(url: string): string {
@@ -25,12 +29,16 @@ function deriveRef(url: string): string {
   }
 }
 
-export function SupabaseForm({ onSaved }: Props) {
-  const [name, setName] = useState("");
-  const [url, setUrl] = useState("");
+export function SupabaseForm({ onSaved, initial }: Props) {
+  const editing = Boolean(initial);
+  const init = initial?.config as SupabaseConfig | undefined;
+
+  const [name, setName] = useState(initial?.name ?? "");
+  const [url, setUrl] = useState(init?.url ?? "");
   const [serviceRoleKey, setServiceRoleKey] = useState("");
+  // databaseUrl may embed a Postgres password — treat as a secret.
   const [databaseUrl, setDatabaseUrl] = useState("");
-  const [showDbUrl, setShowDbUrl] = useState(false);
+  const [showDbUrl, setShowDbUrl] = useState(Boolean(init?.databaseUrl));
 
   const [testing, setTesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -46,11 +54,15 @@ export function SupabaseForm({ onSaved }: Props) {
     }
   }, [url]);
 
-  const buildConfig = (): SupabaseConfig => ({
-    url: url.trim(),
-    serviceRoleKey: serviceRoleKey.trim(),
-    databaseUrl: databaseUrl.trim() || undefined,
-  });
+  const buildConfig = (): Record<string, unknown> => {
+    const cfg: Record<string, unknown> = { url: url.trim() };
+    if (serviceRoleKey.trim()) cfg.serviceRoleKey = serviceRoleKey.trim();
+    else if (!editing) cfg.serviceRoleKey = "";
+    // databaseUrl: omit when blank-and-editing so the existing one is kept.
+    if (databaseUrl.trim()) cfg.databaseUrl = databaseUrl.trim();
+    else if (!editing) cfg.databaseUrl = undefined;
+    return cfg;
+  };
 
   const resolvedName = name.trim() || deriveRef(url) || "Supabase";
 
@@ -59,7 +71,7 @@ export function SupabaseForm({ onSaved }: Props) {
       setError("Project URL must be a valid URL");
       return;
     }
-    if (!serviceRoleKey.trim()) {
+    if (!editing && !serviceRoleKey.trim()) {
       setError("Service role key is required");
       return;
     }
@@ -67,6 +79,22 @@ export function SupabaseForm({ onSaved }: Props) {
     setError(null);
     setProbeUsers(null);
     try {
+      if (save && editing && initial) {
+        const res = await fetch(`/api/connections/${initial.id}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ name: resolvedName, config: buildConfig() }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          toast.success("Connection updated");
+          onSaved?.();
+        } else {
+          setError(data.error || "Update failed");
+          toast.error("Update failed", { description: data.error });
+        }
+        return;
+      }
       const res = await fetch("/api/supabase/test", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -102,7 +130,9 @@ export function SupabaseForm({ onSaved }: Props) {
   return (
     <Card className="p-6 space-y-5">
       <div className="space-y-1">
-        <h2 className="font-semibold">New connection</h2>
+        <h2 className="font-semibold">
+          {editing ? "Edit connection" : "New connection"}
+        </h2>
         <p className="text-sm text-muted-foreground">
           Connect to a Supabase project using its service role key.
         </p>
@@ -158,7 +188,11 @@ export function SupabaseForm({ onSaved }: Props) {
           id="supabase-key"
           value={serviceRoleKey}
           onChange={(e) => setServiceRoleKey(e.target.value)}
-          placeholder="eyJhbGciOi..."
+          placeholder={
+            editing
+              ? "(unchanged — leave blank to keep)"
+              : "eyJhbGciOi..."
+          }
           spellCheck={false}
           className="font-mono text-xs min-h-[88px]"
         />
@@ -190,7 +224,11 @@ export function SupabaseForm({ onSaved }: Props) {
               id="supabase-dburl"
               value={databaseUrl}
               onChange={(e) => setDatabaseUrl(e.target.value)}
-              placeholder="postgresql://postgres.abcdefgh:[YOUR-PASSWORD]@aws-0-us-east-1.pooler.supabase.com:5432/postgres"
+              placeholder={
+                editing && init?.databaseUrl
+                  ? "(unchanged — leave blank to keep)"
+                  : "postgresql://postgres.abcdefgh:[YOUR-PASSWORD]@aws-0-us-east-1.pooler.supabase.com:5432/postgres"
+              }
               spellCheck={false}
               className="font-mono text-xs"
             />
@@ -211,7 +249,8 @@ export function SupabaseForm({ onSaved }: Props) {
           Test
         </Button>
         <Button onClick={() => test(true)} disabled={testing}>
-          Test &amp; save
+          {editing ? <Save className="size-4" /> : null}
+          {editing ? "Save changes" : "Test & save"}
         </Button>
       </div>
 

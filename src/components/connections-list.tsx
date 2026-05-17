@@ -20,6 +20,7 @@ import {
   Trash2,
   Circle,
   ArrowRight,
+  Pencil,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { ConnectionRecord, TechId } from "@/lib/connections/types";
@@ -29,6 +30,7 @@ interface Props {
   refreshKey: number;
   renderSummary?: (record: ConnectionRecord) => React.ReactNode;
   emptyState?: React.ReactNode;
+  onEdit?: (record: ConnectionRecord) => void;
 }
 
 export function ConnectionsList({
@@ -36,6 +38,7 @@ export function ConnectionsList({
   refreshKey,
   renderSummary,
   emptyState,
+  onEdit,
 }: Props) {
   const router = useRouter();
   const [records, setRecords] = useState<ConnectionRecord[]>([]);
@@ -128,6 +131,16 @@ export function ConnectionsList({
                 Open
                 <ArrowRight className="size-3.5" />
               </Button>
+              {onEdit ? (
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => onEdit(r)}
+                  title="Edit connection"
+                >
+                  <Pencil className="size-4" />
+                </Button>
+              ) : null}
               <Button
                 size="icon"
                 variant="ghost"

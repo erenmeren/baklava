@@ -8,10 +8,15 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { toast } from "sonner";
-import { Loader2, PlugZap } from "lucide-react";
+import { Loader2, PlugZap, Save } from "lucide-react";
+import type {
+  ConnectionRecord,
+  KubernetesConfig,
+} from "@/lib/connections/types";
 
 interface Props {
   onSaved?: () => void;
+  initial?: ConnectionRecord;
 }
 
 interface Probe {
@@ -22,17 +27,22 @@ interface Probe {
   nodeCount: number;
 }
 
-export function KubernetesForm({ onSaved }: Props) {
-  const [name, setName] = useState("");
+export function KubernetesForm({ onSaved, initial }: Props) {
+  const editing = Boolean(initial);
+  const init = initial?.config as KubernetesConfig | undefined;
+
+  const [name, setName] = useState(initial?.name ?? "");
+  // kubeconfig contains client certs / tokens — treat as a secret; never
+  // pre-fill on edit. Leaving blank keeps the existing one server-side.
   const [kubeconfig, setKubeconfig] = useState("");
-  const [context, setContext] = useState("");
+  const [context, setContext] = useState(init?.context ?? "");
 
   const [testing, setTesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [probe, setProbe] = useState<Probe | null>(null);
 
   const submit = async () => {
-    if (!kubeconfig.trim()) {
+    if (!editing && !kubeconfig.trim()) {
       toast.error("Paste a kubeconfig");
       return;
     }
@@ -40,6 +50,27 @@ export function KubernetesForm({ onSaved }: Props) {
     setError(null);
     setProbe(null);
     try {
+      if (editing && initial) {
+        const config: Record<string, unknown> = {
+          context: context.trim() || undefined,
+        };
+        // Omit kubeconfig when blank so mergeConfig keeps the existing one.
+        if (kubeconfig.trim()) config.kubeconfig = kubeconfig;
+        const res = await fetch(`/api/connections/${initial.id}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ name: name.trim(), config }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          toast.success("Connection updated");
+          onSaved?.();
+        } else {
+          setError(data.error || "Update failed");
+          toast.error("Update failed", { description: data.error });
+        }
+        return;
+      }
       const res = await fetch("/api/kubernetes/test", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -99,7 +130,10 @@ export function KubernetesForm({ onSaved }: Props) {
           rows={10}
           spellCheck={false}
           className="font-mono text-[11px]"
-          placeholder={`apiVersion: v1
+          placeholder={
+            editing
+              ? "(unchanged — leave blank to keep)"
+              : `apiVersion: v1
 kind: Config
 clusters:
 - name: kind-baklava
@@ -116,7 +150,8 @@ users:
 - name: kind-baklava
   user:
     client-certificate-data: ...
-    client-key-data: ...`}
+    client-key-data: ...`
+          }
         />
         <p className="text-[11px] text-muted-foreground">
           Works with kind, minikube, EKS, GKE, AKS — anything <code>kubectl</code> understands. Stays in memory; never written to disk.
@@ -157,13 +192,18 @@ users:
       ) : null}
 
       <div className="flex justify-end">
-        <Button onClick={submit} disabled={testing || !kubeconfig.trim()}>
+        <Button
+          onClick={submit}
+          disabled={testing || (!editing && !kubeconfig.trim())}
+        >
           {testing ? (
             <Loader2 className="size-3.5 animate-spin" />
+          ) : editing ? (
+            <Save className="size-3.5" />
           ) : (
             <PlugZap className="size-3.5" />
           )}
-          Test &amp; save
+          {editing ? "Save changes" : "Test & save"}
         </Button>
       </div>
     </Card>

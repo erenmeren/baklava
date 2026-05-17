@@ -140,6 +140,73 @@ export function updateStatus(
   return updated;
 }
 
+/**
+ * Patch an existing connection. Caller may supply a new name, a new config,
+ * or both. Config is merged field-by-field — any **secret** field (`password`,
+ * `apiKey`, `serviceRoleKey`, `token`, plus nested SASL `password`) that is
+ * the empty string OR missing from the patch is treated as "keep existing".
+ *
+ * This lets the UI safely send the full config back without the user having
+ * to re-type credentials. Status flips to "untested" — the next probe refreshes it.
+ */
+const SECRET_KEYS = new Set([
+  "password",
+  "apiKey",
+  "serviceRoleKey",
+  "token",
+  "authToken",
+]);
+
+function mergeConfig(
+  existing: Record<string, unknown>,
+  patch: Record<string, unknown>
+): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...existing };
+  for (const [key, value] of Object.entries(patch)) {
+    if (SECRET_KEYS.has(key) && (value === "" || value == null)) {
+      // Keep the existing secret — user left the field blank.
+      continue;
+    }
+    // Recurse into one level of nested objects (e.g. Kafka's `sasl: { password }`).
+    if (
+      value &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      out[key] &&
+      typeof out[key] === "object" &&
+      !Array.isArray(out[key])
+    ) {
+      out[key] = mergeConfig(
+        out[key] as Record<string, unknown>,
+        value as Record<string, unknown>
+      );
+    } else {
+      out[key] = value;
+    }
+  }
+  return out;
+}
+
+export function updateConnection(
+  id: string,
+  patch: { name?: string; config?: Record<string, unknown> }
+): AnyRecord | undefined {
+  const existing = getStore().byId.get(id);
+  if (!existing) return undefined;
+  const updated: AnyRecord = {
+    ...existing,
+    name: patch.name?.trim() || existing.name,
+    config: patch.config
+      ? mergeConfig(existing.config as Record<string, unknown>, patch.config)
+      : existing.config,
+    status: "untested",
+    lastError: undefined,
+  };
+  getStore().byId.set(id, updated);
+  flush();
+  return updated;
+}
+
 export function deleteConnection(id: string): boolean {
   const deleted = getStore().byId.delete(id);
   if (deleted) flush();

@@ -8,11 +8,12 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { toast } from "sonner";
-import { Loader2, PlugZap } from "lucide-react";
-import type { EtcdConfig } from "@/lib/connections/types";
+import { Loader2, PlugZap, Save } from "lucide-react";
+import type { ConnectionRecord, EtcdConfig } from "@/lib/connections/types";
 
 interface Props {
   onSaved?: () => void;
+  initial?: ConnectionRecord;
 }
 
 function parseHosts(raw: string): string[] {
@@ -22,10 +23,15 @@ function parseHosts(raw: string): string[] {
     .filter(Boolean);
 }
 
-export function EtcdForm({ onSaved }: Props) {
-  const [name, setName] = useState("Local etcd");
-  const [hosts, setHosts] = useState("http://localhost:2379");
-  const [user, setUser] = useState("");
+export function EtcdForm({ onSaved, initial }: Props) {
+  const editing = Boolean(initial);
+  const init = initial?.config as EtcdConfig | undefined;
+
+  const [name, setName] = useState(initial?.name ?? "Local etcd");
+  const [hosts, setHosts] = useState(
+    init?.hosts?.join("\n") ?? "http://localhost:2379",
+  );
+  const [user, setUser] = useState(init?.user ?? "");
   const [password, setPassword] = useState("");
 
   const [testing, setTesting] = useState(false);
@@ -35,15 +41,22 @@ export function EtcdForm({ onSaved }: Props) {
     memberCount: number;
   } | null>(null);
 
-  const buildConfig = (): EtcdConfig => ({
-    hosts: parseHosts(hosts),
-    user: user ? user : undefined,
-    password: password ? password : undefined,
-  });
+  const buildConfig = (): Record<string, unknown> => {
+    const cfg: Record<string, unknown> = {
+      hosts: parseHosts(hosts),
+      user: user ? user : undefined,
+    };
+    if (password) cfg.password = password;
+    else if (!editing) cfg.password = undefined;
+    return cfg;
+  };
 
   const test = async (save: boolean) => {
     const config = buildConfig();
-    if (config.hosts.length === 0) {
+    if (
+      !Array.isArray(config.hosts) ||
+      (config.hosts as string[]).length === 0
+    ) {
       toast.error("At least one host required");
       return;
     }
@@ -51,6 +64,22 @@ export function EtcdForm({ onSaved }: Props) {
     setError(null);
     setProbe(null);
     try {
+      if (save && editing && initial) {
+        const res = await fetch(`/api/connections/${initial.id}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ name, config }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          toast.success("Connection updated");
+          onSaved?.();
+        } else {
+          setError(data.error || "Update failed");
+          toast.error("Update failed", { description: data.error });
+        }
+        return;
+      }
       const res = await fetch("/api/etcd/test", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -83,7 +112,9 @@ export function EtcdForm({ onSaved }: Props) {
   return (
     <Card className="p-6 space-y-5">
       <div className="space-y-1">
-        <h2 className="font-semibold">New connection</h2>
+        <h2 className="font-semibold">
+          {editing ? "Edit connection" : "New connection"}
+        </h2>
         <p className="text-sm text-muted-foreground">
           Connect to an etcd cluster. One host per line. Auth is optional.
         </p>
@@ -129,6 +160,11 @@ export function EtcdForm({ onSaved }: Props) {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             autoComplete="new-password"
+            placeholder={
+              editing && init?.password
+                ? "(unchanged — leave blank to keep)"
+                : ""
+            }
           />
         </div>
       </div>
@@ -147,7 +183,8 @@ export function EtcdForm({ onSaved }: Props) {
           Test
         </Button>
         <Button onClick={() => test(true)} disabled={testing}>
-          Test &amp; save
+          {editing ? <Save className="size-4" /> : null}
+          {editing ? "Save changes" : "Test & save"}
         </Button>
       </div>
 

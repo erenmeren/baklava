@@ -8,18 +8,22 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { toast } from "sonner";
-import { Loader2, PlugZap } from "lucide-react";
-import type { MilvusConfig } from "@/lib/connections/types";
+import { Loader2, PlugZap, Save } from "lucide-react";
+import type { ConnectionRecord, MilvusConfig } from "@/lib/connections/types";
 
 interface Props {
   onSaved?: () => void;
+  initial?: ConnectionRecord;
 }
 
-export function MilvusForm({ onSaved }: Props) {
-  const [name, setName] = useState("Local Milvus");
-  const [address, setAddress] = useState("localhost:19530");
+export function MilvusForm({ onSaved, initial }: Props) {
+  const editing = Boolean(initial);
+  const init = initial?.config as MilvusConfig | undefined;
+
+  const [name, setName] = useState(initial?.name ?? "Local Milvus");
+  const [address, setAddress] = useState(init?.address ?? "localhost:19530");
   const [token, setToken] = useState("");
-  const [ssl, setSsl] = useState(false);
+  const [ssl, setSsl] = useState(init?.ssl ?? false);
 
   const [testing, setTesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -28,17 +32,37 @@ export function MilvusForm({ onSaved }: Props) {
     collectionCount: number;
   } | null>(null);
 
-  const buildConfig = (): MilvusConfig => ({
-    address: address.trim(),
-    token: token.trim() || undefined,
-    ssl,
-  });
+  const buildConfig = (): Record<string, unknown> => {
+    const cfg: Record<string, unknown> = {
+      address: address.trim(),
+      ssl,
+    };
+    if (token.trim()) cfg.token = token.trim();
+    else if (!editing) cfg.token = undefined;
+    return cfg;
+  };
 
   const test = async (save: boolean) => {
     setTesting(true);
     setError(null);
     setProbe(null);
     try {
+      if (save && editing && initial) {
+        const res = await fetch(`/api/connections/${initial.id}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ name, config: buildConfig() }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          toast.success("Connection updated");
+          onSaved?.();
+        } else {
+          setError(data.error || "Update failed");
+          toast.error("Update failed", { description: data.error });
+        }
+        return;
+      }
       const res = await fetch("/api/milvus/test", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -71,7 +95,9 @@ export function MilvusForm({ onSaved }: Props) {
   return (
     <Card className="p-6 space-y-5">
       <div className="space-y-1">
-        <h2 className="font-semibold">New connection</h2>
+        <h2 className="font-semibold">
+          {editing ? "Edit connection" : "New connection"}
+        </h2>
         <p className="text-sm text-muted-foreground">
           Point Baklava at a Milvus gRPC endpoint. Use a token for Zilliz Cloud
           or auth-enabled clusters.
@@ -106,7 +132,11 @@ export function MilvusForm({ onSaved }: Props) {
           type="password"
           value={token}
           onChange={(e) => setToken(e.target.value)}
-          placeholder="username:password or Zilliz Cloud API key"
+          placeholder={
+            editing && init?.token
+              ? "(unchanged — leave blank to keep)"
+              : "username:password or Zilliz Cloud API key"
+          }
           spellCheck={false}
         />
       </div>
@@ -135,7 +165,8 @@ export function MilvusForm({ onSaved }: Props) {
           onClick={() => test(true)}
           disabled={testing || !address.trim()}
         >
-          Test &amp; save
+          {editing ? <Save className="size-4" /> : null}
+          {editing ? "Save changes" : "Test & save"}
         </Button>
       </div>
 

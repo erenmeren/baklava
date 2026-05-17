@@ -8,20 +8,26 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { toast } from "sonner";
-import { Loader2, PlugZap } from "lucide-react";
-import type { Neo4jConfig } from "@/lib/connections/types";
+import { Loader2, PlugZap, Save } from "lucide-react";
+import type { ConnectionRecord, Neo4jConfig } from "@/lib/connections/types";
 
 interface Props {
   onSaved?: () => void;
+  initial?: ConnectionRecord;
 }
 
-export function Neo4jForm({ onSaved }: Props) {
-  const [name, setName] = useState("Local Neo4j");
-  const [useAura, setUseAura] = useState(false);
-  const [uri, setUri] = useState("bolt://localhost:7687");
-  const [user, setUser] = useState("neo4j");
+export function Neo4jForm({ onSaved, initial }: Props) {
+  const editing = Boolean(initial);
+  const init = initial?.config as Neo4jConfig | undefined;
+
+  const [name, setName] = useState(initial?.name ?? "Local Neo4j");
+  const [useAura, setUseAura] = useState(
+    init?.uri?.startsWith("neo4j+s://") ?? false,
+  );
+  const [uri, setUri] = useState(init?.uri ?? "bolt://localhost:7687");
+  const [user, setUser] = useState(init?.user ?? "neo4j");
   const [password, setPassword] = useState("");
-  const [database, setDatabase] = useState("");
+  const [database, setDatabase] = useState(init?.database ?? "");
 
   const [testing, setTesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -31,18 +37,38 @@ export function Neo4jForm({ onSaved }: Props) {
     edition: string;
   } | null>(null);
 
-  const buildConfig = (): Neo4jConfig => ({
-    uri: uri.trim(),
-    user: user.trim(),
-    password,
-    database: database.trim() || undefined,
-  });
+  const buildConfig = (): Record<string, unknown> => {
+    const cfg: Record<string, unknown> = {
+      uri: uri.trim(),
+      user: user.trim(),
+      database: database.trim() || undefined,
+    };
+    if (password) cfg.password = password;
+    else if (!editing) cfg.password = "";
+    return cfg;
+  };
 
   const test = async (save: boolean) => {
     setTesting(true);
     setError(null);
     setProbe(null);
     try {
+      if (save && editing && initial) {
+        const res = await fetch(`/api/connections/${initial.id}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ name, config: buildConfig() }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          toast.success("Connection updated");
+          onSaved?.();
+        } else {
+          setError(data.error || "Update failed");
+          toast.error("Update failed", { description: data.error });
+        }
+        return;
+      }
       const res = await fetch("/api/neo4j/test", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -77,7 +103,9 @@ export function Neo4jForm({ onSaved }: Props) {
   return (
     <Card className="p-6 space-y-5">
       <div className="space-y-1">
-        <h2 className="font-semibold">New connection</h2>
+        <h2 className="font-semibold">
+          {editing ? "Edit connection" : "New connection"}
+        </h2>
         <p className="text-sm text-muted-foreground">
           Connect to a Neo4j server over the Bolt protocol.
         </p>
@@ -137,6 +165,7 @@ export function Neo4jForm({ onSaved }: Props) {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             autoComplete="current-password"
+            placeholder={editing ? "(unchanged — leave blank to keep)" : ""}
           />
         </div>
       </div>
@@ -179,7 +208,8 @@ export function Neo4jForm({ onSaved }: Props) {
           Test
         </Button>
         <Button onClick={() => test(true)} disabled={testing}>
-          Test &amp; save
+          {editing ? <Save className="size-4" /> : null}
+          {editing ? "Save changes" : "Test & save"}
         </Button>
       </div>
 
