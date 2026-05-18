@@ -481,32 +481,38 @@ export function MessagesTab({ base, topic, partitions, onProduceSimilar }: Props
   }, [messages, topic]);
 
   return (
-    <div className="space-y-3" onKeyDown={(e) => {
-      // Keyboard nav across the filtered list.
-      const target = e.target as HTMLElement;
-      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT")) {
-        return;
-      }
-      if (filtered.length === 0) return;
-      if (e.key === "ArrowDown" || e.key === "j") {
-        e.preventDefault();
-        setSelectedIndex((i) => Math.min(filtered.length - 1, Math.max(0, i + 1)));
-      } else if (e.key === "ArrowUp" || e.key === "k") {
-        e.preventDefault();
-        setSelectedIndex((i) => Math.max(0, i - 1));
-      } else if (e.key === "Home") {
-        e.preventDefault();
-        setSelectedIndex(0);
-      } else if (e.key === "End") {
-        e.preventDefault();
-        setSelectedIndex(filtered.length - 1);
-      } else if (e.key === "Enter") {
-        e.preventDefault();
-        if (selectedIndex >= 0) setDrawerMessage(filtered[selectedIndex]);
-      } else if (e.key === "Escape") {
-        if (drawerMessage) setDrawerMessage(null);
-      }
-    }} tabIndex={0}>
+    <div
+      className="space-y-3 outline-none focus:outline-none focus-visible:outline-none"
+      tabIndex={0}
+      // Kill the default browser outline — we paint a focus-within accent
+      // on the table scroller itself instead (see MessagesTable below),
+      // which is more refined than a rectangle around the whole tab.
+      onKeyDown={(e) => {
+        const target = e.target as HTMLElement;
+        if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT")) {
+          return;
+        }
+        if (filtered.length === 0) return;
+        if (e.key === "ArrowDown" || e.key === "j") {
+          e.preventDefault();
+          setSelectedIndex((i) => Math.min(filtered.length - 1, Math.max(0, i + 1)));
+        } else if (e.key === "ArrowUp" || e.key === "k") {
+          e.preventDefault();
+          setSelectedIndex((i) => Math.max(0, i - 1));
+        } else if (e.key === "Home") {
+          e.preventDefault();
+          setSelectedIndex(0);
+        } else if (e.key === "End") {
+          e.preventDefault();
+          setSelectedIndex(filtered.length - 1);
+        } else if (e.key === "Enter") {
+          e.preventDefault();
+          if (selectedIndex >= 0) setDrawerMessage(filtered[selectedIndex]);
+        } else if (e.key === "Escape") {
+          if (drawerMessage) setDrawerMessage(null);
+        }
+      }}
+    >
       {/* ─ Toolbar row 1: source + view controls ─────────────────────── */}
       <div className="flex items-center gap-2 flex-wrap">
         <div className="flex items-center gap-2">
@@ -901,7 +907,10 @@ function MessagesTable({
       ref={scrollerRef}
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
-      className="relative rounded-lg border border-border/60 overflow-auto max-h-[62vh]"
+      // outline-none drops the browser's default focus rect that
+      // overflow-auto containers can show when keys flow through them.
+      // The amber-tinted selected row is the focus indicator instead.
+      className="relative rounded-lg border border-border/60 overflow-auto max-h-[62vh] outline-none"
     >
       {live && paused ? (
         <div className="sticky top-0 z-20 bg-amber-500/10 border-b border-amber-500/30 px-3 py-1 text-[10px] font-mono uppercase tracking-wider text-amber-700 dark:text-amber-300 flex items-center gap-2">
