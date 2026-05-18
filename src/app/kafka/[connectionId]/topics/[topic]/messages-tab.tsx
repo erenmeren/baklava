@@ -316,7 +316,13 @@ export function MessagesTab({ base, topic, partitions, onProduceSimilar }: Props
       });
       const data = await res.json();
       if (res.ok) {
-        const msgs = data.messages as KafkaMessage[];
+        // Always display newest-first (matches live tail). kafkajs
+        // delivers messages partition-by-partition in offset order, so
+        // without an explicit sort the table is grouped by partition,
+        // not time.
+        const msgs = (data.messages as KafkaMessage[])
+          .slice()
+          .sort((a, b) => Number(b.timestamp) - Number(a.timestamp));
         setMessages(msgs);
         // Seed throughput so the chart isn't empty on first paint.
         for (let i = 0; i < msgs.length; i++) {
@@ -455,7 +461,9 @@ export function MessagesTab({ base, topic, partitions, onProduceSimilar }: Props
       });
       const data = await res.json();
       if (res.ok) {
-        const msgs = data.messages as KafkaMessage[];
+        const msgs = (data.messages as KafkaMessage[])
+          .slice()
+          .sort((a, b) => Number(b.timestamp) - Number(a.timestamp));
         setMessages(msgs);
         receivedRef.current = msgs.map(() => Date.now());
         toast.success(`Fetched ${msgs.length} messages from ${p}@${o}`);
