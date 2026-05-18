@@ -378,12 +378,15 @@ export function MessagesTab({ base, topic, partitions, onProduceSimilar }: Props
     };
   }, []);
 
+  // Re-fetch whenever the partition filter or "from beginning" toggle
+  // changes (in non-live mode). Live mode has its own effect that tears
+  // down + reopens the SSE on the same dep change, so this stays out of
+  // its way.
   useEffect(() => {
-    if (messages === null && !live) {
-      void loadMessages();
-    }
+    if (live) return;
+    void loadMessages();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [partitionFilter, fromBeginning, live]);
 
   // ─ filtering ──────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
