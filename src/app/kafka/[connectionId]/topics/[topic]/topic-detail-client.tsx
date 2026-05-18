@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -37,30 +36,19 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
 import { WorkspacePage } from "@/components/workspace/workspace-page";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import {
   ArrowLeft,
-  Check,
-  Copy,
   Eraser,
   Loader2,
   Plus,
-  RadioTower,
-  RefreshCcw,
   Save,
-  Search,
   Send,
   Trash2,
-  X,
 } from "lucide-react";
+import { MessagesTab, type ProduceTemplate } from "./messages-tab";
 
 interface TopicDetail {
   name: string;
@@ -73,15 +61,6 @@ interface TopicDetail {
     low: string;
   }[];
   configs: { name: string; value: string; isDefault: boolean }[];
-}
-
-interface KafkaMessage {
-  partition: number;
-  offset: string;
-  timestamp: string;
-  key: string | null;
-  value: string | null;
-  headers: Record<string, string>;
 }
 
 interface Props {
@@ -97,23 +76,22 @@ export function TopicDetailClient({ connectionId, topic }: Props) {
   const [detail, setDetail] = useState<TopicDetail | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // messages tab
-  const [messages, setMessages] = useState<KafkaMessage[] | null>(null);
-  const [loadingMessages, setLoadingMessages] = useState(false);
-  const [partitionFilter, setPartitionFilter] = useState<string>("all");
-  const [fromBeginning, setFromBeginning] = useState(true);
-  const [live, setLive] = useState(false);
-  const [keyFilter, setKeyFilter] = useState("");
-  const [valueFilter, setValueFilter] = useState("");
-  const [selectedMessage, setSelectedMessage] = useState<KafkaMessage | null>(
-    null
-  );
-  const sourceRef = useRef<EventSource | null>(null);
-
-  // produce tab
+  // produce tab (state lives here so MessagesTab → "Produce similar" can
+  // prefill the form and switch tabs via onProduceSimilar)
   const [prodKey, setProdKey] = useState("");
   const [prodValue, setProdValue] = useState("");
+  const [prodHeaders, setProdHeaders] = useState<Record<string, string>>({});
   const [producing, setProducing] = useState(false);
+
+  const onProduceSimilar = useCallback((t: ProduceTemplate) => {
+    setProdKey(t.key ?? "");
+    setProdValue(t.value);
+    setProdHeaders(t.headers);
+    setTab("produce");
+    toast.success("Prefilled produce form", {
+      description: "Edit and send when ready",
+    });
+  }, []);
 
   // configs tab — pending local edits
   const [configEdits, setConfigEdits] = useState<Record<string, string>>({});
@@ -136,80 +114,6 @@ export function TopicDetailClient({ connectionId, topic }: Props) {
     loadDetail();
   }, [loadDetail]);
 
-  const loadMessages = useCallback(async () => {
-    setLoadingMessages(true);
-    setMessages(null);
-    try {
-      const params = new URLSearchParams();
-      params.set("limit", "100");
-      params.set("from", fromBeginning ? "beginning" : "end");
-      if (partitionFilter !== "all") params.set("partition", partitionFilter);
-      const res = await fetch(`${base}/messages?${params.toString()}`, {
-        cache: "no-store",
-      });
-      const data = await res.json();
-      if (res.ok) setMessages(data.messages as KafkaMessage[]);
-      else toast.error("Could not load messages", { description: data.error });
-    } finally {
-      setLoadingMessages(false);
-    }
-  }, [base, partitionFilter, fromBeginning]);
-
-  // Open / close live tail
-  useEffect(() => {
-    if (!live) {
-      sourceRef.current?.close();
-      sourceRef.current = null;
-      return;
-    }
-    setMessages([]);
-    const params = new URLSearchParams();
-    params.set("fromBeginning", fromBeginning ? "1" : "0");
-    if (partitionFilter !== "all") params.set("partition", partitionFilter);
-    const es = new EventSource(`${base}/stream?${params.toString()}`);
-    sourceRef.current = es;
-    es.addEventListener("message", (ev) => {
-      try {
-        const msg = JSON.parse((ev as MessageEvent).data) as KafkaMessage;
-        setMessages((prev) => {
-          const next = [msg, ...(prev ?? [])];
-          if (next.length > 500) next.length = 500;
-          return next;
-        });
-      } catch {
-        // ignore
-      }
-    });
-    es.addEventListener("error", (ev) => {
-      try {
-        const data = JSON.parse((ev as MessageEvent).data ?? "{}") as {
-          message?: string;
-        };
-        if (data.message) toast.error("Live tail error", { description: data.message });
-      } catch {
-        // network error has no payload
-      }
-    });
-    return () => {
-      es.close();
-      if (sourceRef.current === es) sourceRef.current = null;
-    };
-  }, [live, base, partitionFilter, fromBeginning]);
-
-  // Unmount cleanup for SSE
-  useEffect(() => {
-    return () => {
-      sourceRef.current?.close();
-      sourceRef.current = null;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (tab === "messages" && messages === null && !live) {
-      loadMessages();
-    }
-  }, [tab, messages, live, loadMessages]);
-
   const produce = async () => {
     if (!prodValue) return;
     setProducing(true);
@@ -220,12 +124,15 @@ export function TopicDetailClient({ connectionId, topic }: Props) {
         body: JSON.stringify({
           key: prodKey || undefined,
           value: prodValue,
+          headers:
+            Object.keys(prodHeaders).length > 0 ? prodHeaders : undefined,
         }),
       });
       const data = await res.json();
       if (res.ok) {
         toast.success("Message produced");
         setProdValue("");
+        setProdHeaders({});
       } else toast.error(data.error || "Could not produce");
     } finally {
       setProducing(false);
@@ -281,7 +188,6 @@ export function TopicDetailClient({ connectionId, topic }: Props) {
       if (res.ok) {
         toast.success("Topic emptied");
         await loadDetail();
-        if (messages) setMessages(null);
       } else toast.error(data.error || "Could not empty");
     } finally {
       setBusy(false);
@@ -442,208 +348,20 @@ export function TopicDetailClient({ connectionId, topic }: Props) {
           )}
         </TabsContent>
 
-        <TabsContent value="messages" className="pt-4 space-y-3">
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex items-center gap-2">
-              <Label
-                htmlFor="part-sel"
-                className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground"
-              >
-                Partition
-              </Label>
-              <select
-                id="part-sel"
-                value={partitionFilter}
-                onChange={(e) => setPartitionFilter(e.target.value)}
-                className="h-8 rounded-md border border-input bg-transparent px-2 text-xs font-mono"
-              >
-                <option value="all">All</option>
-                {detail?.partitions.map((p) => (
-                  <option key={p.partition} value={String(p.partition)}>
-                    {p.partition}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Switch
-                id="from-beginning"
-                size="sm"
-                checked={fromBeginning}
-                onCheckedChange={setFromBeginning}
-              />
-              <Label
-                htmlFor="from-beginning"
-                className="cursor-pointer text-xs font-normal text-muted-foreground"
-              >
-                From beginning
-              </Label>
-            </div>
-            <Button
-              size="sm"
-              variant={live ? "default" : "outline"}
-              onClick={() => setLive((l) => !l)}
-              className={
-                live
-                  ? "bg-orange-500 hover:bg-orange-500/90 text-white border-transparent"
-                  : ""
-              }
-            >
-              <RadioTower className="size-3.5" />
-              {live ? "Stop live tail" : "Live tail"}
-              {live ? (
-                <span className="ml-1 inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-wider">
-                  <span className="size-1.5 rounded-full bg-white status-pulse" />
-                  LIVE
-                </span>
-              ) : null}
-            </Button>
-            {!live ? (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={loadMessages}
-                disabled={loadingMessages}
-              >
-                {loadingMessages ? (
-                  <Loader2 className="size-3.5 animate-spin" />
-                ) : (
-                  <RefreshCcw className="size-3.5" />
-                )}
-                Fetch
-              </Button>
-            ) : (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setMessages([])}
-              >
-                <Eraser className="size-3.5" />
-                Clear
-              </Button>
-            )}
-          </div>
-
-          {/* ── Key/value search filter ──────────────────────────────────── */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="relative">
-              <Search className="size-3 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-              <Input
-                value={keyFilter}
-                onChange={(e) => setKeyFilter(e.target.value)}
-                placeholder="Key contains…"
-                className="h-8 pl-7 text-xs w-44"
-                spellCheck={false}
-              />
-            </div>
-            <div className="relative">
-              <Search className="size-3 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-              <Input
-                value={valueFilter}
-                onChange={(e) => setValueFilter(e.target.value)}
-                placeholder="Value contains…"
-                className="h-8 pl-7 text-xs w-64"
-                spellCheck={false}
-              />
-            </div>
-            {(keyFilter || valueFilter) && (
-              <Button
-                size="xs"
-                variant="ghost"
-                onClick={() => {
-                  setKeyFilter("");
-                  setValueFilter("");
-                }}
-              >
-                <X className="size-3" />
-                Clear
-              </Button>
-            )}
-            <span className="ml-auto text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
-              {live
-                ? `${messages?.length ?? 0} buffered · newest first`
-                : "fetch · up to 100 · 5s timeout"}
-            </span>
-          </div>
-
-          {loadingMessages ? (
-            <p className="text-sm text-muted-foreground">Consuming…</p>
-          ) : messages == null ? null : (
-            (() => {
-              const filtered = filterMessages(messages, keyFilter, valueFilter);
-              if (filtered.length === 0) {
-                return (
-                  <p className="text-sm text-muted-foreground">
-                    {messages.length === 0
-                      ? live
-                        ? "Listening…"
-                        : "No messages within timeout."
-                      : "No messages match the current filter."}
-                  </p>
-                );
-              }
-              return (
-                <div className="rounded-lg border border-border/60 overflow-auto max-h-[60vh]">
-                  <table className="w-full text-xs font-mono">
-                    <thead className="bg-muted/50 sticky top-0 z-10">
-                      <tr className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-                        <th className="px-3 py-2 text-left font-semibold w-12">
-                          P
-                        </th>
-                        <th className="px-3 py-2 text-left font-semibold w-24">
-                          Offset
-                        </th>
-                        <th className="px-3 py-2 text-left font-semibold w-44">
-                          Time
-                        </th>
-                        <th className="px-3 py-2 text-left font-semibold w-[20%]">
-                          Key
-                        </th>
-                        <th className="px-3 py-2 text-left font-semibold">
-                          Value
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filtered.map((m, i) => (
-                        <tr
-                          key={`${m.partition}-${m.offset}-${i}`}
-                          className="border-t border-border/30 cursor-pointer hover:bg-muted/40 transition-colors"
-                          onClick={() => setSelectedMessage(m)}
-                        >
-                          <td className="px-3 py-1.5 align-top tabular-nums">
-                            <span className="inline-block min-w-[20px] text-center rounded px-1 text-[10px] bg-orange-500/10 text-orange-700 dark:text-orange-300">
-                              {m.partition}
-                            </span>
-                          </td>
-                          <td className="px-3 py-1.5 align-top tabular-nums text-muted-foreground">
-                            {m.offset}
-                          </td>
-                          <td className="px-3 py-1.5 align-top text-muted-foreground tabular-nums whitespace-nowrap">
-                            {formatTimeShort(m.timestamp)}
-                          </td>
-                          <td className="px-3 py-1.5 align-top truncate max-w-[20ch]">
-                            {m.key ?? (
-                              <span className="text-muted-foreground/50">
-                                —
-                              </span>
-                            )}
-                          </td>
-                          <td className="px-3 py-1.5 align-top max-w-[60ch] truncate">
-                            {m.value ?? (
-                              <span className="text-muted-foreground/50">
-                                null
-                              </span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              );
-            })()
-          )}
+        <TabsContent value="messages" className="pt-4">
+          <MessagesTab
+            base={base}
+            topic={topic}
+            partitions={
+              detail?.partitions.map((p) => ({
+                partition: p.partition,
+                leader: p.leader,
+                offset: p.low,
+                high: p.high,
+              })) ?? []
+            }
+            onProduceSimilar={onProduceSimilar}
+          />
         </TabsContent>
 
         <TabsContent value="produce" className="pt-4 space-y-3 max-w-2xl">
@@ -818,12 +536,6 @@ export function TopicDetailClient({ connectionId, topic }: Props) {
         </AlertDialogContent>
       </AlertDialog>
 
-      <MessageDetailSheet
-        message={selectedMessage}
-        topic={topic}
-        onClose={() => setSelectedMessage(null)}
-      />
-
       <Dialog open={addPartitionsOpen} onOpenChange={setAddPartitionsOpen}>
         <DialogContent>
           <DialogHeader>
@@ -866,222 +578,4 @@ export function TopicDetailClient({ connectionId, topic }: Props) {
       </Dialog>
     </WorkspacePage>
   );
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Message detail drawer
-// ──────────────────────────────────────────────────────────────────────────────
-
-function MessageDetailSheet({
-  message,
-  topic,
-  onClose,
-}: {
-  message: KafkaMessage | null;
-  topic: string;
-  onClose: () => void;
-}) {
-  return (
-    <Sheet
-      open={Boolean(message)}
-      onOpenChange={(o) => {
-        if (!o) onClose();
-      }}
-    >
-      <SheetContent
-        side="right"
-        className="w-full sm:max-w-2xl flex flex-col gap-0 p-0"
-      >
-        <SheetHeader className="border-b border-border/60 px-5 py-4">
-          <SheetTitle className="text-base flex items-center gap-2">
-            <span className="font-mono">{topic}</span>
-            {message ? (
-              <span className="text-xs font-mono text-muted-foreground">
-                · P
-                <span className="inline-block min-w-[20px] text-center rounded px-1 ml-1 bg-orange-500/10 text-orange-700 dark:text-orange-300">
-                  {message.partition}
-                </span>
-                <span className="ml-1">@{message.offset}</span>
-              </span>
-            ) : null}
-          </SheetTitle>
-        </SheetHeader>
-        {message ? (
-          <div className="flex-1 min-h-0 overflow-auto p-5 space-y-5">
-            <MetaRow label="Timestamp">
-              <span className="font-mono text-xs">
-                {new Date(Number(message.timestamp)).toISOString()}
-                <span className="ml-2 text-muted-foreground">
-                  ({relativeFromTimestamp(message.timestamp)})
-                </span>
-              </span>
-            </MetaRow>
-            <MetaRow label="Partition">
-              <span className="font-mono text-xs">{message.partition}</span>
-            </MetaRow>
-            <MetaRow label="Offset">
-              <span className="font-mono text-xs">{message.offset}</span>
-            </MetaRow>
-
-            <DetailBlock label="Key" content={message.key} />
-            <DetailBlock label="Value" content={message.value} />
-
-            <div>
-              <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground mb-2">
-                Headers
-              </p>
-              {Object.keys(message.headers).length === 0 ? (
-                <p className="text-xs text-muted-foreground">No headers.</p>
-              ) : (
-                <div className="rounded-md border border-border/60 overflow-hidden">
-                  <table className="w-full text-xs font-mono">
-                    <tbody>
-                      {Object.entries(message.headers).map(([k, v]) => (
-                        <tr
-                          key={k}
-                          className="border-b border-border/40 last:border-b-0"
-                        >
-                          <td className="px-3 py-1.5 text-muted-foreground align-top w-1/3 break-all">
-                            {k}
-                          </td>
-                          <td className="px-3 py-1.5 break-all">{v || "—"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </div>
-        ) : null}
-      </SheetContent>
-    </Sheet>
-  );
-}
-
-function MetaRow({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex items-baseline gap-3">
-      <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground w-20 shrink-0">
-        {label}
-      </span>
-      <span className="flex-1 min-w-0">{children}</span>
-    </div>
-  );
-}
-
-function DetailBlock({
-  label,
-  content,
-}: {
-  label: string;
-  content: string | null;
-}) {
-  const [copied, setCopied] = useState(false);
-  const pretty = useMemo(() => prettyPrintJson(content), [content]);
-  const isJson = pretty !== content && content != null;
-  const onCopy = async () => {
-    if (content == null) return;
-    try {
-      await navigator.clipboard.writeText(content);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      toast.error("Could not copy");
-    }
-  };
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-2">
-        <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
-          {label}
-          {isJson ? (
-            <span className="ml-2 text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 normal-case tracking-normal">
-              json
-            </span>
-          ) : null}
-        </p>
-        {content != null ? (
-          <Button
-            size="xs"
-            variant="ghost"
-            onClick={onCopy}
-            className="h-6 px-2"
-          >
-            {copied ? (
-              <Check className="size-3" />
-            ) : (
-              <Copy className="size-3" />
-            )}
-            {copied ? "copied" : "copy"}
-          </Button>
-        ) : null}
-      </div>
-      {content == null ? (
-        <p className="text-xs text-muted-foreground">null</p>
-      ) : (
-        <pre className="rounded-md border border-border/60 bg-muted/30 p-3 text-xs font-mono whitespace-pre-wrap break-words max-h-[40vh] overflow-auto">
-          {pretty}
-        </pre>
-      )}
-    </div>
-  );
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
-// helpers
-// ──────────────────────────────────────────────────────────────────────────────
-
-function filterMessages(
-  msgs: KafkaMessage[],
-  keyQ: string,
-  valueQ: string
-): KafkaMessage[] {
-  const kq = keyQ.trim().toLowerCase();
-  const vq = valueQ.trim().toLowerCase();
-  if (!kq && !vq) return msgs;
-  return msgs.filter((m) => {
-    if (kq && !(m.key ?? "").toLowerCase().includes(kq)) return false;
-    if (vq && !(m.value ?? "").toLowerCase().includes(vq)) return false;
-    return true;
-  });
-}
-
-function prettyPrintJson(s: string | null): string {
-  if (s == null) return "";
-  const trimmed = s.trim();
-  if (
-    (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
-    (trimmed.startsWith("[") && trimmed.endsWith("]"))
-  ) {
-    try {
-      return JSON.stringify(JSON.parse(trimmed), null, 2);
-    } catch {
-      // fall through
-    }
-  }
-  return s;
-}
-
-function formatTimeShort(ts: string): string {
-  const d = new Date(Number(ts));
-  if (Number.isNaN(d.getTime())) return ts;
-  return d.toISOString().slice(11, 23);
-}
-
-function relativeFromTimestamp(ts: string): string {
-  const n = Number(ts);
-  if (!Number.isFinite(n)) return "—";
-  const diff = Date.now() - n;
-  if (diff < 1000) return "just now";
-  if (diff < 60_000) return `${Math.floor(diff / 1000)}s ago`;
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
-  return `${Math.floor(diff / 86_400_000)}d ago`;
 }

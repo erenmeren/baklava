@@ -272,6 +272,100 @@ export async function fetchMessages(
   }
 }
 
+/**
+ * Fetch up to `limit` messages from `(partition, offset)` — used by the
+ * "jump to offset" UI on the messages tab. Uses an ephemeral consumer
+ * group so the broker doesn't track the seek state.
+ */
+export async function fetchMessagesFromOffset(
+  config: KafkaConfig,
+  topic: string,
+  partition: number,
+  startOffset: string,
+  limit: number,
+): Promise<KafkaMessage[]> {
+  const client = createKafkaClient(config);
+  const groupId = `baklava-seek-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const consumer = client.consumer({
+    groupId,
+    sessionTimeout: 10_000,
+    heartbeatInterval: 3_000,
+  });
+  await consumer.connect();
+  try {
+    await consumer.subscribe({ topic, fromBeginning: false });
+    const collected: KafkaMessage[] = [];
+    let seeked = false;
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, 6_000);
+      consumer
+        .run({
+          autoCommit: false,
+          eachMessage: async ({ partition: p, message }) => {
+            if (p !== partition) return;
+            const headers: Record<string, string> = {};
+            if (message.headers) {
+              for (const [k, v] of Object.entries(message.headers)) {
+                if (v == null) headers[k] = "";
+                else if (Buffer.isBuffer(v)) headers[k] = v.toString("utf8");
+                else if (typeof v === "string") headers[k] = v;
+                else if (Array.isArray(v))
+                  headers[k] = v
+                    .map((p) =>
+                      Buffer.isBuffer(p) ? p.toString("utf8") : String(p),
+                    )
+                    .join(",");
+                else headers[k] = String(v);
+              }
+            }
+            collected.push({
+              partition: p,
+              offset: message.offset,
+              timestamp: message.timestamp,
+              key: message.key ? message.key.toString("utf8") : null,
+              value: message.value ? message.value.toString("utf8") : null,
+              headers,
+            });
+            if (collected.length >= limit) {
+              clearTimeout(timer);
+              resolve();
+            }
+          },
+        })
+        .catch(() => {
+          clearTimeout(timer);
+          resolve();
+        });
+      // kafkajs assigns partitions asynchronously after run() — wait a
+      // beat, then seek. If we seek too early the assignment isn't ready.
+      const trySeek = () => {
+        if (seeked) return;
+        try {
+          consumer.seek({ topic, partition, offset: startOffset });
+          seeked = true;
+        } catch {
+          setTimeout(trySeek, 100);
+        }
+      };
+      setTimeout(trySeek, 500);
+    });
+    return collected.slice(0, limit);
+  } finally {
+    await consumer.disconnect().catch(() => undefined);
+    try {
+      const admin = client.admin();
+      await admin.connect();
+      try {
+        await admin.deleteGroups([groupId]);
+      } finally {
+        await admin.disconnect().catch(() => undefined);
+      }
+    } catch (err) {
+      console.warn("fetchMessagesFromOffset: failed to delete consumer group", err);
+    }
+  }
+}
+
 export async function produceMessage(
   config: KafkaConfig,
   topic: string,
@@ -323,21 +417,58 @@ export async function listConsumerGroups(
   }
 }
 
+export interface ConsumerGroupMemberAssignment {
+  topic: string;
+  partitions: number[];
+}
+
+export interface ConsumerGroupMember {
+  memberId: string;
+  clientId: string;
+  clientHost: string;
+  /** Partitions this member is assigned. Decoded from kafkajs MemberAssignment. */
+  assignments: ConsumerGroupMemberAssignment[];
+  /** Total partition count across all topics (cached for at-a-glance display). */
+  partitionCount: number;
+}
+
+export interface ConsumerGroupOffset {
+  topic: string;
+  partition: number;
+  offset: string;
+  high: string;
+  lag: number;
+  /** memberId of the member currently consuming this partition, if any. */
+  ownerMemberId?: string;
+  /** clientId of the owner — convenience for display. */
+  ownerClientId?: string;
+}
+
 export interface ConsumerGroupDetail {
   groupId: string;
   state: string;
-  members: {
-    memberId: string;
-    clientId: string;
-    clientHost: string;
-  }[];
-  offsets: {
-    topic: string;
-    partition: number;
-    offset: string;
-    high: string;
-    lag: number;
-  }[];
+  protocolType?: string;
+  protocol?: string;
+  members: ConsumerGroupMember[];
+  offsets: ConsumerGroupOffset[];
+}
+
+function decodeMemberAssignment(buf: Buffer): ConsumerGroupMemberAssignment[] {
+  if (!buf || buf.length === 0) return [];
+  try {
+    // kafkajs exports the binary codec for the consumer protocol's
+    // memberAssignment Buffer.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { AssignerProtocol } = require("kafkajs") as typeof import("kafkajs");
+    const decoded = AssignerProtocol.MemberAssignment.decode(buf);
+    if (!decoded) return [];
+    return Object.entries(decoded.assignment).map(([topic, partitions]) => ({
+      topic,
+      partitions: [...(partitions as number[])].sort((a, b) => a - b),
+    }));
+  } catch {
+    return [];
+  }
 }
 
 export async function describeConsumerGroup(
@@ -373,6 +504,37 @@ export async function describeConsumerGroup(
       }
     }
 
+    // Decode assignments once per member, then build an owner index keyed
+    // by topic/partition so we can stamp every offset row with its owner.
+    const enrichedMembers: ConsumerGroupMember[] = g.members.map((m) => {
+      const assignments = decodeMemberAssignment(
+        (m as unknown as { memberAssignment?: Buffer }).memberAssignment ??
+          Buffer.alloc(0),
+      );
+      const partitionCount = assignments.reduce(
+        (s, a) => s + a.partitions.length,
+        0,
+      );
+      return {
+        memberId: m.memberId,
+        clientId: m.clientId,
+        clientHost: m.clientHost,
+        assignments,
+        partitionCount,
+      };
+    });
+    const ownerIndex = new Map<string, { memberId: string; clientId: string }>();
+    for (const m of enrichedMembers) {
+      for (const a of m.assignments) {
+        for (const p of a.partitions) {
+          ownerIndex.set(`${a.topic}/${p}`, {
+            memberId: m.memberId,
+            clientId: m.clientId,
+          });
+        }
+      }
+    }
+
     const offsets: ConsumerGroupDetail["offsets"] = [];
     for (const t of offsetsRaw) {
       for (const p of t.partitions) {
@@ -381,23 +543,24 @@ export async function describeConsumerGroup(
         const off = p.offset;
         const offNum = Number(off);
         const highNum = Number(high);
+        const owner = ownerIndex.get(`${t.topic}/${p.partition}`);
         offsets.push({
           topic: t.topic,
           partition: p.partition,
           offset: off,
           high,
           lag: highNum >= 0 && offNum >= 0 ? Math.max(0, highNum - offNum) : 0,
+          ownerMemberId: owner?.memberId,
+          ownerClientId: owner?.clientId,
         });
       }
     }
     return {
       groupId,
       state: g.state,
-      members: g.members.map((m) => ({
-        memberId: m.memberId,
-        clientId: m.clientId,
-        clientHost: m.clientHost,
-      })),
+      protocolType: g.protocolType,
+      protocol: g.protocol,
+      members: enrichedMembers,
       offsets,
     };
   } finally {
@@ -983,6 +1146,188 @@ export async function listConsumerGroupsWithLag(
         };
       })
       .sort((a, b) => b.totalLag - a.totalLag);
+  } finally {
+    await admin.disconnect().catch(() => undefined);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Operational actions on consumer groups
+//   - cloneConsumerGroup  : copy committed offsets from src → dst (new group)
+//   - skipPartitionOffset : advance one (topic, partition) by N (poison-skip)
+//   - importGroupOffsets  : commit a {topic, partition, offset}[] snapshot
+//   - bulkDeleteGroups    : delete a set of groups in one admin call
+// All routed through commitGroupOffsetsClean per topic so we never leave
+// phantom consumer members behind.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface OffsetSnapshotEntry {
+  topic: string;
+  partition: number;
+  offset: string;
+}
+
+async function fetchGroupOffsetsRaw(
+  config: KafkaConfig,
+  groupId: string,
+): Promise<OffsetSnapshotEntry[]> {
+  const client = createKafkaClient(config);
+  const admin = client.admin();
+  await admin.connect();
+  try {
+    const raw = await admin.fetchOffsets({ groupId });
+    const out: OffsetSnapshotEntry[] = [];
+    for (const t of raw) {
+      for (const p of t.partitions) {
+        // -1 means "no committed offset" — skip those, otherwise the
+        // destination group would commit a garbage offset.
+        if (p.offset && p.offset !== "-1") {
+          out.push({ topic: t.topic, partition: p.partition, offset: p.offset });
+        }
+      }
+    }
+    return out;
+  } finally {
+    await admin.disconnect().catch(() => undefined);
+  }
+}
+
+export async function cloneConsumerGroup(
+  config: KafkaConfig,
+  sourceGroupId: string,
+  targetGroupId: string,
+): Promise<{ copied: number; topics: string[] }> {
+  if (!targetGroupId.trim()) throw new Error("Target group id is required");
+  if (sourceGroupId === targetGroupId)
+    throw new Error("Target must differ from source");
+  const entries = await fetchGroupOffsetsRaw(config, sourceGroupId);
+  if (entries.length === 0) {
+    throw new Error("Source group has no committed offsets to clone");
+  }
+  // Group by topic so each commitGroupOffsetsClean call is single-topic-scoped.
+  const byTopic = new Map<string, { partition: number; offset: string }[]>();
+  for (const e of entries) {
+    const arr = byTopic.get(e.topic) ?? [];
+    arr.push({ partition: e.partition, offset: e.offset });
+    byTopic.set(e.topic, arr);
+  }
+  for (const [topic, partitions] of byTopic) {
+    await commitGroupOffsetsClean(config, targetGroupId, topic, partitions);
+  }
+  return { copied: entries.length, topics: [...byTopic.keys()] };
+}
+
+export async function skipPartitionOffset(
+  config: KafkaConfig,
+  groupId: string,
+  topic: string,
+  partition: number,
+  count = 1,
+): Promise<{ from: string; to: string }> {
+  if (!Number.isFinite(count) || count < 1) {
+    throw new Error("Skip count must be a positive integer");
+  }
+  if (count > 1_000_000) {
+    throw new Error("Skip count is too large (max 1,000,000)");
+  }
+  const client = createKafkaClient(config);
+  const admin = client.admin();
+  await admin.connect();
+  let currentOffset: string;
+  let highWater: string;
+  try {
+    const [offsetsRaw, highWaters] = await Promise.all([
+      admin.fetchOffsets({ groupId }),
+      admin.fetchTopicOffsets(topic),
+    ]);
+    const topicEntry = offsetsRaw.find((t) => t.topic === topic);
+    const partitionEntry = topicEntry?.partitions.find(
+      (p) => p.partition === partition,
+    );
+    if (!partitionEntry || partitionEntry.offset === "-1") {
+      throw new Error(
+        `No committed offset for ${topic}[${partition}] — nothing to skip past`,
+      );
+    }
+    currentOffset = partitionEntry.offset;
+    const highEntry = highWaters.find((h) => h.partition === partition);
+    highWater = highEntry?.high ?? "-1";
+  } finally {
+    await admin.disconnect().catch(() => undefined);
+  }
+  // Don't skip past the high water mark — it's a no-op and would commit
+  // a future offset, blocking real consumption.
+  const target = String(
+    Math.min(Number(currentOffset) + count, Number(highWater)),
+  );
+  if (target === currentOffset) {
+    throw new Error(
+      "Already at the high water mark — nothing to skip past",
+    );
+  }
+  await commitGroupOffsetsClean(config, groupId, topic, [
+    { partition, offset: target },
+  ]);
+  return { from: currentOffset, to: target };
+}
+
+export async function importGroupOffsets(
+  config: KafkaConfig,
+  groupId: string,
+  snapshot: OffsetSnapshotEntry[],
+): Promise<{ committed: number; topics: string[] }> {
+  if (!Array.isArray(snapshot) || snapshot.length === 0) {
+    throw new Error("Snapshot is empty");
+  }
+  const byTopic = new Map<string, { partition: number; offset: string }[]>();
+  for (const e of snapshot) {
+    if (
+      typeof e.topic !== "string" ||
+      typeof e.partition !== "number" ||
+      typeof e.offset !== "string"
+    ) {
+      throw new Error("Snapshot entries must be {topic, partition, offset}");
+    }
+    const arr = byTopic.get(e.topic) ?? [];
+    arr.push({ partition: e.partition, offset: e.offset });
+    byTopic.set(e.topic, arr);
+  }
+  for (const [topic, partitions] of byTopic) {
+    await commitGroupOffsetsClean(config, groupId, topic, partitions);
+  }
+  return { committed: snapshot.length, topics: [...byTopic.keys()] };
+}
+
+export async function bulkDeleteConsumerGroups(
+  config: KafkaConfig,
+  groupIds: string[],
+): Promise<{
+  deleted: string[];
+  failed: { groupId: string; error: string }[];
+}> {
+  if (groupIds.length === 0) {
+    return { deleted: [], failed: [] };
+  }
+  const client = createKafkaClient(config);
+  const admin = client.admin();
+  await admin.connect();
+  try {
+    // admin.deleteGroups returns per-group results. We translate the
+    // shape so the UI gets clean { deleted, failed } arrays.
+    const results = await admin.deleteGroups(groupIds);
+    const deleted: string[] = [];
+    const failed: { groupId: string; error: string }[] = [];
+    for (const r of results) {
+      if (r.errorCode === 0 || r.errorCode == null) {
+        deleted.push(r.groupId);
+      } else {
+        failed.push({
+          groupId: r.groupId,
+          error: `errorCode ${r.errorCode}`,
+        });
+      }
+    }
+    return { deleted, failed };
   } finally {
     await admin.disconnect().catch(() => undefined);
   }
