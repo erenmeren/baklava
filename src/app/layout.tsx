@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Instrument_Serif, JetBrains_Mono } from "next/font/google";
+import localFont from "next/font/local";
 import { cookies } from "next/headers";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
@@ -11,21 +11,24 @@ import { BrandMark } from "@/components/brand-mark";
 import { ConnectionTabs } from "@/components/connection-tabs";
 import Link from "next/link";
 
-const geistSans = Geist({
+// Fonts are vendored into public/fonts/ so builds never reach out to
+// Google Fonts. Geist + JetBrains Mono ship as full upstream variable
+// fonts (latin + latin-ext both covered in a single file).
+// Instrument Serif lives in 4 subsetted files (latin / latin-ext × normal
+// / italic) and is declared as @font-face in globals.css because
+// next/font/local doesn't support per-face unicode-range.
+const geistSans = localFont({
+  src: "../../public/fonts/Geist-Variable.woff2",
   variable: "--font-geist-sans",
-  subsets: ["latin"],
+  display: "swap",
+  weight: "100 900",
 });
 
-const jetbrainsMono = JetBrains_Mono({
+const jetbrainsMono = localFont({
+  src: "../../public/fonts/JetBrainsMono-Variable.woff2",
   variable: "--font-jetbrains-mono",
-  subsets: ["latin"],
-});
-
-const instrumentSerif = Instrument_Serif({
-  variable: "--font-instrument-serif",
-  subsets: ["latin"],
-  weight: "400",
-  style: ["normal", "italic"],
+  display: "swap",
+  weight: "100 800",
 });
 
 export const metadata: Metadata = {
@@ -47,7 +50,7 @@ export default async function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${jetbrainsMono.variable} ${instrumentSerif.variable} ${themeClass} h-full antialiased`}
+      className={`${geistSans.variable} ${jetbrainsMono.variable} ${themeClass} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-background text-foreground">
         <ThemeProvider initialTheme={theme}>
