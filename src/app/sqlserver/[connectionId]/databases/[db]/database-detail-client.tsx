@@ -264,12 +264,15 @@ export function DatabaseDetailClient({ connectionId, database }: Props) {
                         className="border-t border-border/40 hover:bg-muted/30"
                       >
                         <td className="px-3 py-2 align-middle">
-                          <span className="font-mono text-xs truncate">
+                          <Link
+                            href={`/sqlserver/${connectionId}/databases/${encodeURIComponent(database)}/tables/${encodeURIComponent(t.schema)}/${encodeURIComponent(t.name)}`}
+                            className="font-mono text-xs truncate hover:text-brand hover:underline"
+                          >
                             <span className="text-muted-foreground">
                               {t.schema}.
                             </span>
                             {t.name}
-                          </span>
+                          </Link>
                         </td>
                         <td className="px-3 py-2 align-middle font-mono text-xs tabular-nums text-muted-foreground">
                           {formatRows(t.rows)}
