@@ -365,26 +365,7 @@ export function PostgresSidebar({ connectionId, defaultDatabase }: Props) {
 
   return (
     <div className="space-y-1 select-none">
-      <div className="px-2 py-1">
-        <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground inline-flex items-center gap-1.5">
-          <Server className="size-3" />
-          Server
-        </span>
-      </div>
-      <Link href={activityHref} className={serverLinkClass(activityActive)}>
-        <Activity className="size-3 shrink-0" />
-        <span className="truncate">Activity</span>
-      </Link>
-      <Link href={locksHref} className={serverLinkClass(locksActive)}>
-        <Lock className="size-3 shrink-0" />
-        <span className="truncate">Locks</span>
-      </Link>
-      <Link href={rolesHref} className={serverLinkClass(rolesActive)}>
-        <Shield className="size-3 shrink-0" />
-        <span className="truncate">Roles</span>
-      </Link>
-
-      <div className="flex items-center justify-between px-2 pt-3 pb-1">
+      <div className="flex items-center justify-between px-2 py-1">
         <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground inline-flex items-center gap-1.5">
           <Database className="size-3" />
           Databases
@@ -751,6 +732,25 @@ export function PostgresSidebar({ connectionId, defaultDatabase }: Props) {
           ))}
         </ul>
       )}
+
+      <div className="px-2 pt-3 pb-1">
+        <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground inline-flex items-center gap-1.5">
+          <Server className="size-3" />
+          Server
+        </span>
+      </div>
+      <Link href={activityHref} className={serverLinkClass(activityActive)}>
+        <Activity className="size-3 shrink-0" />
+        <span className="truncate">Activity</span>
+      </Link>
+      <Link href={locksHref} className={serverLinkClass(locksActive)}>
+        <Lock className="size-3 shrink-0" />
+        <span className="truncate">Locks</span>
+      </Link>
+      <Link href={rolesHref} className={serverLinkClass(rolesActive)}>
+        <Shield className="size-3 shrink-0" />
+        <span className="truncate">Roles</span>
+      </Link>
 
       {/* Dialogs */}
       {createTableTarget ? (
