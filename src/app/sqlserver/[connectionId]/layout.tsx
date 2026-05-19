@@ -6,7 +6,7 @@ import {
 import { getTech } from "@/lib/tech-catalog";
 import { requireConnection } from "@/lib/connections/server";
 import type { SqlServerConfig } from "@/lib/connections/types";
-import { Activity, Database } from "lucide-react";
+import { Activity, Database, Gauge, Terminal } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -33,7 +33,7 @@ export default async function SqlServerWorkspaceLayout({
         <SidebarSection>
           <SidebarLink
             href={`/sqlserver/${connectionId}`}
-            icon={<Activity className="size-4" />}
+            icon={<Gauge className="size-4" />}
             exact
           >
             Overview
@@ -43,6 +43,18 @@ export default async function SqlServerWorkspaceLayout({
             icon={<Database className="size-4" />}
           >
             Databases
+          </SidebarLink>
+          <SidebarLink
+            href={`/sqlserver/${connectionId}/query`}
+            icon={<Terminal className="size-4" />}
+          >
+            Query editor
+          </SidebarLink>
+          <SidebarLink
+            href={`/sqlserver/${connectionId}/activity`}
+            icon={<Activity className="size-4" />}
+          >
+            Activity
           </SidebarLink>
         </SidebarSection>
       }

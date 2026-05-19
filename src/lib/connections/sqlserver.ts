@@ -30,12 +30,13 @@ export interface SqlServerProbeResult {
 
 async function withPool<T>(
   config: SqlServerConfig,
-  fn: (pool: ConnectionPool) => Promise<T>
+  fn: (pool: ConnectionPool) => Promise<T>,
+  opts?: { database?: string; requestTimeoutMs?: number }
 ): Promise<T> {
   const pool = await sql.connect({
     server: config.host,
     port: config.port,
-    database: config.database || undefined,
+    database: opts?.database || config.database || undefined,
     user: config.user,
     password: config.password,
     options: {
@@ -43,7 +44,7 @@ async function withPool<T>(
       trustServerCertificate: config.trustServerCertificate,
     },
     connectionTimeout: 8000,
-    requestTimeout: 15000,
+    requestTimeout: opts?.requestTimeoutMs ?? 15000,
   });
   try {
     return await fn(pool);
@@ -321,5 +322,295 @@ export async function listSqlServerTables(
       },
       tables,
     };
+  });
+}
+
+// ─── Query editor: GO-aware batch execution ─────────────────────────────
+
+export interface SqlServerResultSet {
+  fields: string[];
+  rows: unknown[][];
+  rowCount: number;
+  truncated: boolean;
+}
+
+export interface SqlServerBatchResult {
+  /** The batch text that produced this result (trimmed). */
+  sql: string;
+  /** One entry per recordset the batch returned (a proc can emit several). */
+  resultSets: SqlServerResultSet[];
+  /** rowsAffected per statement in the batch. */
+  rowsAffected: number[];
+  /** SET STATISTICS IO/TIME + PRINT output emitted while running. */
+  messages: string[];
+  durationMs: number;
+  error?: string;
+}
+
+export interface SqlServerMultiResult {
+  batches: SqlServerBatchResult[];
+  totalDurationMs: number;
+}
+
+const MAX_RESULT_ROWS = 1000;
+
+/**
+ * Split a T-SQL script into batches on `GO` (the SSMS/sqlcmd batch
+ * separator), which the TDS protocol never sees — `mssql` will throw if you
+ * send it. A line of just `GO` (optionally `GO <count>` to repeat) ends a
+ * batch. `;` does NOT split batches. Respects single-quoted strings, bracket
+ * identifiers, and `--` / block comments so a `GO` inside those is ignored.
+ */
+export function splitGoBatches(script: string): Array<{ sql: string; count: number }> {
+  const lines = script.split(/\r?\n/);
+  const out: Array<{ sql: string; count: number }> = [];
+  let buf: string[] = [];
+  // Track block-comment depth across lines (T-SQL allows nested /* */).
+  let blockDepth = 0;
+
+  const isGoLine = (line: string): { go: boolean; count: number } => {
+    // GO only counts when the line — outside any block comment — is just
+    // `GO` with optional whitespace and an optional repeat count.
+    if (blockDepth > 0) return { go: false, count: 1 };
+    const m = line.match(/^\s*GO\s*(\d+)?\s*(?:--.*)?$/i);
+    if (!m) return { go: false, count: 1 };
+    return { go: true, count: m[1] ? Math.max(1, parseInt(m[1], 10)) : 1 };
+  };
+
+  // Update blockDepth for a line (rough scan; good enough to keep a stray
+  // GO inside /* */ from splitting).
+  const scanBlock = (line: string) => {
+    let i = 0;
+    while (i < line.length) {
+      if (blockDepth > 0) {
+        const close = line.indexOf("*/", i);
+        if (close === -1) return;
+        blockDepth -= 1;
+        i = close + 2;
+      } else {
+        const open = line.indexOf("/*", i);
+        const lineComment = line.indexOf("--", i);
+        if (open === -1) return;
+        if (lineComment !== -1 && lineComment < open) return; // rest is // comment
+        blockDepth += 1;
+        i = open + 2;
+      }
+    }
+  };
+
+  for (const line of lines) {
+    const { go, count } = isGoLine(line);
+    if (go) {
+      const sql = buf.join("\n").trim();
+      if (sql) out.push({ sql, count });
+      buf = [];
+      continue;
+    }
+    buf.push(line);
+    scanBlock(line);
+  }
+  const tail = buf.join("\n").trim();
+  if (tail) out.push({ sql: tail, count: 1 });
+  return out;
+}
+
+/**
+ * Run a T-SQL script as a sequence of GO-delimited batches and return one
+ * result per batch. Errors are captured per-batch (execution continues).
+ * Optionally prepends SET STATISTICS IO/TIME so the messages stream carries
+ * the logical-reads / elapsed numbers developers compare rewrites with.
+ */
+export async function runSqlServerScript(
+  config: SqlServerConfig,
+  database: string | undefined,
+  script: string,
+  opts: { statistics?: boolean } = {},
+): Promise<SqlServerMultiResult> {
+  const db = database && SQLSERVER_DB_NAME_RE.test(database) ? database : undefined;
+  return withPool(
+    config,
+    async (pool) => {
+      const overall = Date.now();
+      const batches = splitGoBatches(script);
+      const out: SqlServerBatchResult[] = [];
+      for (const batch of batches) {
+        for (let rep = 0; rep < batch.count; rep++) {
+          const start = Date.now();
+          const messages: string[] = [];
+          const req = pool.request();
+          // mssql's Request extends EventEmitter and emits 'info' for PRINT /
+          // STATISTICS output, but the bundled types don't declare `.on`.
+          (req as unknown as {
+            on: (ev: string, cb: (info: { message?: string }) => void) => void;
+          }).on("info", (info) => {
+            if (info?.message) messages.push(info.message);
+          });
+          const text = opts.statistics
+            ? `SET STATISTICS IO ON; SET STATISTICS TIME ON;\n${batch.sql}`
+            : batch.sql;
+          try {
+            const res = await req.batch(text);
+            // mssql exposes recordsets as an array; each has a `columns` map.
+            const recordsets = (res.recordsets ?? []) as unknown as Array<
+              Array<Record<string, unknown>> & {
+                columns?: Record<string, unknown>;
+              }
+            >;
+            const resultSets: SqlServerResultSet[] = recordsets.map((rs) => {
+              const fields = rs.columns ? Object.keys(rs.columns) : rs[0] ? Object.keys(rs[0]) : [];
+              const sliced = rs.slice(0, MAX_RESULT_ROWS);
+              return {
+                fields,
+                rows: sliced.map((row) => fields.map((f) => row[f] ?? null)),
+                rowCount: rs.length,
+                truncated: rs.length > sliced.length,
+              };
+            });
+            out.push({
+              sql: batch.sql,
+              resultSets,
+              rowsAffected: res.rowsAffected ?? [],
+              messages,
+              durationMs: Date.now() - start,
+            });
+          } catch (err) {
+            out.push({
+              sql: batch.sql,
+              resultSets: [],
+              rowsAffected: [],
+              messages,
+              durationMs: Date.now() - start,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+        }
+      }
+      return { batches: out, totalDurationMs: Date.now() - overall };
+    },
+    { database: db, requestTimeoutMs: 60_000 },
+  );
+}
+
+// ─── Activity / sessions ────────────────────────────────────────────────
+
+export interface SqlServerSession {
+  sessionId: number;
+  loginName: string | null;
+  hostName: string | null;
+  programName: string | null;
+  databaseName: string | null;
+  status: string | null;
+  command: string | null;
+  waitType: string | null;
+  waitClass: string;
+  blockingSessionId: number | null;
+  cpuTime: number;
+  reads: number;
+  writes: number;
+  openTransactions: number;
+  lastRequestStart: string | null;
+  elapsedMs: number | null;
+  text: string | null;
+  isUserProcess: boolean;
+}
+
+/** Bucket a SQL Server wait_type into a coarse class for grouping. */
+export function classifyWait(waitType: string | null): string {
+  if (!waitType) return "Running";
+  const w = waitType.toUpperCase();
+  if (w.startsWith("LCK_")) return "Lock";
+  if (w.startsWith("PAGEIOLATCH") || w.startsWith("IO_") || w.startsWith("WRITELOG") || w.startsWith("ASYNC_IO"))
+    return "IO";
+  if (w.startsWith("CXPACKET") || w.startsWith("CXCONSUMER") || w.startsWith("EXCHANGE"))
+    return "Parallelism";
+  if (w.startsWith("PAGELATCH") || w.startsWith("LATCH_")) return "Latch";
+  if (w.startsWith("RESOURCE_SEMAPHORE") || w.startsWith("CMEMTHREAD")) return "Memory";
+  if (w.startsWith("ASYNC_NETWORK_IO") || w.startsWith("NETWORK")) return "Network";
+  if (w.startsWith("SOS_SCHEDULER_YIELD") || w.startsWith("THREADPOOL")) return "CPU";
+  return "Other";
+}
+
+export async function listSqlServerActivity(
+  config: SqlServerConfig,
+): Promise<SqlServerSession[]> {
+  return withPool(config, async (pool) => {
+    const res = await pool.request().query<{
+      session_id: number;
+      login_name: string | null;
+      host_name: string | null;
+      program_name: string | null;
+      database_name: string | null;
+      status: string | null;
+      command: string | null;
+      wait_type: string | null;
+      blocking_session_id: number | null;
+      cpu_time: number | null;
+      reads: number | null;
+      writes: number | null;
+      open_transaction_count: number | null;
+      last_request_start_time: Date | null;
+      elapsed_ms: number | null;
+      sql_text: string | null;
+      is_user_process: boolean;
+    }>(`
+      SELECT
+        s.session_id,
+        s.login_name,
+        s.host_name,
+        s.program_name,
+        DB_NAME(COALESCE(r.database_id, s.database_id)) AS database_name,
+        COALESCE(r.status, s.status) AS status,
+        r.command,
+        r.wait_type,
+        NULLIF(r.blocking_session_id, 0) AS blocking_session_id,
+        s.cpu_time,
+        s.reads,
+        s.writes,
+        s.open_transaction_count,
+        s.last_request_start_time,
+        r.total_elapsed_time AS elapsed_ms,
+        t.text AS sql_text,
+        CAST(s.is_user_process AS BIT) AS is_user_process
+      FROM sys.dm_exec_sessions s
+      LEFT JOIN sys.dm_exec_requests r ON r.session_id = s.session_id
+      OUTER APPLY sys.dm_exec_sql_text(r.sql_handle) t
+      WHERE s.session_id <> @@SPID
+      ORDER BY s.is_user_process DESC, r.cpu_time DESC, s.cpu_time DESC
+    `);
+    return res.recordset.map((row) => ({
+      sessionId: Number(row.session_id),
+      loginName: row.login_name ?? null,
+      hostName: row.host_name ?? null,
+      programName: row.program_name ?? null,
+      databaseName: row.database_name ?? null,
+      status: row.status ?? null,
+      command: row.command ?? null,
+      waitType: row.wait_type ?? null,
+      waitClass: row.wait_type ? classifyWait(row.wait_type) : (row.status === "running" ? "CPU" : "Idle"),
+      blockingSessionId: row.blocking_session_id != null ? Number(row.blocking_session_id) : null,
+      cpuTime: Number(row.cpu_time ?? 0),
+      reads: Number(row.reads ?? 0),
+      writes: Number(row.writes ?? 0),
+      openTransactions: Number(row.open_transaction_count ?? 0),
+      lastRequestStart: row.last_request_start_time
+        ? new Date(row.last_request_start_time).toISOString()
+        : null,
+      elapsedMs: row.elapsed_ms != null ? Number(row.elapsed_ms) : null,
+      text: row.sql_text ?? null,
+      isUserProcess: Boolean(row.is_user_process),
+    }));
+  });
+}
+
+/** KILL a session by SPID. SPID is validated as an integer (no parameterization for KILL). */
+export async function killSqlServerSession(
+  config: SqlServerConfig,
+  spid: number,
+): Promise<void> {
+  if (!Number.isInteger(spid) || spid <= 0) {
+    throw new Error("Invalid session id");
+  }
+  await withPool(config, async (pool) => {
+    await pool.request().batch(`KILL ${spid}`);
   });
 }
