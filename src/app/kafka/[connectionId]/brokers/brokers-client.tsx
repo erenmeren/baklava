@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Sparkline } from "@/components/workspace/sparkline";
 import {
   Table,
   TableBody,
@@ -69,18 +70,53 @@ function fmtBytes(n: number | undefined): string {
   return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
+const ACTIVITY_RING_SIZE = 60; // 60 × 5s = 5 min
+const ACTIVITY_POLL_MS = 5_000;
+
 export function BrokersClient({ connectionId }: Props) {
   const [brokers, setBrokers] = useState<Broker[] | null>(null);
   const [health, setHealth] = useState<HealthSnapshot | null>(null);
   const [healthLoading, setHealthLoading] = useState(false);
+  // Per-broker activity series — bytes-written rate computed as a delta
+  // between successive totalLogBytes samples. No external metric backend,
+  // so this is the cheapest "is this broker busy" signal we can show.
+  const [activity, setActivity] = useState<Map<number, number[]>>(new Map());
+  const prevBytesRef = useRef<Map<number, { at: number; bytes: number }>>(
+    new Map(),
+  );
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/kafka/${connectionId}/brokers`, {
       cache: "no-store",
     });
     const data = await res.json();
-    if (res.ok) setBrokers(data.brokers as Broker[]);
-    else toast.error("Could not load", { description: data.error });
+    if (res.ok) {
+      const fresh = data.brokers as Broker[];
+      setBrokers(fresh);
+      // Update activity series from delta of totalLogBytes.
+      const now = Date.now();
+      setActivity((prev) => {
+        const next = new Map(prev);
+        for (const b of fresh) {
+          const cur = b.totalLogBytes ?? 0;
+          const last = prevBytesRef.current.get(b.nodeId);
+          let rate = 0;
+          if (last && now > last.at) {
+            const delta = cur - last.bytes;
+            const dt = (now - last.at) / 1000;
+            rate = delta > 0 ? delta / dt : 0;
+          }
+          prevBytesRef.current.set(b.nodeId, { at: now, bytes: cur });
+          const series = [...(next.get(b.nodeId) ?? []), rate];
+          if (series.length > ACTIVITY_RING_SIZE)
+            series.splice(0, series.length - ACTIVITY_RING_SIZE);
+          next.set(b.nodeId, series);
+        }
+        return next;
+      });
+    } else {
+      toast.error("Could not load", { description: data.error });
+    }
   }, [connectionId]);
 
   const loadHealth = useCallback(async () => {
@@ -100,6 +136,10 @@ export function BrokersClient({ connectionId }: Props) {
   useEffect(() => {
     void load();
     void loadHealth();
+    // Keep the activity ring buffer ticking so the per-broker sparklines
+    // grow even when the user just sits on the page.
+    const id = setInterval(load, ACTIVITY_POLL_MS);
+    return () => clearInterval(id);
   }, [load, loadHealth]);
 
   const maxLog =
@@ -261,6 +301,7 @@ export function BrokersClient({ connectionId }: Props) {
                   <TableHead className="text-right">Partitions</TableHead>
                   <TableHead className="text-right">Leaders</TableHead>
                   <TableHead className="text-right">Disk used</TableHead>
+                  <TableHead>Activity</TableHead>
                   <TableHead></TableHead>
                 </TableRow>
               </TableHeader>
@@ -306,6 +347,33 @@ export function BrokersClient({ connectionId }: Props) {
                             />
                           </div>
                         </div>
+                      </TableCell>
+                      <TableCell>
+                        {(() => {
+                          const series = activity.get(b.nodeId) ?? [];
+                          const latest = series[series.length - 1] ?? 0;
+                          return (
+                            <div className="inline-flex items-center gap-2">
+                              <Sparkline
+                                values={series}
+                                tone="neutral"
+                                width={92}
+                                height={20}
+                                className={cn(
+                                  latest > 0
+                                    ? "text-sky-500"
+                                    : "text-muted-foreground/40",
+                                )}
+                                ariaLabel={`broker ${b.nodeId} write activity`}
+                              />
+                              <span className="font-mono text-[10px] tabular-nums text-muted-foreground w-14 text-right">
+                                {latest > 0
+                                  ? `${fmtBytes(latest)}/s`
+                                  : "idle"}
+                              </span>
+                            </div>
+                          );
+                        })()}
                       </TableCell>
                       <TableCell>
                         <div className="inline-flex items-center gap-1">
