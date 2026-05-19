@@ -1027,3 +1027,283 @@ export function buildSqlServerTableDDL(detail: SqlServerTableDetail): string {
 
   return [create, ...indexDdl, ...fkDdl].join("\n\n");
 }
+
+// ─── Modules (procs/functions) + execution plan (Phase C) ────────────────
+
+export interface SqlServerParam {
+  name: string;
+  type: string;
+  isOutput: boolean;
+  hasDefault: boolean;
+}
+
+export interface SqlServerModule {
+  schema: string;
+  name: string;
+  kind: string;
+  definition: string | null;
+  params: SqlServerParam[];
+}
+
+export async function getSqlServerModule(
+  config: SqlServerConfig,
+  database: string,
+  schema: string,
+  name: string,
+): Promise<SqlServerModule> {
+  validateSqlServerIdentifier(database, "database name");
+  validateSqlServerIdentifier(schema, "schema name");
+  validateSqlServerIdentifier(name, "object name");
+  return withPool(
+    config,
+    async (pool) => {
+      const objId = `OBJECT_ID('${schema}.${name}')`;
+      const [defR, parR, kindR] = await Promise.all([
+        pool.request().query<{ definition: string | null }>(
+          `SELECT OBJECT_DEFINITION(${objId}) AS definition`,
+        ),
+        pool.request().query<{
+          name: string;
+          type_name: string;
+          is_output: boolean;
+          has_default_value: boolean;
+        }>(`
+          SELECT p.name, TYPE_NAME(p.user_type_id) AS type_name,
+                 p.is_output, p.has_default_value
+          FROM sys.parameters p
+          WHERE p.object_id = ${objId}
+          ORDER BY p.parameter_id
+        `),
+        pool.request().query<{ type: string }>(
+          `SELECT RTRIM(type) AS type FROM sys.objects WHERE object_id = ${objId}`,
+        ),
+      ]);
+      const typeCode = kindR.recordset[0]?.type ?? "P";
+      const kind =
+        typeCode === "P" ? "proc"
+        : typeCode === "FN" ? "scalar_fn"
+        : typeCode === "IF" || typeCode === "TF" ? "table_fn"
+        : typeCode === "TR" ? "trigger"
+        : typeCode === "V" ? "view"
+        : typeCode;
+      return {
+        schema,
+        name,
+        kind,
+        definition: defR.recordset[0]?.definition ?? null,
+        params: parR.recordset.map((p) => ({
+          name: String(p.name),
+          type: String(p.type_name),
+          isOutput: Boolean(p.is_output),
+          hasDefault: Boolean(p.has_default_value),
+        })),
+      };
+    },
+    { database },
+  );
+}
+
+export interface PlanNode {
+  physicalOp: string;
+  logicalOp: string;
+  /** Estimated cumulative subtree cost. */
+  subtreeCost: number;
+  estimateRows: number;
+  /** Object touched (table/index), best-effort. */
+  object: string | null;
+  /** Percentage of total plan cost this node alone contributes. */
+  costPct: number;
+  children: PlanNode[];
+}
+
+export interface MissingIndex {
+  impact: number;
+  statement: string;
+  createStatement: string;
+}
+
+export interface SqlServerPlan {
+  root: PlanNode | null;
+  totalCost: number;
+  missingIndexes: MissingIndex[];
+  rawXml: string;
+}
+
+interface RawRelOp {
+  PhysicalOp?: string;
+  LogicalOp?: string;
+  EstimatedTotalSubtreeCost?: string | number;
+  EstimateRows?: string | number;
+  RelOp?: RawRelOp | RawRelOp[];
+  [k: string]: unknown;
+}
+
+/** Get the estimated query plan via SHOWPLAN_XML (no execution) and parse it. */
+export async function getSqlServerEstimatedPlan(
+  config: SqlServerConfig,
+  database: string | undefined,
+  query: string,
+): Promise<SqlServerPlan> {
+  const { XMLParser } = await import("fast-xml-parser");
+  const db = database && SQLSERVER_DB_NAME_RE.test(database) ? database : undefined;
+  return withPool(
+    config,
+    async (pool) => {
+      // SHOWPLAN_XML must be its own batch; the plan comes back as a single
+      // XML column from the *next* batch.
+      await pool.request().batch("SET SHOWPLAN_XML ON");
+      const res = await pool.request().batch(query);
+      await pool.request().batch("SET SHOWPLAN_XML OFF").catch(() => undefined);
+      const row = (res.recordset?.[0] ?? {}) as Record<string, unknown>;
+      const xml = String(Object.values(row)[0] ?? "");
+      if (!xml) {
+        return { root: null, totalCost: 0, missingIndexes: [], rawXml: "" };
+      }
+
+      const parser = new XMLParser({
+        ignoreAttributes: false,
+        attributeNamePrefix: "",
+        isArray: (name) => name === "RelOp" || name === "MissingIndexGroup" || name === "MissingIndex" || name === "Column",
+      });
+      const parsed = parser.parse(xml) as Record<string, unknown>;
+
+      // Drill to the first statement's QueryPlan.RelOp.
+      const findFirst = (obj: unknown, key: string): unknown => {
+        if (!obj || typeof obj !== "object") return undefined;
+        const rec = obj as Record<string, unknown>;
+        if (key in rec) return rec[key];
+        for (const v of Object.values(rec)) {
+          const found = findFirst(v, key);
+          if (found !== undefined) return found;
+        }
+        return undefined;
+      };
+
+      const queryPlan = findFirst(parsed, "QueryPlan") as Record<string, unknown> | undefined;
+      const rootRaw = queryPlan
+        ? ((Array.isArray(queryPlan.RelOp) ? queryPlan.RelOp[0] : queryPlan.RelOp) as RawRelOp | undefined)
+        : undefined;
+
+      const totalCost = rootRaw ? Number(rootRaw.EstimatedTotalSubtreeCost ?? 0) : 0;
+
+      const convert = (raw: RawRelOp): PlanNode => {
+        const children = raw.RelOp
+          ? (Array.isArray(raw.RelOp) ? raw.RelOp : [raw.RelOp]).map(convert)
+          : [];
+        const subtreeCost = Number(raw.EstimatedTotalSubtreeCost ?? 0);
+        const childCost = children.reduce((s, c) => s + c.subtreeCost, 0);
+        const ownCost = Math.max(0, subtreeCost - childCost);
+        // best-effort object name from any nested Object node
+        const objNode = findFirst(raw, "Object") as Record<string, unknown> | Record<string, unknown>[] | undefined;
+        const first = Array.isArray(objNode) ? objNode[0] : objNode;
+        const object = first
+          ? [first.Schema, first.Table, first.Index].filter(Boolean).map(String).join(".") || null
+          : null;
+        return {
+          physicalOp: String(raw.PhysicalOp ?? "?"),
+          logicalOp: String(raw.LogicalOp ?? ""),
+          subtreeCost,
+          estimateRows: Number(raw.EstimateRows ?? 0),
+          object,
+          costPct: totalCost > 0 ? (ownCost / totalCost) * 100 : 0,
+          children,
+        };
+      };
+
+      const root = rootRaw ? convert(rootRaw) : null;
+
+      // Missing indexes.
+      const missingIndexes: MissingIndex[] = [];
+      const miGroup = findFirst(parsed, "MissingIndexes") as Record<string, unknown> | undefined;
+      if (miGroup) {
+        const groups = miGroup.MissingIndexGroup;
+        const arr = Array.isArray(groups) ? groups : groups ? [groups] : [];
+        for (const g of arr as Record<string, unknown>[]) {
+          const impact = Number(g.Impact ?? 0);
+          const mi = Array.isArray(g.MissingIndex) ? g.MissingIndex[0] : g.MissingIndex;
+          if (!mi) continue;
+          const m = mi as Record<string, unknown>;
+          const schema = String(m.Schema ?? "").replace(/[[\]]/g, "");
+          const table = String(m.Table ?? "").replace(/[[\]]/g, "");
+          // Build a CREATE INDEX from the ColumnGroups (Usage EQUALITY/INEQUALITY/INCLUDE).
+          const cgs = Array.isArray(m.ColumnGroup) ? m.ColumnGroup : m.ColumnGroup ? [m.ColumnGroup] : [];
+          const key: string[] = [];
+          const include: string[] = [];
+          for (const cg of cgs as Record<string, unknown>[]) {
+            const usage = String(cg.Usage ?? "");
+            const cols = Array.isArray(cg.Column) ? cg.Column : cg.Column ? [cg.Column] : [];
+            for (const c of cols as Record<string, unknown>[]) {
+              const name = String(c.Name ?? "").replace(/[[\]]/g, "");
+              if (usage === "INCLUDE") include.push(name);
+              else key.push(name);
+            }
+          }
+          const createStatement = `CREATE NONCLUSTERED INDEX [IX_${table}_missing] ON [${schema}].[${table}] (${key
+            .map((c) => `[${c}]`)
+            .join(", ")})${include.length ? ` INCLUDE (${include.map((c) => `[${c}]`).join(", ")})` : ""};`;
+          missingIndexes.push({
+            impact,
+            statement: `${schema}.${table}`,
+            createStatement,
+          });
+        }
+      }
+
+      return { root, totalCost, missingIndexes, rawXml: xml };
+    },
+    { database: db, requestTimeoutMs: 30_000 },
+  );
+}
+
+export interface ExpensiveQuery {
+  text: string;
+  executionCount: number;
+  totalWorkerTimeMs: number;
+  avgWorkerTimeMs: number;
+  totalLogicalReads: number;
+  avgLogicalReads: number;
+  lastExecution: string | null;
+}
+
+/** Top queries by total CPU from the plan cache (the "what did my ORM do" view). */
+export async function getSqlServerExpensiveQueries(
+  config: SqlServerConfig,
+): Promise<ExpensiveQuery[]> {
+  return withPool(config, async (pool) => {
+    const res = await pool.request().query<{
+      text: string | null;
+      execution_count: number;
+      total_worker_time: number;
+      total_logical_reads: number;
+      last_execution_time: Date | null;
+    }>(`
+      SELECT TOP 50
+        SUBSTRING(t.text, (qs.statement_start_offset/2)+1,
+          ((CASE qs.statement_end_offset WHEN -1 THEN DATALENGTH(t.text)
+            ELSE qs.statement_end_offset END - qs.statement_start_offset)/2)+1) AS text,
+        qs.execution_count,
+        qs.total_worker_time,
+        qs.total_logical_reads,
+        qs.last_execution_time
+      FROM sys.dm_exec_query_stats qs
+      CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) t
+      ORDER BY qs.total_worker_time DESC
+    `);
+    return res.recordset.map((r) => {
+      const count = Number(r.execution_count) || 1;
+      const workerUs = Number(r.total_worker_time ?? 0); // microseconds
+      const reads = Number(r.total_logical_reads ?? 0);
+      return {
+        text: (r.text ?? "").trim(),
+        executionCount: count,
+        totalWorkerTimeMs: workerUs / 1000,
+        avgWorkerTimeMs: workerUs / 1000 / count,
+        totalLogicalReads: reads,
+        avgLogicalReads: reads / count,
+        lastExecution: r.last_execution_time
+          ? new Date(r.last_execution_time).toISOString()
+          : null,
+      };
+    });
+  });
+}

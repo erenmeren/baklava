@@ -13,8 +13,10 @@ import {
   Check,
   Loader2,
   Play,
+  Sparkles,
   Terminal,
 } from "lucide-react";
+import { PlanViewer, type SqlServerPlan } from "@/components/sqlserver/plan-viewer";
 
 interface ResultSet {
   fields: string[];
@@ -52,7 +54,10 @@ export function QueryEditorClient({ connectionId, defaultDatabase }: Props) {
   const [connError, setConnError] = useState<string | null>(null);
   const [activeBatch, setActiveBatch] = useState(0);
   const [withStats, setWithStats] = useState(false);
-  const [tab, setTab] = useState<"results" | "messages">("results");
+  const [tab, setTab] = useState<"results" | "messages" | "plan">("results");
+  const [plan, setPlan] = useState<SqlServerPlan | null>(null);
+  const [planLoading, setPlanLoading] = useState(false);
+  const [planError, setPlanError] = useState<string | null>(null);
 
   useEffect(() => {
     try {
@@ -108,6 +113,32 @@ export function QueryEditorClient({ connectionId, defaultDatabase }: Props) {
       setPhase("err");
     }
   }, [connectionId, sqlText, defaultDatabase, withStats]);
+
+  const explain = useCallback(async () => {
+    const raw = sqlText.trim();
+    if (!raw) return;
+    setPlanLoading(true);
+    setPlanError(null);
+    setPlan(null);
+    setTab("plan");
+    try {
+      const res = await fetch(`/api/sqlserver/${connectionId}/plan`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ sql: raw, database: defaultDatabase }),
+      });
+      const data = await res.json();
+      if (data.error && data.root === undefined) {
+        setPlanError(data.error);
+      } else {
+        setPlan(data as SqlServerPlan);
+      }
+    } catch (e) {
+      setPlanError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPlanLoading(false);
+    }
+  }, [connectionId, sqlText, defaultDatabase]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -167,6 +198,20 @@ export function QueryEditorClient({ connectionId, defaultDatabase }: Props) {
           </label>
           <Button
             size="sm"
+            variant="outline"
+            onClick={explain}
+            disabled={planLoading || phase === "running"}
+            className="gap-1.5"
+          >
+            {planLoading ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <Sparkles className="size-3.5" />
+            )}
+            Explain
+          </Button>
+          <Button
+            size="sm"
             onClick={execute}
             disabled={phase === "running"}
             className="gap-1.5"
@@ -218,10 +263,10 @@ export function QueryEditorClient({ connectionId, defaultDatabase }: Props) {
           </div>
         ) : null}
 
-        {result ? (
+        {result || plan || planLoading || planError ? (
           <div className="flex-1 min-h-0 flex flex-col rounded-lg border border-border/60 overflow-hidden">
             {/* Batch strip (only when >1 batch) */}
-            {result.batches.length > 1 ? (
+            {result && result.batches.length > 1 ? (
               <div className="border-b border-border/40 px-1.5 py-1 flex items-center gap-0.5 overflow-x-auto bg-muted/20">
                 <span className="text-[10px] uppercase tracking-wider font-mono text-muted-foreground mr-2 ml-1">
                   Batches
@@ -258,7 +303,7 @@ export function QueryEditorClient({ connectionId, defaultDatabase }: Props) {
 
             {/* Sub-tabs */}
             <div className="flex items-center gap-1 border-b border-border/40 px-2 py-1">
-              {(["results", "messages"] as const).map((t) => (
+              {(["results", "messages", "plan"] as const).map((t) => (
                 <button
                   key={t}
                   type="button"
@@ -274,6 +319,10 @@ export function QueryEditorClient({ connectionId, defaultDatabase }: Props) {
                     <span className="inline-flex items-center gap-1">
                       <Terminal className="size-3" /> Messages
                     </span>
+                  ) : t === "plan" ? (
+                    <span className="inline-flex items-center gap-1">
+                      <Sparkles className="size-3" /> Plan
+                    </span>
                   ) : (
                     "Results"
                   )}
@@ -282,7 +331,9 @@ export function QueryEditorClient({ connectionId, defaultDatabase }: Props) {
             </div>
 
             <div className="flex-1 min-h-0 overflow-auto">
-              {tab === "results" ? (
+              {tab === "plan" ? (
+                <PlanViewer plan={plan} loading={planLoading} error={planError} />
+              ) : tab === "results" ? (
                 active?.error ? (
                   <div className="p-4 text-sm text-rose-500 font-mono whitespace-pre-wrap">
                     {active.error}

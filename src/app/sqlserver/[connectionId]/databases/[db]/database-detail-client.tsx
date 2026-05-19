@@ -188,6 +188,7 @@ export function DatabaseDetailClient({ connectionId, database }: Props) {
       <Tabs value={tab} onValueChange={setTab} className="h-full flex flex-col">
         <TabsList>
           <TabsTrigger value="tables">Tables</TabsTrigger>
+          <TabsTrigger value="programmability">Programmability</TabsTrigger>
           <TabsTrigger value="info">Info</TabsTrigger>
         </TabsList>
 
@@ -304,6 +305,10 @@ export function DatabaseDetailClient({ connectionId, database }: Props) {
           )}
         </TabsContent>
 
+        <TabsContent value="programmability" className="pt-4">
+          <ProgrammabilityPanel connectionId={connectionId} database={database} />
+        </TabsContent>
+
         <TabsContent value="info" className="pt-4">
           {data === null ? (
             <Skeleton className="h-40 w-full max-w-xl" />
@@ -406,5 +411,85 @@ function SortableTh({
         />
       </button>
     </th>
+  );
+}
+
+interface ObjectRow {
+  schema: string;
+  name: string;
+  kind: string;
+}
+
+const KIND_GROUP: Record<string, string> = {
+  view: "Views",
+  proc: "Stored procedures",
+  scalar_fn: "Functions",
+  table_fn: "Functions",
+  trigger: "Triggers",
+  synonym: "Synonyms",
+};
+
+function ProgrammabilityPanel({
+  connectionId,
+  database,
+}: {
+  connectionId: string;
+  database: string;
+}) {
+  const [objects, setObjects] = useState<ObjectRow[] | null>(null);
+
+  useEffect(() => {
+    void (async () => {
+      const res = await fetch(
+        `/api/sqlserver/${connectionId}/databases/${encodeURIComponent(database)}/objects`,
+        { cache: "no-store" },
+      );
+      const d = await res.json();
+      if (res.ok) setObjects(d.objects as ObjectRow[]);
+      else toast.error("Could not load objects", { description: d.error });
+    })();
+  }, [connectionId, database]);
+
+  if (!objects) return <Skeleton className="h-40 w-full" />;
+
+  const nonTable = objects.filter((o) => o.kind !== "table");
+  if (nonTable.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        No views, procedures, functions, or triggers.
+      </p>
+    );
+  }
+
+  const groups = new Map<string, ObjectRow[]>();
+  for (const o of nonTable) {
+    const g = KIND_GROUP[o.kind] ?? "Other";
+    const arr = groups.get(g) ?? [];
+    arr.push(o);
+    groups.set(g, arr);
+  }
+
+  return (
+    <div className="space-y-5">
+      {[...groups.entries()].map(([group, items]) => (
+        <div key={group}>
+          <h3 className="text-xs uppercase tracking-wider font-mono text-muted-foreground mb-2">
+            {group} ({items.length})
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-1.5">
+            {items.map((o) => (
+              <Link
+                key={`${o.schema}.${o.name}.${o.kind}`}
+                href={`/sqlserver/${connectionId}/databases/${encodeURIComponent(database)}/modules/${encodeURIComponent(o.schema)}/${encodeURIComponent(o.name)}`}
+                className="rounded-md border border-border/60 bg-card/40 px-3 py-1.5 font-mono text-xs hover:border-border hover:text-brand transition-colors truncate"
+              >
+                <span className="text-muted-foreground">{o.schema}.</span>
+                {o.name}
+              </Link>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
