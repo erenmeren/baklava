@@ -14,6 +14,7 @@ import { Switch } from "@/components/ui/switch";
 import {
   Sheet,
   SheetContent,
+  SheetDescription,
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
@@ -1245,8 +1246,6 @@ function MessageDetailSheet({
   onProduceSimilar?: (template: ProduceTemplate) => void;
   base: string;
 }) {
-  // Partition-colored tone for the header accent rail + glow.
-  const tone = message ? partitionTone(message.partition) : null;
   return (
     <Sheet
       open={Boolean(message)}
@@ -1256,91 +1255,37 @@ function MessageDetailSheet({
     >
       <SheetContent
         side="right"
-        showCloseButton={false}
-        className="w-full data-[side=right]:sm:max-w-2xl flex flex-col gap-0 p-0"
+        className="w-full sm:max-w-xl flex flex-col gap-0 p-0"
       >
-        {/* Specimen-tag header. Three zones in one row:
-              ┃ TOPIC / topic name / mono tech-line     [Actions] [X]
-            The partition-colored rail on the left grounds the whole
-            header in that partition's identity. */}
-        <SheetHeader className="relative border-b border-border/60 px-5 pt-4 pb-3 gap-0">
-          {/* Soft partition-tinted glow at the right edge of the header */}
-          {tone ? (
-            <div
-              aria-hidden
-              className={cn(
-                "pointer-events-none absolute -right-12 -top-10 size-32 rounded-full blur-3xl opacity-40",
-                tone.dot,
-              )}
-            />
-          ) : null}
-
-          <div className="relative flex items-start gap-3">
-            {/* Partition accent rail */}
-            {tone ? (
-              <div
-                aria-hidden
-                className={cn("w-[3px] self-stretch rounded-full", tone.dot)}
-              />
-            ) : null}
-
-            {/* Title block */}
-            <div className="min-w-0 flex-1">
-              <div className="text-[10px] font-mono uppercase tracking-[0.22em] text-muted-foreground">
-                Topic
-              </div>
-              <SheetTitle
-                className="text-2xl leading-tight font-semibold truncate"
-                style={{
-                  fontFamily:
-                    "var(--font-instrument-serif), Georgia, serif",
-                }}
-              >
-                {topic}
-              </SheetTitle>
-              {message ? (
-                <div className="mt-1.5 flex items-center gap-2 text-[11px] font-mono text-muted-foreground tabular-nums flex-wrap">
-                  <PartitionBadge partition={message.partition} size="md" />
-                  <span>@{message.offset}</span>
-                  <span className="text-border" aria-hidden>·</span>
-                  <span>{formatTimeShort(message.timestamp)}</span>
-                </div>
-              ) : null}
-            </div>
-
-            {/* Right cluster — Actions + close. Same button height, equal
-                spacing, sits inside the flow so it never overlaps anything. */}
+        <SheetHeader className="p-5 pb-4 border-b border-border/60">
+          <SheetTitle className="text-base">Message</SheetTitle>
+          <SheetDescription className="text-xs">
+            <span className="font-mono">{topic}</span>
             {message ? (
-              <div className="flex items-center gap-1 shrink-0">
-                <DrawerActions
-                  message={message}
-                  topic={topic}
-                  base={base}
-                  onProduceSimilar={(t) => {
-                    onProduceSimilar?.(t);
-                    onClose();
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={onClose}
-                  aria-label="Close drawer"
-                  title="Close (esc)"
-                  className={cn(
-                    "inline-flex size-7 items-center justify-center rounded-md",
-                    "text-muted-foreground transition-colors",
-                    "hover:text-rose-600 hover:bg-rose-500/10",
-                    "dark:hover:text-rose-300",
-                  )}
-                >
-                  <X className="size-4" />
-                </button>
-              </div>
+              <>
+                {" · "}
+                <span className="font-mono">
+                  partition {message.partition} · offset {message.offset}
+                </span>
+              </>
             ) : null}
-          </div>
+          </SheetDescription>
         </SheetHeader>
+
         {message ? (
-          <div className="flex-1 min-h-0 overflow-auto p-5 space-y-5">
+          <div className="flex-1 min-h-0 overflow-auto">
+            <div className="px-5 pt-4 pb-3 border-b border-border/40 flex items-center justify-end">
+              <DrawerActions
+                message={message}
+                topic={topic}
+                base={base}
+                onProduceSimilar={(t) => {
+                  onProduceSimilar?.(t);
+                  onClose();
+                }}
+              />
+            </div>
+            <div className="p-5 space-y-5">
             <MetaRow label="Timestamp">
               <span className="font-mono text-xs">
                 {new Date(Number(message.timestamp)).toISOString()}
@@ -1404,6 +1349,7 @@ function MessageDetailSheet({
                   </table>
                 </div>
               )}
+            </div>
             </div>
           </div>
         ) : null}
