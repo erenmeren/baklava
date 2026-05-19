@@ -139,6 +139,7 @@ export function ModuleDetailClient({ connectionId, database, schema, name }: Pro
           {module && (module.kind === "proc" || module.kind === "table_fn") ? (
             <TabsTrigger value="execute">Execute</TabsTrigger>
           ) : null}
+          <TabsTrigger value="dependencies">Dependencies</TabsTrigger>
         </TabsList>
 
         <TabsContent value="body" className="pt-4">
@@ -260,7 +261,105 @@ export function ModuleDetailClient({ connectionId, database, schema, name }: Pro
             </>
           )}
         </TabsContent>
+
+        <TabsContent value="dependencies" className="pt-4">
+          <DependenciesPanel
+            connectionId={connectionId}
+            database={database}
+            schema={schema}
+            name={name}
+          />
+        </TabsContent>
       </Tabs>
     </WorkspacePage>
+  );
+}
+
+interface Dependency {
+  schema: string | null;
+  name: string;
+  type: string | null;
+}
+
+function DependenciesPanel({
+  connectionId,
+  database,
+  schema,
+  name,
+}: {
+  connectionId: string;
+  database: string;
+  schema: string;
+  name: string;
+}) {
+  const [deps, setDeps] = useState<{
+    referencing: Dependency[];
+    referenced: Dependency[];
+  } | null>(null);
+
+  useEffect(() => {
+    void (async () => {
+      const res = await fetch(
+        `/api/sqlserver/${connectionId}/databases/${encodeURIComponent(database)}/modules/${encodeURIComponent(schema)}/${encodeURIComponent(name)}/dependencies`,
+        { cache: "no-store" },
+      );
+      const d = await res.json();
+      if (res.ok) setDeps(d);
+      else toast.error("Could not load dependencies", { description: d.error });
+    })();
+  }, [connectionId, database, schema, name]);
+
+  if (!deps) return <Skeleton className="h-40 w-full" />;
+
+  const linkFor = (d: Dependency) =>
+    `/sqlserver/${connectionId}/databases/${encodeURIComponent(database)}/modules/${encodeURIComponent(d.schema ?? "dbo")}/${encodeURIComponent(d.name)}`;
+
+  return (
+    <div className="grid md:grid-cols-2 gap-6">
+      <div>
+        <h3 className="text-xs uppercase tracking-wider font-mono text-muted-foreground mb-2">
+          Referenced by ({deps.referencing.length})
+        </h3>
+        {deps.referencing.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Nothing references this.</p>
+        ) : (
+          <div className="space-y-1">
+            {deps.referencing.map((d, i) => (
+              <Link
+                key={i}
+                href={linkFor(d)}
+                className="block rounded-md border border-border/60 bg-card/40 px-3 py-1.5 font-mono text-xs hover:text-brand truncate"
+              >
+                <span className="text-muted-foreground">{d.schema ?? "dbo"}.</span>
+                {d.name}
+                {d.type ? (
+                  <span className="text-muted-foreground/60"> · {d.type.toLowerCase()}</span>
+                ) : null}
+              </Link>
+            ))}
+          </div>
+        )}
+      </div>
+      <div>
+        <h3 className="text-xs uppercase tracking-wider font-mono text-muted-foreground mb-2">
+          References ({deps.referenced.length})
+        </h3>
+        {deps.referenced.length === 0 ? (
+          <p className="text-sm text-muted-foreground">References nothing resolvable.</p>
+        ) : (
+          <div className="space-y-1">
+            {deps.referenced.map((d, i) => (
+              <div
+                key={i}
+                className="rounded-md border border-border/60 bg-card/40 px-3 py-1.5 font-mono text-xs truncate"
+              >
+                <span className="text-muted-foreground">{d.schema ?? "dbo"}.</span>
+                {d.name}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

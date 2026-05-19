@@ -1619,3 +1619,220 @@ export async function getSqlServerMissingIndexes(
     { database },
   );
 }
+
+// ─── Backup / restore (Phase E) ──────────────────────────────────────────
+
+export interface BackupHistoryRow {
+  type: string; // Full / Differential / Log
+  startTime: string | null;
+  finishTime: string | null;
+  sizeBytes: number;
+  device: string | null;
+}
+
+export async function getSqlServerBackupHistory(
+  config: SqlServerConfig,
+  database: string,
+): Promise<BackupHistoryRow[]> {
+  validateSqlServerIdentifier(database, "database name");
+  return withPool(config, async (pool) => {
+    const res = await pool
+      .request()
+      .input("db", (sql as unknown as { NVarChar: unknown }).NVarChar, database)
+      .query<{
+        type: string;
+        backup_start_date: Date | null;
+        backup_finish_date: Date | null;
+        backup_size: string | number | null;
+        physical_device_name: string | null;
+      }>(`
+        SELECT TOP 50
+          CASE bs.type WHEN 'D' THEN 'Full' WHEN 'I' THEN 'Differential'
+               WHEN 'L' THEN 'Log' ELSE bs.type END AS type,
+          bs.backup_start_date, bs.backup_finish_date, bs.backup_size,
+          bmf.physical_device_name
+        FROM msdb.dbo.backupset bs
+        LEFT JOIN msdb.dbo.backupmediafamily bmf ON bmf.media_set_id = bs.media_set_id
+        WHERE bs.database_name = @db
+        ORDER BY bs.backup_start_date DESC
+      `);
+    return res.recordset.map((r) => ({
+      type: String(r.type),
+      startTime: r.backup_start_date ? new Date(r.backup_start_date).toISOString() : null,
+      finishTime: r.backup_finish_date ? new Date(r.backup_finish_date).toISOString() : null,
+      sizeBytes: Number(r.backup_size ?? 0),
+      device: r.physical_device_name ?? null,
+    }));
+  });
+}
+
+/**
+ * Native BACKUP DATABASE to a server-side path (the SQL Server service
+ * account writes it, NOT the Baklava host). Path is validated to a
+ * conservative charset since it's spliced into the statement.
+ */
+export async function backupSqlServerDatabase(
+  config: SqlServerConfig,
+  database: string,
+  path: string,
+): Promise<void> {
+  validateSqlServerIdentifier(database, "database name");
+  // Allow typical Windows/Linux path chars; reject quotes/semicolons.
+  if (!/^[A-Za-z0-9_\-./\\: ]+$/.test(path) || path.includes("'")) {
+    throw new Error("Invalid backup path");
+  }
+  await withPool(
+    config,
+    async (pool) => {
+      await pool
+        .request()
+        .batch(
+          `BACKUP DATABASE [${database}] TO DISK = N'${path}' WITH COMPRESSION, CHECKSUM, INIT, STATS = 10`,
+        );
+    },
+    { requestTimeoutMs: 600_000 },
+  );
+}
+
+// ─── Security: logins / users / roles (Phase E) ──────────────────────────
+
+export interface SqlServerLogin {
+  name: string;
+  type: string;
+  isDisabled: boolean;
+  serverRoles: string[];
+}
+export interface SqlServerUser {
+  name: string;
+  type: string;
+  defaultSchema: string | null;
+  databaseRoles: string[];
+  orphaned: boolean;
+}
+
+export async function getSqlServerSecurity(
+  config: SqlServerConfig,
+  database: string,
+): Promise<{ logins: SqlServerLogin[]; users: SqlServerUser[] }> {
+  validateSqlServerIdentifier(database, "database name");
+  const loginRows = await withPool(config, async (pool) => {
+    return pool.request().query<{
+      name: string;
+      type_desc: string;
+      is_disabled: boolean;
+      roles: string | null;
+    }>(`
+      SELECT sp.name, sp.type_desc, CAST(sp.is_disabled AS BIT) AS is_disabled,
+        (SELECT STRING_AGG(r.name, ', ')
+           FROM sys.server_role_members rm
+           JOIN sys.server_principals r ON r.principal_id = rm.role_principal_id
+           WHERE rm.member_principal_id = sp.principal_id) AS roles
+      FROM sys.server_principals sp
+      WHERE sp.type IN ('S','U','G') AND sp.name NOT LIKE '##%'
+      ORDER BY sp.name
+    `);
+  });
+
+  const userRows = await withPool(
+    config,
+    async (pool) => {
+      return pool.request().query<{
+        name: string;
+        type_desc: string;
+        default_schema_name: string | null;
+        roles: string | null;
+        orphaned: number;
+      }>(`
+        SELECT dp.name, dp.type_desc, dp.default_schema_name,
+          (SELECT STRING_AGG(r.name, ', ')
+             FROM sys.database_role_members rm
+             JOIN sys.database_principals r ON r.principal_id = rm.role_principal_id
+             WHERE rm.member_principal_id = dp.principal_id) AS roles,
+          CASE WHEN dp.type IN ('S','U') AND dp.sid IS NOT NULL
+                AND NOT EXISTS (SELECT 1 FROM sys.server_principals sp WHERE sp.sid = dp.sid)
+               THEN 1 ELSE 0 END AS orphaned
+        FROM sys.database_principals dp
+        WHERE dp.type IN ('S','U','G') AND dp.name NOT IN ('guest','INFORMATION_SCHEMA','sys')
+        ORDER BY dp.name
+      `);
+    },
+    { database },
+  );
+
+  return {
+    logins: loginRows.recordset.map((r) => ({
+      name: String(r.name),
+      type: String(r.type_desc),
+      isDisabled: Boolean(r.is_disabled),
+      serverRoles: r.roles ? String(r.roles).split(", ") : [],
+    })),
+    users: userRows.recordset.map((r) => ({
+      name: String(r.name),
+      type: String(r.type_desc),
+      defaultSchema: r.default_schema_name ?? null,
+      databaseRoles: r.roles ? String(r.roles).split(", ") : [],
+      orphaned: Number(r.orphaned) === 1,
+    })),
+  };
+}
+
+// ─── Dependencies (Phase E) ──────────────────────────────────────────────
+
+export interface SqlServerDependency {
+  schema: string | null;
+  name: string;
+  type: string | null;
+}
+
+export async function getSqlServerDependencies(
+  config: SqlServerConfig,
+  database: string,
+  schema: string,
+  object: string,
+): Promise<{ referencing: SqlServerDependency[]; referenced: SqlServerDependency[] }> {
+  validateSqlServerIdentifier(database, "database name");
+  validateSqlServerIdentifier(schema, "schema name");
+  validateSqlServerIdentifier(object, "object name");
+  return withPool(
+    config,
+    async (pool) => {
+      const target = `'${schema}.${object}'`;
+      const refrR = await pool
+        .request()
+        .query<{ schema_name: string | null; name: string; type: string | null }>(`
+          SELECT referencing_schema_name AS schema_name, referencing_entity_name AS name,
+                 o.type_desc AS type
+          FROM sys.dm_sql_referencing_entities(${target}, 'OBJECT') re
+          LEFT JOIN sys.objects o ON o.object_id = re.referencing_id
+        `)
+        .catch(() => null);
+      const refdR = await pool
+        .request()
+        .query<{ schema_name: string | null; name: string | null; type: string | null }>(`
+          SELECT referenced_schema_name AS schema_name, referenced_entity_name AS name, NULL AS type
+          FROM sys.dm_sql_referenced_entities(${target}, 'OBJECT')
+        `)
+        .catch(() => null);
+      const map = (
+        rows: Array<{ schema_name: string | null; name: string | null; type?: string | null }> | undefined,
+      ): SqlServerDependency[] =>
+        (rows ?? [])
+          .filter((r) => r.name)
+          .map((r) => ({
+            schema: r.schema_name ?? null,
+            name: String(r.name),
+            type: r.type ?? null,
+          }));
+      // De-dup referenced entities (one row per column otherwise).
+      const refdSeen = new Set<string>();
+      const referenced = map(refdR?.recordset).filter((d) => {
+        const k = `${d.schema}.${d.name}`;
+        if (refdSeen.has(k)) return false;
+        refdSeen.add(k);
+        return true;
+      });
+      return { referencing: map(refrR?.recordset), referenced };
+    },
+    { database },
+  );
+}

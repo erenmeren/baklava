@@ -9,13 +9,16 @@ import type { SqlServerConfig } from "@/lib/connections/types";
 import {
   Activity,
   Database,
+  DatabaseBackup,
   Gauge,
   Lock,
   ListOrdered,
+  ShieldCheck,
   Store,
   Terminal,
   Wrench,
 } from "lucide-react";
+import { CommandPaletteHost } from "./command-palette-host";
 
 export const dynamic = "force-dynamic";
 
@@ -89,10 +92,26 @@ export default async function SqlServerWorkspaceLayout({
           >
             Index maintenance
           </SidebarLink>
+          <SidebarLink
+            href={`/sqlserver/${connectionId}/security`}
+            icon={<ShieldCheck className="size-4" />}
+          >
+            Security
+          </SidebarLink>
+          <SidebarLink
+            href={`/sqlserver/${connectionId}/backup`}
+            icon={<DatabaseBackup className="size-4" />}
+          >
+            Backup
+          </SidebarLink>
         </SidebarSection>
       }
     >
       {children}
+      <CommandPaletteHost
+        connectionId={connectionId}
+        defaultDatabase={record.config.database}
+      />
     </WorkspaceShell>
   );
 }
