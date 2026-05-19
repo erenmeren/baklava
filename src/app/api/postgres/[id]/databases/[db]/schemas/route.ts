@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getConnection } from "@/lib/connections/store";
-import { listSchemas, createSchema } from "@/lib/connections/postgres";
+import {
+  listSchemasWithStats,
+  createSchema,
+} from "@/lib/connections/postgres";
 import type { PostgresConfig } from "@/lib/connections/types";
 import { formatError } from "@/lib/errors";
 
@@ -17,9 +20,9 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
     return NextResponse.json({ error: "Connection not found" }, { status: 404 });
   }
   try {
-    const schemas = await listSchemas(
+    const schemas = await listSchemasWithStats(
       record.config as PostgresConfig,
-      decodeURIComponent(db)
+      decodeURIComponent(db),
     );
     return NextResponse.json({ schemas });
   } catch (err) {

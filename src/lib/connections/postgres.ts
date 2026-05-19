@@ -214,6 +214,51 @@ export async function getTopTables(
   });
 }
 
+/**
+ * Top tables ACROSS every non-template database on the server.
+ *
+ * Each Postgres connection is scoped to a single database, so this opens
+ * one short-lived client per DB in parallel, asks for that DB's top N
+ * tables, then merges + sorts globally. Capped to `limit` rows total.
+ *
+ * A per-DB connection failure (e.g. role can't connect to that DB) is
+ * silently skipped — the overview shouldn't fail just because one DB is
+ * inaccessible.
+ */
+export async function getTopTablesAllDatabases(
+  config: PostgresConfig,
+  limit: number = 10,
+): Promise<Array<TopTable & { database: string }>> {
+  // First: discover the database list (we want non-template, non-allowconn=false).
+  const dbs = await withClient(config, undefined, async (client) => {
+    const res = await client.query<{ name: string }>(
+      `select datname as name
+       from pg_database
+       where datistemplate = false
+         and datallowconn = true
+       order by datname`,
+    );
+    return res.rows.map((r) => r.name);
+  });
+
+  // Fan out: query top-tables in each database in parallel. Per-DB cap is
+  // also `limit` to give us a healthy candidate pool before the global sort.
+  const perDb = await Promise.all(
+    dbs.map(async (db) => {
+      try {
+        const rows = await getTopTables(config, db, limit);
+        return rows.map((r) => ({ ...r, database: db }));
+      } catch {
+        return [] as Array<TopTable & { database: string }>;
+      }
+    }),
+  );
+
+  const all = perDb.flat();
+  all.sort((a, b) => b.totalSize - a.totalSize);
+  return all.slice(0, limit);
+}
+
 export async function listDatabases(
   config: PostgresConfig
 ): Promise<DatabaseInfo[]> {
@@ -250,6 +295,89 @@ export async function listSchemas(
        order by schema_name`
     );
     return res.rows;
+  });
+}
+
+export interface SchemaStats {
+  name: string;
+  owner: string;
+  tables: number;
+  views: number;
+  materializedViews: number;
+  sequences: number;
+  functions: number;
+  totalSize: number;
+}
+
+/**
+ * One-shot schema inventory for the per-database overview page. Counts
+ * tables / views / matviews / sequences (pg_class) and functions
+ * (pg_proc) grouped by namespace, plus a summed pg_total_relation_size
+ * across the tables and matviews in each schema.
+ */
+export async function listSchemasWithStats(
+  config: PostgresConfig,
+  database: string,
+): Promise<SchemaStats[]> {
+  return withClient(config, database, async (client) => {
+    const res = await client.query<{
+      name: string;
+      owner: string;
+      tables: string;
+      views: string;
+      materialized_views: string;
+      sequences: string;
+      functions: string;
+      total_size: string;
+    }>(
+      `with rels as (
+         select n.nspname,
+                count(*) filter (where c.relkind = 'r')::text as tables,
+                count(*) filter (where c.relkind = 'v')::text as views,
+                count(*) filter (where c.relkind = 'm')::text as materialized_views,
+                count(*) filter (where c.relkind = 'S')::text as sequences,
+                coalesce(
+                  sum(pg_total_relation_size(c.oid))
+                    filter (where c.relkind in ('r','m','S')),
+                  0
+                )::text as total_size
+         from pg_namespace n
+         left join pg_class c on c.relnamespace = n.oid
+         group by n.nspname
+       ),
+       fns as (
+         select n.nspname,
+                count(*)::text as functions
+         from pg_namespace n
+         left join pg_proc p on p.pronamespace = n.oid
+         group by n.nspname
+       )
+       select s.schema_name as name,
+              s.schema_owner as owner,
+              coalesce(rels.tables, '0') as tables,
+              coalesce(rels.views, '0') as views,
+              coalesce(rels.materialized_views, '0') as materialized_views,
+              coalesce(rels.sequences, '0') as sequences,
+              coalesce(fns.functions, '0') as functions,
+              coalesce(rels.total_size, '0') as total_size
+       from information_schema.schemata s
+       left join rels on rels.nspname = s.schema_name
+       left join fns on fns.nspname = s.schema_name
+       where s.schema_name not in ('pg_catalog', 'information_schema', 'pg_toast')
+         and s.schema_name not like 'pg_temp_%'
+         and s.schema_name not like 'pg_toast_temp_%'
+       order by s.schema_name`,
+    );
+    return res.rows.map((r) => ({
+      name: r.name,
+      owner: r.owner,
+      tables: Number(r.tables),
+      views: Number(r.views),
+      materializedViews: Number(r.materialized_views),
+      sequences: Number(r.sequences),
+      functions: Number(r.functions),
+      totalSize: Number(r.total_size),
+    }));
   });
 }
 
@@ -1882,6 +2010,214 @@ export async function reindexTable(
   );
   await withClient(config, database, async (client) => {
     await client.query(`REINDEX TABLE ${ident}`);
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Overview extras — the DBA + dev "first-10-seconds" signals
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface OverviewExtras {
+  /** Total blocked sessions (count from pg_blocking_pids). */
+  blockerCount: number;
+  /** Top blocker chains (blocked PID + blocker PIDs + queries), max 5. */
+  blockerChains: Array<{
+    blockedPid: number;
+    blockedQuery: string | null;
+    blockedFor: number; // seconds
+    blockedBy: number[];
+  }>;
+  /** Oldest backend in `idle in transaction` state — seconds since state_change. */
+  oldestIdleInTxnSec: number | null;
+  /** Longest currently-active query — seconds since query_start. */
+  longestActiveQuerySec: number | null;
+  /** Monotonic transaction counters per database (raw — client diffs for rate). */
+  databaseCounters: Array<{
+    name: string;
+    commits: number;
+    rollbacks: number;
+    hitPct: number | null;
+    /** Snapshot taken at this Unix-ms timestamp. */
+    sampledAt: number;
+  }>;
+  /** Whether the pg_stat_statements extension is installed and visible. */
+  hasPgStatStatements: boolean;
+  /**
+   * Top slow queries by total exec time (only present when
+   * pg_stat_statements is installed). Limited to 5 rows.
+   */
+  topSlowQueries: Array<{
+    query: string;
+    calls: number;
+    totalExecMs: number;
+    meanExecMs: number;
+    rows: number;
+  }>;
+  /** Top tables with >20% dead-tuple ratio (autovacuum laggards). Top 5. */
+  bloatHotspots: Array<{
+    schema: string;
+    table: string;
+    nLive: number;
+    nDead: number;
+    deadPct: number;
+    lastAutovacuum: string | null;
+  }>;
+}
+
+export async function getOverviewExtras(
+  config: PostgresConfig,
+): Promise<OverviewExtras> {
+  return withClient(config, undefined, async (client) => {
+    const sampledAt = Date.now();
+    // Run the heavy queries in parallel — each one is cheap (uses pg_stat_*).
+    const [blockers, longest, counters, ext, bloat] = await Promise.all([
+      client.query<{
+        blocked_pid: number;
+        blocked_query: string | null;
+        blocked_for: string | null;
+        blocked_by: number[];
+      }>(
+        `select blocked.pid as blocked_pid,
+                blocked.query as blocked_query,
+                extract(epoch from (now() - blocked.xact_start))::float8::text as blocked_for,
+                pg_blocking_pids(blocked.pid) as blocked_by
+         from pg_stat_activity blocked
+         where cardinality(pg_blocking_pids(blocked.pid)) > 0
+         order by blocked.xact_start asc nulls last
+         limit 5`,
+      ),
+      client.query<{
+        oldest_idle: string | null;
+        longest_active: string | null;
+      }>(
+        `select
+           extract(epoch from (now() - max(state_change)
+             filter (where state = 'idle in transaction')
+           ))::float8::text as oldest_idle,
+           extract(epoch from (now() - min(query_start)
+             filter (where state = 'active')
+           ))::float8::text as longest_active
+         from pg_stat_activity
+         where pid <> pg_backend_pid()`,
+      ),
+      client.query<{
+        datname: string;
+        xact_commit: string;
+        xact_rollback: string;
+        hit: string | null;
+      }>(
+        `select datname,
+                xact_commit::text,
+                xact_rollback::text,
+                case when sum(blks_hit + blks_read) over (partition by datname) = 0
+                  then null
+                  else (blks_hit::float8 / nullif(blks_hit + blks_read, 0))
+                end::text as hit
+         from pg_stat_database
+         where datname is not null`,
+      ),
+      client.query<{ has: boolean }>(
+        `select exists (
+           select 1 from pg_extension where extname = 'pg_stat_statements'
+         ) as has`,
+      ),
+      client.query<{
+        schemaname: string;
+        relname: string;
+        n_live_tup: string;
+        n_dead_tup: string;
+        last_autovacuum: string | null;
+      }>(
+        `select schemaname,
+                relname,
+                n_live_tup::text,
+                n_dead_tup::text,
+                last_autovacuum::text
+         from pg_stat_user_tables
+         where n_dead_tup > 1000
+           and n_live_tup > 0
+           and (n_dead_tup::float8 / nullif(n_live_tup, 0)) > 0.2
+         order by n_dead_tup desc
+         limit 5`,
+      ),
+    ]);
+
+    // Slowest queries — only attempt when the extension is installed,
+    // and silently swallow errors if the view isn't accessible (perm).
+    let topSlowQueries: OverviewExtras["topSlowQueries"] = [];
+    if (ext.rows[0]?.has) {
+      try {
+        const sq = await client.query<{
+          query: string;
+          calls: string;
+          total_exec_time: string;
+          mean_exec_time: string;
+          rows: string;
+        }>(
+          `select query,
+                  calls::text,
+                  total_exec_time::text,
+                  mean_exec_time::text,
+                  rows::text
+           from pg_stat_statements
+           where query !~* '^(begin|commit|rollback|deallocate|set|reset|show)'
+           order by total_exec_time desc
+           limit 5`,
+        );
+        topSlowQueries = sq.rows.map((r) => ({
+          query: r.query,
+          calls: Number(r.calls),
+          totalExecMs: Number(r.total_exec_time),
+          meanExecMs: Number(r.mean_exec_time),
+          rows: Number(r.rows),
+        }));
+      } catch {
+        // pg_stat_statements installed but not granted to this role —
+        // hide gracefully.
+      }
+    }
+
+    return {
+      blockerCount: blockers.rows.length,
+      blockerChains: blockers.rows.map((r) => ({
+        blockedPid: r.blocked_pid,
+        blockedQuery: r.blocked_query,
+        blockedFor:
+          r.blocked_for != null && r.blocked_for !== ""
+            ? Number(r.blocked_for)
+            : 0,
+        blockedBy: r.blocked_by ?? [],
+      })),
+      oldestIdleInTxnSec:
+        longest.rows[0]?.oldest_idle != null &&
+        longest.rows[0]?.oldest_idle !== ""
+          ? Number(longest.rows[0].oldest_idle)
+          : null,
+      longestActiveQuerySec:
+        longest.rows[0]?.longest_active != null &&
+        longest.rows[0]?.longest_active !== ""
+          ? Number(longest.rows[0].longest_active)
+          : null,
+      databaseCounters: counters.rows.map((r) => ({
+        name: r.datname,
+        commits: Number(r.xact_commit),
+        rollbacks: Number(r.xact_rollback),
+        hitPct: r.hit != null ? Number(r.hit) : null,
+        sampledAt,
+      })),
+      hasPgStatStatements: Boolean(ext.rows[0]?.has),
+      topSlowQueries,
+      bloatHotspots: bloat.rows.map((r) => ({
+        schema: r.schemaname,
+        table: r.relname,
+        nLive: Number(r.n_live_tup),
+        nDead: Number(r.n_dead_tup),
+        deadPct:
+          Number(r.n_dead_tup) /
+          Math.max(1, Number(r.n_live_tup) + Number(r.n_dead_tup)),
+        lastAutovacuum: r.last_autovacuum,
+      })),
+    };
   });
 }
 
