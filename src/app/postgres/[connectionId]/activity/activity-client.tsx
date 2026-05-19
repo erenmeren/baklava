@@ -65,6 +65,46 @@ const STATE_TONES: Record<string, string> = {
   fastpath: "bg-sky-500/10 text-sky-600 border-sky-500/30",
 };
 
+/**
+ * Wait classes from pg_stat_activity.wait_event_type. Ordered by how often
+ * they matter when triaging a slow system. "CPU" is synthetic — assigned to
+ * `active` sessions that report no wait_event.
+ */
+const WAIT_CLASSES = [
+  "CPU",
+  "Lock",
+  "IO",
+  "IPC",
+  "LWLock",
+  "BufferPin",
+  "Timeout",
+  "Client",
+  "Extension",
+  "Activity",
+] as const;
+type WaitClass = (typeof WAIT_CLASSES)[number];
+
+const WAIT_CLASS_TONES: Record<WaitClass, string> = {
+  CPU: "bg-emerald-500/10 text-emerald-600 border-emerald-500/30",
+  Lock: "bg-rose-500/10 text-rose-600 border-rose-500/30",
+  IO: "bg-sky-500/10 text-sky-600 border-sky-500/30",
+  IPC: "bg-indigo-500/10 text-indigo-500 border-indigo-500/30",
+  LWLock: "bg-fuchsia-500/10 text-fuchsia-500 border-fuchsia-500/30",
+  BufferPin: "bg-violet-500/10 text-violet-500 border-violet-500/30",
+  Timeout: "bg-amber-500/10 text-amber-600 border-amber-500/30",
+  Client: "bg-zinc-500/10 text-zinc-500 border-zinc-500/30",
+  Extension: "bg-teal-500/10 text-teal-500 border-teal-500/30",
+  Activity: "bg-zinc-500/5 text-muted-foreground border-border/40",
+};
+
+function classifyRow(r: ActivityRow): WaitClass | null {
+  if (r.waitEventType && WAIT_CLASSES.includes(r.waitEventType as WaitClass)) {
+    return r.waitEventType as WaitClass;
+  }
+  if (r.state === "active" && !r.waitEventType) return "CPU";
+  return null;
+}
+
 function formatDuration(s: number | null): string {
   if (s == null || !Number.isFinite(s)) return "—";
   if (s < 1) return `${Math.max(0, Math.round(s * 1000))}ms`;
@@ -83,6 +123,7 @@ export function ActivityClient({ connectionId }: { connectionId: string }) {
   const [filter, setFilter] = useState("");
   const [stateFilter, setStateFilter] = useState<"all" | "active" | "idle" | "idle-in-tx">("all");
   const [refresh, setRefresh] = useState<RefreshInterval>("off");
+  const [waitFilter, setWaitFilter] = useState<WaitClass | null>(null);
   const [confirm, setConfirm] = useState<{ pid: number; action: "cancel" | "terminate" } | null>(null);
   const [busy, setBusy] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -128,6 +169,7 @@ export function ActivityClient({ connectionId }: { connectionId: string }) {
         !(r.state ?? "").startsWith("idle in transaction")
       )
         return false;
+      if (waitFilter && classifyRow(r) !== waitFilter) return false;
       if (!f) return true;
       return (
         String(r.pid).includes(f) ||
@@ -138,7 +180,21 @@ export function ActivityClient({ connectionId }: { connectionId: string }) {
         (r.query ?? "").toLowerCase().includes(f)
       );
     });
-  }, [snapshot, filter, stateFilter]);
+  }, [snapshot, filter, stateFilter, waitFilter]);
+
+  // Histogram of wait classes (informational only — also the source of truth
+  // for the wait-class filter strip below).
+  const waitHistogram = useMemo(() => {
+    const h: Record<WaitClass, number> = Object.fromEntries(
+      WAIT_CLASSES.map((c) => [c, 0]),
+    ) as Record<WaitClass, number>;
+    if (!snapshot) return h;
+    for (const r of snapshot.rows) {
+      const c = classifyRow(r);
+      if (c) h[c] += 1;
+    }
+    return h;
+  }, [snapshot]);
 
   const counts = useMemo(() => {
     const out = { active: 0, idle: 0, idleInTx: 0, total: 0 };
@@ -264,6 +320,46 @@ export function ActivityClient({ connectionId }: { connectionId: string }) {
           />
         </div>
 
+        {/* Wait-class strip */}
+        {snapshot ? (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[10px] uppercase tracking-wider font-mono text-muted-foreground mr-1">
+              Wait class
+            </span>
+            {WAIT_CLASSES.filter((c) => waitHistogram[c] > 0).map((c) => {
+              const active = waitFilter === c;
+              return (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => setWaitFilter(active ? null : c)}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-mono uppercase tracking-wider transition-all",
+                    WAIT_CLASS_TONES[c],
+                    active
+                      ? "ring-2 ring-offset-1 ring-offset-background ring-current"
+                      : "opacity-80 hover:opacity-100",
+                  )}
+                >
+                  <span>{c}</span>
+                  <span className="font-medium tabular-nums">
+                    {waitHistogram[c]}
+                  </span>
+                </button>
+              );
+            })}
+            {waitFilter ? (
+              <button
+                type="button"
+                onClick={() => setWaitFilter(null)}
+                className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground hover:text-foreground ml-1"
+              >
+                clear
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+
         {snapshot && rows.length === 0 ? (
           <p className="text-sm text-muted-foreground py-8 text-center">
             No matching sessions.
@@ -330,13 +426,30 @@ export function ActivityClient({ connectionId }: { connectionId: string }) {
                         )}
                       </TableCell>
                       <TableCell className="text-xs font-mono">
-                        {r.waitEvent ? (
-                          <span className="text-amber-600">
-                            {r.waitEventType}:{r.waitEvent}
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground/50">—</span>
-                        )}
+                        {(() => {
+                          const wc = classifyRow(r);
+                          if (!wc)
+                            return (
+                              <span className="text-muted-foreground/50">—</span>
+                            );
+                          return (
+                            <div className="inline-flex items-center gap-1.5">
+                              <span
+                                className={cn(
+                                  "inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] uppercase tracking-wider",
+                                  WAIT_CLASS_TONES[wc],
+                                )}
+                              >
+                                {wc}
+                              </span>
+                              {r.waitEvent ? (
+                                <span className="text-muted-foreground truncate">
+                                  {r.waitEvent}
+                                </span>
+                              ) : null}
+                            </div>
+                          );
+                        })()}
                       </TableCell>
                       <TableCell className="text-right font-mono text-xs tabular-nums">
                         {formatDuration(r.queryAgeSeconds)}
