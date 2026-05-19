@@ -718,6 +718,257 @@ export async function emptyTopic(
   }
 }
 
+// ─── server-side search ─────────────────────────────────────────────────
+
+export interface SearchPredicate {
+  /** Substring match against the (decoded or raw) key. */
+  key?: string;
+  /** Substring matches against header values, ANDed. */
+  headers?: Record<string, string>;
+  /** JSON path expression like `$.user.id` or `$.[0].order` (read-only). */
+  jsonPath?: string;
+  /** Expected value for the JSON path; matched as exact string compare. */
+  jsonPathEquals?: string;
+  /** Substring/regex against the rendered value text. */
+  valueContains?: string;
+  /** Treat valueContains as a regex. */
+  regex?: boolean;
+}
+
+export interface SearchOptions {
+  /** Maximum number of messages to return. */
+  matchLimit: number;
+  /**
+   * Hard cap on messages scanned per partition before giving up — protects
+   * against running away on a huge topic. Defaults to 50 000.
+   */
+  scanCap: number;
+  /**
+   * Bound the scan to a starting wall-clock millisecond. When set, the
+   * driver calls fetchTopicOffsetsByTimestamp() to seek per-partition.
+   */
+  startTimestamp?: number;
+  schemaRegistry?: SchemaRegistryClient | null;
+}
+
+export interface SearchMatch {
+  message: KafkaMessage;
+  /** Where in the partition the match landed (for "continue from here" cursors). */
+  cursor: { partition: number; offset: string };
+}
+
+export type SearchEvent =
+  | { kind: "progress"; scanned: number; matched: number }
+  | { kind: "match"; match: SearchMatch }
+  | { kind: "done"; scanned: number; matched: number; truncated: boolean }
+  | { kind: "error"; message: string };
+
+/**
+ * Read a tiny `$.foo.bar` accessor on a parsed JSON value. We support dotted
+ * paths and `[n]` array indexing only — anything else falls back to null.
+ */
+function readJsonPath(obj: unknown, path: string): unknown {
+  if (!path.startsWith("$")) return null;
+  const segments = path
+    .slice(1)
+    .replace(/\[(\d+)\]/g, ".$1")
+    .split(".")
+    .filter(Boolean);
+  let cur: unknown = obj;
+  for (const seg of segments) {
+    if (cur == null || typeof cur !== "object") return null;
+    cur = (cur as Record<string, unknown>)[seg];
+  }
+  return cur;
+}
+
+function predicateMatches(m: KafkaMessage, p: SearchPredicate): boolean {
+  if (p.key) {
+    const k = (m.key ?? "").toLowerCase();
+    if (!k.includes(p.key.toLowerCase())) return false;
+  }
+  if (p.headers) {
+    for (const [hk, hv] of Object.entries(p.headers)) {
+      const got = m.headers[hk];
+      if (got == null || !got.toLowerCase().includes(hv.toLowerCase())) {
+        return false;
+      }
+    }
+  }
+  const valueText = m.valueDecoded?.json ?? m.value ?? "";
+  if (p.valueContains) {
+    if (p.regex) {
+      try {
+        if (!new RegExp(p.valueContains).test(valueText)) return false;
+      } catch {
+        return false; // bad regex — treat as no match
+      }
+    } else {
+      if (
+        !valueText.toLowerCase().includes(p.valueContains.toLowerCase())
+      )
+        return false;
+    }
+  }
+  if (p.jsonPath) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(valueText);
+    } catch {
+      return false;
+    }
+    const v = readJsonPath(parsed, p.jsonPath);
+    if (v == null) return false;
+    if (p.jsonPathEquals != null) {
+      if (String(v) !== p.jsonPathEquals) return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Scan a topic from `startTimestamp` (or earliest) until `matchLimit`
+ * messages match the predicate OR `scanCap * partitions` messages have
+ * been examined. Emits `progress` events while scanning so the UI can
+ * show a progress bar without waiting for the whole scan to complete.
+ */
+export async function searchMessages(
+  config: KafkaConfig,
+  topic: string,
+  predicate: SearchPredicate,
+  options: SearchOptions,
+  emit: (ev: SearchEvent) => void,
+): Promise<void> {
+  const client = createKafkaClient(config);
+  const groupId = `baklava-search-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const consumer = client.consumer({
+    groupId,
+    sessionTimeout: 10000,
+    heartbeatInterval: 3000,
+  });
+  await consumer.connect();
+  let stopped = false;
+  let scanned = 0;
+  let matched = 0;
+  try {
+    await consumer.subscribe({ topic, fromBeginning: true });
+
+    let seekOffsetsByPartition: Record<number, string> | null = null;
+    if (options.startTimestamp != null) {
+      const admin = client.admin();
+      await admin.connect();
+      try {
+        const offsets = await admin.fetchTopicOffsetsByTimestamp(
+          topic,
+          options.startTimestamp,
+        );
+        seekOffsetsByPartition = {};
+        for (const { partition, offset } of offsets) {
+          seekOffsetsByPartition[partition] = offset;
+        }
+      } finally {
+        await admin.disconnect().catch(() => undefined);
+      }
+    }
+
+    let lastProgressEmit = Date.now();
+
+    await new Promise<void>((resolve) => {
+      // Hard deadline so we never run forever — 30s scan budget.
+      const deadline = setTimeout(() => {
+        stopped = true;
+        resolve();
+      }, 30_000);
+
+      consumer
+        .run({
+          autoCommit: false,
+          eachMessage: async ({ partition, message }) => {
+            if (stopped) return;
+            scanned += 1;
+            const m = await materializeMessage({
+              partition,
+              offset: message.offset,
+              timestamp: message.timestamp,
+              key: message.key,
+              value: message.value,
+              headers: decodeHeaders(message.headers),
+              schemaRegistry: options.schemaRegistry,
+            });
+            if (predicateMatches(m, predicate)) {
+              matched += 1;
+              emit({
+                kind: "match",
+                match: {
+                  message: m,
+                  cursor: { partition, offset: message.offset },
+                },
+              });
+            }
+            // Progress heartbeat at most every 250ms.
+            const now = Date.now();
+            if (now - lastProgressEmit > 250) {
+              emit({ kind: "progress", scanned, matched });
+              lastProgressEmit = now;
+            }
+            if (matched >= options.matchLimit || scanned >= options.scanCap) {
+              stopped = true;
+              clearTimeout(deadline);
+              resolve();
+            }
+          },
+        })
+        .catch(() => {
+          clearTimeout(deadline);
+          resolve();
+        });
+
+      // Seek per-partition after kafkajs has assigned them.
+      if (seekOffsetsByPartition) {
+        const trySeek = () => {
+          try {
+            for (const [pStr, off] of Object.entries(seekOffsetsByPartition!)) {
+              consumer.seek({
+                topic,
+                partition: Number(pStr),
+                offset: off,
+              });
+            }
+          } catch {
+            setTimeout(trySeek, 100);
+          }
+        };
+        setTimeout(trySeek, 400);
+      }
+    });
+
+    emit({
+      kind: "done",
+      scanned,
+      matched,
+      truncated: matched >= options.matchLimit || scanned >= options.scanCap,
+    });
+  } catch (err) {
+    emit({
+      kind: "error",
+      message: err instanceof Error ? err.message : String(err),
+    });
+  } finally {
+    await consumer.disconnect().catch(() => undefined);
+    try {
+      const admin = client.admin();
+      await admin.connect();
+      try {
+        await admin.deleteGroups([groupId]);
+      } finally {
+        await admin.disconnect().catch(() => undefined);
+      }
+    } catch {
+      // ignore
+    }
+  }
+}
+
 export type TailMessage = KafkaMessage;
 
 export interface TailHandle {

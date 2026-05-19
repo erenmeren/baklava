@@ -32,6 +32,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Sparkline } from "@/components/workspace/sparkline";
+import { TopicSearchSheet } from "./topic-search-sheet";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import {
@@ -320,6 +321,7 @@ export function MessagesTab({ base, topic, partitions, onProduceSimilar }: Props
   const [headerFilter, setHeaderFilter] = useState("");
   const [selectedIndex, setSelectedIndex] = useState<number>(-1);
   const [drawerMessage, setDrawerMessage] = useState<KafkaMessage | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"table" | "lanes">("table");
   const sourceRef = useRef<EventSource | null>(null);
 
@@ -768,6 +770,18 @@ export function MessagesTab({ base, topic, partitions, onProduceSimilar }: Props
             Clear
           </Button>
         )}
+        <div className="ml-auto">
+          <Button
+            size="xs"
+            variant="outline"
+            onClick={() => setSearchOpen(true)}
+            className="gap-1.5"
+            title="Search the whole topic server-side"
+          >
+            <Search className="size-3" />
+            Search topic…
+          </Button>
+        </div>
       </div>
 
       {/* ─ Throughput strip ───────────────────────────────────────────── */}
@@ -817,6 +831,14 @@ export function MessagesTab({ base, topic, partitions, onProduceSimilar }: Props
         onClose={() => setDrawerMessage(null)}
         onProduceSimilar={onProduceSimilar}
         base={base}
+      />
+
+      <TopicSearchSheet
+        open={searchOpen}
+        onOpenChange={setSearchOpen}
+        connectionId={base.replace(/^\/api\/kafka\//, "").split("/")[0]}
+        topic={topic}
+        onPick={(m) => setDrawerMessage(m)}
       />
     </div>
   );
