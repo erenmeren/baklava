@@ -1211,13 +1211,6 @@ function DatabasesPanel({
                     <SquareTerminal className="size-2.5" />
                     editor
                   </Link>
-                  <Link
-                    href={`/postgres/${connectionId}/databases/${encodeURIComponent(d.name)}`}
-                    className="inline-flex items-center gap-1 rounded border border-border/60 bg-card px-1.5 py-0.5 text-[9px] font-mono uppercase tracking-wider text-muted-foreground hover:text-foreground hover:bg-muted"
-                  >
-                    <TableIcon className="size-2.5" />
-                    browse
-                  </Link>
                 </div>
               </div>
             );
