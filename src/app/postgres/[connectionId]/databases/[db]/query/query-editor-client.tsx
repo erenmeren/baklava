@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import CodeMirror from "@uiw/react-codemirror";
 import { sql, PostgreSQL } from "@codemirror/lang-sql";
 import { EditorView } from "@codemirror/view";
@@ -23,6 +24,7 @@ import {
   ExplainPlanViewer,
   type ExplainPlanRoot,
 } from "@/components/postgres/explain-plan-viewer";
+import { pushRecentQuery } from "@/lib/postgres/recent-queries";
 
 interface QueryResult {
   fields: string[];
@@ -180,6 +182,10 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
     }
   }, [connectionId, db, sqlText]);
 
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+
   useEffect(() => {
     setSqlText(loadSql(connectionId, db, queryId, defaultSql));
     setHistory(loadHistory(connectionId, db, queryId));
@@ -188,6 +194,20 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
     // and overwrite user edits.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connectionId, db, queryId]);
+
+  // Honor ?prefill=… coming from the Cmd+K palette / recent-query links.
+  // Strip the param from the URL after applying so a refresh doesn't keep
+  // clobbering the user's edits.
+  useEffect(() => {
+    if (!hydrated) return;
+    const prefill = searchParams.get("prefill");
+    if (!prefill) return;
+    setSqlText(prefill);
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("prefill");
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname);
+  }, [hydrated, searchParams, router, pathname]);
 
   useEffect(() => {
     if (hydrated) saveHistory(connectionId, db, queryId, history);
@@ -239,6 +259,14 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
               ...h,
             ].slice(0, HISTORY_LIMIT),
           );
+          pushRecentQuery(connectionId, {
+            sql: finalSql,
+            database: db,
+            durationMs: r.durationMs,
+            rowCount: r.rowCount,
+            ok: true,
+            at: Date.now(),
+          });
         } else {
           const msg = data.error || "Query failed";
           setError(msg);
@@ -257,12 +285,28 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
               ...h,
             ].slice(0, HISTORY_LIMIT),
           );
+          pushRecentQuery(connectionId, {
+            sql: finalSql,
+            database: db,
+            durationMs,
+            rowCount: null,
+            ok: false,
+            at: Date.now(),
+          });
         }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         setError(msg);
         setPhase("err");
         setTab("messages");
+        pushRecentQuery(connectionId, {
+          sql: finalSql,
+          database: db,
+          durationMs: Date.now() - t0,
+          rowCount: null,
+          ok: false,
+          at: Date.now(),
+        });
       }
     },
     [connectionId, db, sqlText],

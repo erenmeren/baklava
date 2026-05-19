@@ -423,6 +423,78 @@ export async function listObjects(
   });
 }
 
+// ─── All relations + columns (for Cmd+K palette) ────────────────────────
+
+export interface RelationListing {
+  schema: string;
+  name: string;
+  /** r=table, v=view, m=matview, f=foreign table */
+  kind: "table" | "view" | "matview" | "foreign";
+  /** Column names; may be empty for views with no expanded columns. */
+  columns: string[];
+  /** True when the relation lives in a system schema we can use but
+   *  don't want to surface by default. */
+  isSystem: boolean;
+}
+
+/**
+ * Flat list of all tables/views/matviews in the given database with
+ * their column names. One query, joined at the server. Used by the
+ * Cmd+K palette so fuzzy search can hit table AND column names without
+ * round-tripping.
+ *
+ * pg_attribute is huge on a per-row basis — we join + aggregate by
+ * relation so the client sees one row per relation.
+ */
+export async function listAllRelations(
+  config: PostgresConfig,
+  database: string,
+): Promise<RelationListing[]> {
+  return withClient(config, database, async (client) => {
+    const res = await client.query<{
+      schema: string;
+      name: string;
+      kind: string;
+      columns: string[] | null;
+      is_system: boolean;
+    }>(
+      `select n.nspname as schema,
+              c.relname as name,
+              case c.relkind
+                when 'r' then 'table'
+                when 'v' then 'view'
+                when 'm' then 'matview'
+                when 'f' then 'foreign'
+                else c.relkind::text
+              end as kind,
+              array(
+                select a.attname
+                from pg_attribute a
+                where a.attrelid = c.oid
+                  and a.attnum > 0
+                  and not a.attisdropped
+                order by a.attnum
+              ) as columns,
+              (n.nspname in ('pg_catalog', 'information_schema')
+                or n.nspname like 'pg_%') as is_system
+       from pg_class c
+       join pg_namespace n on n.oid = c.relnamespace
+       where c.relkind in ('r', 'v', 'm', 'f')
+         and n.nspname not in ('pg_toast')
+         and n.nspname not like 'pg_temp_%'
+         and n.nspname not like 'pg_toast_temp_%'
+       order by is_system, n.nspname, c.relname`,
+    );
+    return res.rows.map((r) => ({
+      schema: r.schema,
+      name: r.name,
+      kind: r.kind as RelationListing["kind"],
+      columns: r.columns ?? [],
+      isSystem: r.is_system,
+    }));
+  });
+}
+
 export interface ColumnInfo {
   name: string;
   position: number;
