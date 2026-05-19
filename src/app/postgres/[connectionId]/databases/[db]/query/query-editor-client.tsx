@@ -34,6 +34,25 @@ interface QueryResult {
   durationMs: number;
 }
 
+interface StatementResult extends QueryResult {
+  sql: string;
+  isCommand: boolean;
+  command: string | null;
+}
+
+interface StatementError {
+  sql: string;
+  error: string;
+  durationMs: number;
+}
+
+type StatementEntry = StatementResult | StatementError;
+
+interface MultiResponse {
+  results: StatementEntry[];
+  totalDurationMs: number;
+}
+
 interface HistoryItem {
   sql: string;
   rowCount: number | null;
@@ -138,6 +157,10 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
   const [phase, setPhase] = useState<"idle" | "running" | "ok" | "err">("idle");
   const [result, setResult] = useState<QueryResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Multi-statement support — populated when the user runs more than one
+  // SQL statement separated by `;`. Single-statement runs leave this null.
+  const [multi, setMulti] = useState<MultiResponse | null>(null);
+  const [resultIdx, setResultIdx] = useState(0);
   const [tab, setTab] = useState<ResultTab>("data");
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [hydrated, setHydrated] = useState(false);
@@ -229,6 +252,8 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
       setPhase("running");
       setError(null);
       setResult(null);
+      setMulti(null);
+      setResultIdx(0);
       setTab("data");
       const t0 = Date.now();
       try {
@@ -237,11 +262,60 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
           {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ sql: finalSql }),
+            body: JSON.stringify({ sql: finalSql, multi: true }),
           },
         );
         const data = await res.json();
         const durationMs = data.durationMs ?? Date.now() - t0;
+        // Multi-mode response: { results: StatementEntry[], totalDurationMs }
+        if (res.ok && data.results && Array.isArray(data.results)) {
+          const m = data as MultiResponse;
+          setMulti(m);
+          // Active result = first successful, else first failure.
+          const firstErr = m.results.findIndex((r) => "error" in r);
+          const idx =
+            m.results.length === 1
+              ? 0
+              : firstErr === -1
+                ? 0
+                : firstErr;
+          setResultIdx(idx);
+          const active = m.results[idx];
+          if (active && "error" in active) {
+            setError(active.error);
+            setPhase("err");
+            setTab("messages");
+          } else if (active) {
+            setResult(active);
+            setPhase("ok");
+            if (asExplain) setTab("explain");
+          }
+          setHistory((h) =>
+            [
+              {
+                sql: finalSql,
+                rowCount:
+                  active && !("error" in active) ? active.rowCount : null,
+                durationMs: m.totalDurationMs,
+                ok: firstErr === -1,
+                error:
+                  active && "error" in active ? active.error : undefined,
+                at: Date.now(),
+              },
+              ...h,
+            ].slice(0, HISTORY_LIMIT),
+          );
+          pushRecentQuery(connectionId, {
+            sql: finalSql,
+            database: db,
+            durationMs: m.totalDurationMs,
+            rowCount:
+              active && !("error" in active) ? active.rowCount : null,
+            ok: firstErr === -1,
+            at: Date.now(),
+          });
+          return;
+        }
         if (res.ok && !data.error) {
           const r = data as QueryResult;
           setResult(r);
@@ -481,6 +555,59 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
               </button>
             ) : null}
           </div>
+
+          {/* Multi-statement result tab strip — appears when the user
+              runs more than one statement separated by `;`. Switching tabs
+              repoints the Data/Messages panes at the chosen statement. */}
+          {multi && multi.results.length > 1 && tab !== "history" ? (
+            <div className="border-b border-border/40 px-1.5 py-1 flex items-center gap-0.5 overflow-x-auto bg-muted/20">
+              <span className="text-[10px] uppercase tracking-wider font-mono text-muted-foreground mr-2 ml-1">
+                Results
+              </span>
+              {multi.results.map((r, i) => {
+                const isErr = "error" in r;
+                const active = i === resultIdx;
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => {
+                      setResultIdx(i);
+                      if ("error" in r) {
+                        setError(r.error);
+                        setResult(null);
+                        setPhase("err");
+                      } else {
+                        setError(null);
+                        setResult(r);
+                        setPhase("ok");
+                      }
+                    }}
+                    title={r.sql}
+                    className={cn(
+                      "shrink-0 inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-[11px] font-mono transition-colors",
+                      active
+                        ? "bg-foreground/10 text-foreground"
+                        : "text-muted-foreground hover:text-foreground",
+                      isErr && "text-rose-500 hover:text-rose-500",
+                    )}
+                  >
+                    <span>#{i + 1}</span>
+                    <span className="opacity-70">
+                      {isErr
+                        ? "error"
+                        : r.isCommand
+                          ? r.command ?? "ok"
+                          : `${r.rowCount} row${r.rowCount === 1 ? "" : "s"}`}
+                    </span>
+                  </button>
+                );
+              })}
+              <span className="ml-auto text-[10px] font-mono text-muted-foreground pr-2">
+                {multi.totalDurationMs}ms total
+              </span>
+            </div>
+          ) : null}
 
           <div className="flex-1 min-h-0 overflow-auto">
             {tab === "data" ? (

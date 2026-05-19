@@ -2002,6 +2002,173 @@ export async function runQuery(
   });
 }
 
+export interface QueryStatementResult extends QueryResult {
+  /** The statement text that produced this result (trimmed). */
+  sql: string;
+  /** True when the statement returned no rowset (e.g. INSERT, DDL). */
+  isCommand: boolean;
+  /** "SELECT", "INSERT", "UPDATE", "DELETE", "CREATE", … as reported by pg. */
+  command: string | null;
+}
+
+export interface QueryStatementError {
+  sql: string;
+  error: string;
+  durationMs: number;
+}
+
+export interface MultiQueryResult {
+  results: Array<QueryStatementResult | QueryStatementError>;
+  totalDurationMs: number;
+}
+
+/**
+ * Splits a SQL string into top-level statements on `;`, respecting:
+ * - single-quoted strings (with '' escape)
+ * - line comments (--…) and block comments (slash-star … star-slash)
+ * - dollar-quoted bodies ($$…$$, $tag$…$tag$)
+ *
+ * Good enough for an interactive SQL editor; not a full grammar.
+ */
+export function splitSqlStatements(sql: string): string[] {
+  const out: string[] = [];
+  let buf = "";
+  let i = 0;
+  let inSingle = false;
+  let inLineComment = false;
+  let inBlockComment = false;
+  let dollarTag: string | null = null;
+
+  while (i < sql.length) {
+    const c = sql[i];
+    const next = sql[i + 1];
+
+    if (inLineComment) {
+      buf += c;
+      if (c === "\n") inLineComment = false;
+      i++;
+      continue;
+    }
+    if (inBlockComment) {
+      buf += c;
+      if (c === "*" && next === "/") {
+        buf += next;
+        i += 2;
+        inBlockComment = false;
+        continue;
+      }
+      i++;
+      continue;
+    }
+    if (dollarTag) {
+      if (sql.startsWith(dollarTag, i)) {
+        buf += dollarTag;
+        i += dollarTag.length;
+        dollarTag = null;
+        continue;
+      }
+      buf += c;
+      i++;
+      continue;
+    }
+    if (inSingle) {
+      buf += c;
+      if (c === "'" && next === "'") {
+        buf += "'";
+        i += 2;
+        continue;
+      }
+      if (c === "'") inSingle = false;
+      i++;
+      continue;
+    }
+
+    // Outside any literal/comment.
+    if (c === "-" && next === "-") {
+      inLineComment = true;
+      buf += c;
+      i++;
+      continue;
+    }
+    if (c === "/" && next === "*") {
+      inBlockComment = true;
+      buf += c;
+      i++;
+      continue;
+    }
+    if (c === "'") {
+      inSingle = true;
+      buf += c;
+      i++;
+      continue;
+    }
+    if (c === "$") {
+      const m = sql.slice(i).match(/^\$([A-Za-z_][A-Za-z0-9_]*)?\$/);
+      if (m) {
+        dollarTag = m[0];
+        buf += m[0];
+        i += m[0].length;
+        continue;
+      }
+    }
+    if (c === ";") {
+      const t = buf.trim();
+      if (t.length) out.push(t);
+      buf = "";
+      i++;
+      continue;
+    }
+    buf += c;
+    i++;
+  }
+  const t = buf.trim();
+  if (t) out.push(t);
+  return out;
+}
+
+/**
+ * Run a sequence of statements and return a result per statement so the
+ * editor can present them in separate result tabs. Statements run on a
+ * single connection so transaction state is preserved between them; errors
+ * are recorded inline and execution continues with the next statement.
+ */
+export async function runQueryMulti(
+  config: PostgresConfig,
+  database: string,
+  sql: string,
+): Promise<MultiQueryResult> {
+  return withClient(config, database, async (client) => {
+    const stmts = splitSqlStatements(sql);
+    const overall = Date.now();
+    const out: MultiQueryResult["results"] = [];
+    for (const stmt of stmts) {
+      const start = Date.now();
+      try {
+        const res = await client.query({ text: stmt, rowMode: "array" });
+        const fields = res.fields.map((f) => f.name);
+        out.push({
+          sql: stmt,
+          fields,
+          rows: res.rows as unknown[][],
+          rowCount: res.rowCount ?? (res.rows as unknown[]).length,
+          durationMs: Date.now() - start,
+          isCommand: fields.length === 0,
+          command:
+            (res as unknown as { command?: string }).command ?? null,
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        out.push({
+          sql: stmt,
+          error: msg,
+          durationMs: Date.now() - start,
+        });
+      }
+    }
+    return { results: out, totalDurationMs: Date.now() - overall };
+  });
+}
+
 // ====================================================================
 // Server-level operations: activity / locks / maintenance
 // ====================================================================

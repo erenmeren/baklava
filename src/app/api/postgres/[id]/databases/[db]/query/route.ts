@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getConnection, updateStatus } from "@/lib/connections/store";
-import { runQuery } from "@/lib/connections/postgres";
+import { runQuery, runQueryMulti } from "@/lib/connections/postgres";
 import type { PostgresConfig } from "@/lib/connections/types";
 import { formatError } from "@/lib/errors";
 
@@ -12,6 +12,8 @@ interface RouteContext {
 
 interface QueryRequest {
   sql: string;
+  /** When true, run as multiple statements and return one result per. */
+  multi?: boolean;
 }
 
 const MAX_ROWS = 500;
@@ -30,6 +32,40 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
   }
   if (!body.sql?.trim()) {
     return NextResponse.json({ error: "sql is required" }, { status: 400 });
+  }
+
+  // Multi-statement mode: never throws — failures land in `results[i].error`.
+  if (body.multi) {
+    try {
+      const result = await runQueryMulti(
+        record.config as PostgresConfig,
+        decodeURIComponent(db),
+        body.sql,
+      );
+      updateStatus(id, "ok");
+      return NextResponse.json({
+        results: result.results.map((r) => {
+          if ("error" in r) return r;
+          const truncated = r.rows.slice(0, MAX_ROWS);
+          return {
+            sql: r.sql,
+            fields: r.fields,
+            rows: truncated,
+            rowCount: r.rowCount,
+            truncated: r.rows.length > truncated.length,
+            durationMs: r.durationMs,
+            isCommand: r.isCommand,
+            command: r.command,
+          };
+        }),
+        totalDurationMs: result.totalDurationMs,
+      });
+    } catch (err) {
+      return NextResponse.json(
+        { error: formatError(err) },
+        { status: 200 },
+      );
+    }
   }
 
   try {
