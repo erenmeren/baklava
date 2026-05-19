@@ -7,6 +7,7 @@ import {
   type Consumer,
 } from "kafkajs";
 import type { KafkaConfig } from "./types";
+import type { SchemaRegistryClient } from "./kafka-schema-registry";
 
 export function createKafkaClient(config: KafkaConfig): Kafka {
   let sasl: SASLOptions | undefined;
@@ -183,19 +184,97 @@ export async function describeTopic(
   }
 }
 
+export interface DecodedPayloadView {
+  schemaId: number;
+  schemaType: "AVRO" | "JSON" | "PROTOBUF";
+  subject: string | null;
+  version: number | null;
+  /** Decoded payload serialized as a JSON string (so the wire stays JSON). */
+  json: string | null;
+  note?: string;
+}
+
 export interface KafkaMessage {
   partition: number;
   offset: string;
   timestamp: string;
+  /** UTF-8 view of the key — may be garbled for binary keys. */
   key: string | null;
+  /** Base64 view of the raw key bytes — preserved losslessly. */
+  keyBase64: string | null;
+  /** UTF-8 view of the value — only useful for plain-text payloads. */
   value: string | null;
+  /** Base64 view of the raw value bytes — preserved losslessly. */
+  valueBase64: string | null;
+  /** Populated when a Confluent magic byte was sniffed and SR decoded the payload. */
+  valueDecoded?: DecodedPayloadView;
   headers: Record<string, string>;
+}
+
+/** Helper: turn a kafkajs Buffer into the new dual key/value shape. */
+async function materializeMessage(args: {
+  partition: number;
+  offset: string;
+  timestamp: string;
+  key: Buffer | null;
+  value: Buffer | null;
+  headers: Record<string, string>;
+  schemaRegistry?: SchemaRegistryClient | null;
+}): Promise<KafkaMessage> {
+  const { partition, offset, timestamp, key, value, headers, schemaRegistry } =
+    args;
+  let valueDecoded: DecodedPayloadView | undefined;
+  if (schemaRegistry && value && value.length > 5 && value[0] === 0x00) {
+    try {
+      const dec = await schemaRegistry.decode(value);
+      if (dec) {
+        valueDecoded = {
+          schemaId: dec.schemaId,
+          schemaType: dec.schemaType,
+          subject: dec.subject,
+          version: dec.version,
+          json:
+            dec.decoded === null
+              ? null
+              : JSON.stringify(dec.decoded, (_k, v) =>
+                  typeof v === "bigint" ? v.toString() : v,
+                ),
+          note: dec.note,
+        };
+      }
+    } catch (err) {
+      valueDecoded = {
+        schemaId: -1,
+        schemaType: "AVRO",
+        subject: null,
+        version: null,
+        json: null,
+        note: `Schema Registry decode failed: ${err instanceof Error ? err.message : String(err)}`,
+      };
+    }
+  }
+  return {
+    partition,
+    offset,
+    timestamp,
+    key: key ? key.toString("utf8") : null,
+    keyBase64: key ? key.toString("base64") : null,
+    value: value ? value.toString("utf8") : null,
+    valueBase64: value ? value.toString("base64") : null,
+    valueDecoded,
+    headers,
+  };
 }
 
 export async function fetchMessages(
   config: KafkaConfig,
   topic: string,
-  options: { partition?: number; limit: number; fromBeginning: boolean }
+  options: {
+    partition?: number;
+    limit: number;
+    fromBeginning: boolean;
+    schemaRegistry?: SchemaRegistryClient | null;
+  },
 ): Promise<KafkaMessage[]> {
   const client = createKafkaClient(config);
   const groupId = `baklava-browse-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -221,29 +300,18 @@ export async function fetchMessages(
             ) {
               return;
             }
-            const headers: Record<string, string> = {};
-            if (message.headers) {
-              for (const [k, v] of Object.entries(message.headers)) {
-                if (v == null) headers[k] = "";
-                else if (Buffer.isBuffer(v)) headers[k] = v.toString("utf8");
-                else if (typeof v === "string") headers[k] = v;
-                else if (Array.isArray(v))
-                  headers[k] = v
-                    .map((p) =>
-                      Buffer.isBuffer(p) ? p.toString("utf8") : String(p)
-                    )
-                    .join(",");
-                else headers[k] = String(v);
-              }
-            }
-            collected.push({
-              partition,
-              offset: message.offset,
-              timestamp: message.timestamp,
-              key: message.key ? message.key.toString("utf8") : null,
-              value: message.value ? message.value.toString("utf8") : null,
-              headers,
-            });
+            const headers = decodeHeaders(message.headers);
+            collected.push(
+              await materializeMessage({
+                partition,
+                offset: message.offset,
+                timestamp: message.timestamp,
+                key: message.key,
+                value: message.value,
+                headers,
+                schemaRegistry: options.schemaRegistry,
+              }),
+            );
             if (collected.length >= target) {
               clearTimeout(timer);
               resolve();
@@ -283,6 +351,7 @@ export async function fetchMessagesFromOffset(
   partition: number,
   startOffset: string,
   limit: number,
+  schemaRegistry?: SchemaRegistryClient | null,
 ): Promise<KafkaMessage[]> {
   const client = createKafkaClient(config);
   const groupId = `baklava-seek-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -303,29 +372,17 @@ export async function fetchMessagesFromOffset(
           autoCommit: false,
           eachMessage: async ({ partition: p, message }) => {
             if (p !== partition) return;
-            const headers: Record<string, string> = {};
-            if (message.headers) {
-              for (const [k, v] of Object.entries(message.headers)) {
-                if (v == null) headers[k] = "";
-                else if (Buffer.isBuffer(v)) headers[k] = v.toString("utf8");
-                else if (typeof v === "string") headers[k] = v;
-                else if (Array.isArray(v))
-                  headers[k] = v
-                    .map((p) =>
-                      Buffer.isBuffer(p) ? p.toString("utf8") : String(p),
-                    )
-                    .join(",");
-                else headers[k] = String(v);
-              }
-            }
-            collected.push({
-              partition: p,
-              offset: message.offset,
-              timestamp: message.timestamp,
-              key: message.key ? message.key.toString("utf8") : null,
-              value: message.value ? message.value.toString("utf8") : null,
-              headers,
-            });
+            collected.push(
+              await materializeMessage({
+                partition: p,
+                offset: message.offset,
+                timestamp: message.timestamp,
+                key: message.key,
+                value: message.value,
+                headers: decodeHeaders(message.headers),
+                schemaRegistry,
+              }),
+            );
             if (collected.length >= limit) {
               clearTimeout(timer);
               resolve();
@@ -661,14 +718,7 @@ export async function emptyTopic(
   }
 }
 
-export interface TailMessage {
-  partition: number;
-  offset: string;
-  timestamp: string;
-  key: string | null;
-  value: string | null;
-  headers: Record<string, string>;
-}
+export type TailMessage = KafkaMessage;
 
 export interface TailHandle {
   stop: () => Promise<void>;
@@ -692,9 +742,14 @@ function decodeHeaders(headers: unknown): Record<string, string> {
 
 export async function startMessageTail(
   config: KafkaConfig,
-  opts: { topic: string; fromBeginning?: boolean; partition?: number },
+  opts: {
+    topic: string;
+    fromBeginning?: boolean;
+    partition?: number;
+    schemaRegistry?: SchemaRegistryClient | null;
+  },
   onMessage: (m: TailMessage) => void,
-  onError: (err: unknown) => void
+  onError: (err: unknown) => void,
 ): Promise<TailHandle> {
   const client = createKafkaClient(config);
   const groupId = `baklava-tail-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -713,14 +768,16 @@ export async function startMessageTail(
       autoCommit: false,
       eachMessage: async ({ partition, message }) => {
         if (opts.partition != null && partition !== opts.partition) return;
-        onMessage({
+        const m = await materializeMessage({
           partition,
           offset: message.offset,
           timestamp: message.timestamp,
-          key: message.key ? message.key.toString("utf8") : null,
-          value: message.value ? message.value.toString("utf8") : null,
+          key: message.key,
+          value: message.value,
           headers: decodeHeaders(message.headers),
+          schemaRegistry: opts.schemaRegistry,
         });
+        onMessage(m);
       },
     })
     .catch((err) => onError(err));

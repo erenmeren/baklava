@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { getConnection } from "@/lib/connections/store";
 import { startMessageTail, type TailHandle } from "@/lib/connections/kafka";
+import { schemaRegistryFor } from "@/lib/connections/kafka-schema-registry";
 import type { KafkaConfig } from "@/lib/connections/types";
 import { formatError } from "@/lib/errors";
 
@@ -69,12 +70,18 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
       safeEnqueue(sse("ready", { topic: decodeURIComponent(topic) }));
 
       try {
+        const cfg = record.config as KafkaConfig;
+        const schemaRegistry = schemaRegistryFor(id, {
+          url: cfg.schemaRegistryUrl ?? "",
+          auth: cfg.schemaRegistryAuth,
+        });
         handle = await startMessageTail(
-          record.config as KafkaConfig,
+          cfg,
           {
             topic: decodeURIComponent(topic),
             fromBeginning,
             partition,
+            schemaRegistry,
           },
           (m) => safeEnqueue(sse("message", m)),
           (err) => {

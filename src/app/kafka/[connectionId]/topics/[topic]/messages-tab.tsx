@@ -67,13 +67,34 @@ interface PartitionInfo {
   high: string;
 }
 
+export interface DecodedPayloadView {
+  schemaId: number;
+  schemaType: "AVRO" | "JSON" | "PROTOBUF";
+  subject: string | null;
+  version: number | null;
+  json: string | null;
+  note?: string;
+}
+
 export interface KafkaMessage {
   partition: number;
   offset: string;
   timestamp: string;
   key: string | null;
+  keyBase64?: string | null;
   value: string | null;
+  valueBase64?: string | null;
+  valueDecoded?: DecodedPayloadView;
   headers: Record<string, string>;
+}
+
+/**
+ * What the UI should treat as the rendered value: prefer the decoded JSON
+ * form when present (Avro / JSON-Schema), fall back to raw UTF-8.
+ */
+export function displayValue(m: KafkaMessage): string | null {
+  if (m.valueDecoded?.json) return m.valueDecoded.json;
+  return m.value;
 }
 
 export interface ProduceTemplate {
@@ -182,6 +203,33 @@ function ValueTypeChip({ type }: { type: ValueType }) {
       title={`value type · ${type}`}
     >
       {type}
+    </span>
+  );
+}
+
+const SCHEMA_TONE: Record<DecodedPayloadView["schemaType"], string> = {
+  AVRO: "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30",
+  JSON: "bg-sky-500/10 text-sky-700 dark:text-sky-400 border-sky-500/30",
+  PROTOBUF: "bg-violet-500/10 text-violet-700 dark:text-violet-400 border-violet-500/30",
+};
+
+function SchemaChip({ d }: { d: DecodedPayloadView }) {
+  const titleParts = [
+    `Schema id ${d.schemaId}`,
+    d.subject ? `subject: ${d.subject}` : null,
+    d.version != null ? `v${d.version}` : null,
+    d.note,
+  ].filter(Boolean);
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 rounded px-1 py-0 text-[9px] font-mono uppercase tracking-wider border",
+        SCHEMA_TONE[d.schemaType],
+      )}
+      title={titleParts.join(" · ")}
+    >
+      {d.schemaType}
+      <span className="opacity-70">#{d.schemaId}</span>
     </span>
   );
 }
@@ -403,7 +451,11 @@ export function MessagesTab({ base, topic, partitions, onProduceSimilar }: Props
     if (!kq && !vq && !hq) return messages;
     return messages.filter((m) => {
       if (kq && !(m.key ?? "").toLowerCase().includes(kq)) return false;
-      if (vq && !(m.value ?? "").toLowerCase().includes(vq)) return false;
+      if (vq) {
+        const dv = (displayValue(m) ?? "").toLowerCase();
+        const raw = (m.value ?? "").toLowerCase();
+        if (!dv.includes(vq) && !raw.includes(vq)) return false;
+      }
       if (hq) {
         const hay = Object.entries(m.headers)
           .map(([k, v]) => `${k}=${v}`)
@@ -945,7 +997,8 @@ function MessagesTable({
         </thead>
         <tbody>
           {messages.map((m, i) => {
-            const type = detectValueType(m.value);
+            const dv = displayValue(m);
+            const type = m.valueDecoded?.schemaType ?? detectValueType(m.value);
             const headerCount = Object.keys(m.headers).length;
             const isSelected = i === selectedIndex;
             return (
@@ -974,10 +1027,14 @@ function MessagesTable({
                   </td>
                 ) : null}
                 <td className="px-3 py-1 align-top">
-                  <ValueTypeChip type={type} />
+                  {m.valueDecoded ? (
+                    <SchemaChip d={m.valueDecoded} />
+                  ) : (
+                    <ValueTypeChip type={type as ValueType} />
+                  )}
                 </td>
                 <td className="px-3 py-1 align-top max-w-[60ch] truncate">
-                  {m.value ?? <span className="text-muted-foreground/40">null</span>}
+                  {dv ?? <span className="text-muted-foreground/40">null</span>}
                 </td>
                 <td className="px-3 py-1 align-top">
                   {headerCount > 0 ? (
@@ -1044,6 +1101,7 @@ function LanesView({
                 </div>
               </header>
               {msgs.map((m, i) => {
+                const dv = displayValue(m);
                 const type = detectValueType(m.value);
                 return (
                   <button
@@ -1060,7 +1118,11 @@ function LanesView({
                       <span className="text-[10px] font-mono text-muted-foreground tabular-nums">
                         @{m.offset}
                       </span>
-                      <ValueTypeChip type={type} />
+                      {m.valueDecoded ? (
+                        <SchemaChip d={m.valueDecoded} />
+                      ) : (
+                        <ValueTypeChip type={type} />
+                      )}
                     </div>
                     {m.key ? (
                       <div className="text-[10px] font-mono text-muted-foreground truncate">
@@ -1068,7 +1130,7 @@ function LanesView({
                       </div>
                     ) : null}
                     <div className="text-xs font-mono break-words line-clamp-3">
-                      {m.value ?? <span className="text-muted-foreground/40">null</span>}
+                      {dv ?? <span className="text-muted-foreground/40">null</span>}
                     </div>
                     <div className="mt-1 flex items-center justify-between text-[9px] font-mono text-muted-foreground tabular-nums">
                       <span>{formatTimeShort(m.timestamp)}</span>
@@ -1273,7 +1335,30 @@ function MessageDetailSheet({
             </MetaRow>
 
             <DetailBlock label="Key" content={message.key} />
-            <DetailBlock label="Value" content={message.value} />
+            {message.valueDecoded ? (
+              <>
+                <div className="flex items-center gap-2 text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
+                  Decoded by Schema Registry
+                  <SchemaChip d={message.valueDecoded} />
+                </div>
+                <DetailBlock
+                  label="Decoded"
+                  content={
+                    message.valueDecoded.json
+                      ? prettyPrintJson(message.valueDecoded.json)
+                      : message.valueDecoded.note ?? "(no decoded payload)"
+                  }
+                />
+                <details className="rounded-md border border-border/60 bg-muted/30 px-3 py-2">
+                  <summary className="cursor-pointer text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
+                    raw bytes
+                  </summary>
+                  <DetailBlock label="Raw" content={message.value} />
+                </details>
+              </>
+            ) : (
+              <DetailBlock label="Value" content={message.value} />
+            )}
 
             <div>
               <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground mb-2">

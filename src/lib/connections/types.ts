@@ -50,6 +50,18 @@ export interface KafkaConfig {
     username: string;
     password: string;
   };
+  /**
+   * Optional Confluent-compatible Schema Registry URL (e.g.
+   * https://psrc-xxxxx.us-east-2.aws.confluent.cloud). When set, the
+   * driver sniffs the Confluent magic byte (0x00 + 4-byte schema id)
+   * on consume and decodes Avro / JSON Schema / Protobuf payloads.
+   */
+  schemaRegistryUrl?: string;
+  /** Optional basic-auth for the Schema Registry. */
+  schemaRegistryAuth?: {
+    username: string;
+    password: string;
+  };
 }
 
 export interface PostgresConfig {

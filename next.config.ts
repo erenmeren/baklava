@@ -5,6 +5,7 @@ const nextConfig: NextConfig = {
     "dockerode",
     "ssh2",
     "kafkajs",
+    "avsc",
     "pg",
     "ioredis",
     "mysql2",

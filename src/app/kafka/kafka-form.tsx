@@ -35,6 +35,14 @@ export function KafkaForm({ onSaved, initial }: Props) {
   const [saslUsername, setSaslUsername] = useState(init?.sasl?.username ?? "");
   const [saslPassword, setSaslPassword] = useState("");
 
+  // Schema Registry (optional). Unlocks Avro / JSON-Schema / Protobuf
+  // decoding on the messages tab — kept off by default so casual local
+  // clusters don't see an SR badge that does nothing.
+  const [useSr, setUseSr] = useState(Boolean(init?.schemaRegistryUrl));
+  const [srUrl, setSrUrl] = useState(init?.schemaRegistryUrl ?? "");
+  const [srUser, setSrUser] = useState(init?.schemaRegistryAuth?.username ?? "");
+  const [srPass, setSrPass] = useState("");
+
   const [testing, setTesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [brokerCount, setBrokerCount] = useState<number | null>(null);
@@ -57,6 +65,15 @@ export function KafkaForm({ onSaved, initial }: Props) {
       if (saslPassword) sasl.password = saslPassword;
       else if (!editing) sasl.password = "";
       cfg.sasl = sasl;
+    }
+    if (useSr && srUrl.trim()) {
+      cfg.schemaRegistryUrl = srUrl.trim();
+      if (srUser) {
+        const auth: Record<string, unknown> = { username: srUser };
+        if (srPass) auth.password = srPass;
+        else if (!editing) auth.password = "";
+        cfg.schemaRegistryAuth = auth;
+      }
     }
     return cfg;
   };
@@ -208,6 +225,62 @@ export function KafkaForm({ onSaved, initial }: Props) {
                   onChange={(e) => setSaslPassword(e.target.value)}
                   placeholder={
                     editing && init?.sasl
+                      ? "(unchanged — leave blank to keep)"
+                      : ""
+                  }
+                />
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </div>
+
+      <div className="rounded-lg border border-border/60 p-3 space-y-3">
+        <div className="flex items-center justify-between text-sm">
+          <div>
+            <Label htmlFor="kafka-sr" className="cursor-pointer">
+              Schema Registry
+            </Label>
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              Decode Avro / JSON-Schema / Protobuf payloads automatically.
+            </p>
+          </div>
+          <Switch
+            id="kafka-sr"
+            checked={useSr}
+            onCheckedChange={setUseSr}
+          />
+        </div>
+        {useSr ? (
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <Label htmlFor="sr-url">URL</Label>
+              <Input
+                id="sr-url"
+                value={srUrl}
+                onChange={(e) => setSrUrl(e.target.value)}
+                placeholder="http://localhost:8081"
+                spellCheck={false}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="sr-user">Username (optional)</Label>
+                <Input
+                  id="sr-user"
+                  value={srUser}
+                  onChange={(e) => setSrUser(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="sr-pass">Password</Label>
+                <Input
+                  id="sr-pass"
+                  type="password"
+                  value={srPass}
+                  onChange={(e) => setSrPass(e.target.value)}
+                  placeholder={
+                    editing && init?.schemaRegistryAuth?.username
                       ? "(unchanged — leave blank to keep)"
                       : ""
                   }

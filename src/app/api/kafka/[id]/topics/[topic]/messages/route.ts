@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getConnection } from "@/lib/connections/store";
 import { fetchMessages, produceMessage } from "@/lib/connections/kafka";
+import { schemaRegistryFor } from "@/lib/connections/kafka-schema-registry";
 import type { KafkaConfig } from "@/lib/connections/types";
 import { formatError } from "@/lib/errors";
 
@@ -25,10 +26,15 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
   const fromBeginning =
     req.nextUrl.searchParams.get("from") === "beginning";
   try {
+    const cfg = record.config as KafkaConfig;
+    const schemaRegistry = schemaRegistryFor(id, {
+      url: cfg.schemaRegistryUrl ?? "",
+      auth: cfg.schemaRegistryAuth,
+    });
     const messages = await fetchMessages(
-      record.config as KafkaConfig,
+      cfg,
       decodeURIComponent(topic),
-      { partition, limit, fromBeginning }
+      { partition, limit, fromBeginning, schemaRegistry },
     );
     return NextResponse.json({ messages });
   } catch (err) {

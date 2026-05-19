@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getConnection } from "@/lib/connections/store";
 import { fetchMessagesFromOffset } from "@/lib/connections/kafka";
+import { schemaRegistryFor } from "@/lib/connections/kafka-schema-registry";
 import type { KafkaConfig } from "@/lib/connections/types";
 import { formatError } from "@/lib/errors";
 
@@ -31,12 +32,18 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
   }
   const limit = Math.min(Math.max(body.limit ?? 50, 1), 200);
   try {
+    const cfg = record.config as KafkaConfig;
+    const schemaRegistry = schemaRegistryFor(id, {
+      url: cfg.schemaRegistryUrl ?? "",
+      auth: cfg.schemaRegistryAuth,
+    });
     const messages = await fetchMessagesFromOffset(
-      record.config as KafkaConfig,
+      cfg,
       decodeURIComponent(topic),
       body.partition,
       body.offset,
       limit,
+      schemaRegistry,
     );
     return NextResponse.json({ messages });
   } catch (err) {
