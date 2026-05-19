@@ -3,7 +3,8 @@ import type { PostgresConfig } from "./types";
 
 function buildClientConfig(
   config: PostgresConfig,
-  databaseOverride?: string
+  databaseOverride?: string,
+  opts?: { statementTimeoutMs?: number }
 ): ClientConfig {
   return {
     host: config.host,
@@ -13,7 +14,8 @@ function buildClientConfig(
     password: config.password,
     ssl: config.ssl ? { rejectUnauthorized: false } : false,
     connectionTimeoutMillis: 6000,
-    statement_timeout: 15000,
+    // 0 = no limit (used for backup / restore, which can run long).
+    statement_timeout: opts?.statementTimeoutMs ?? 15000,
   };
 }
 
@@ -3156,4 +3158,171 @@ export async function updateExtension(
   await withClient(config, database, async (client) => {
     await client.query(`alter extension ${quoteIdent(name)} update`);
   });
+}
+
+// ─── Backup / restore ───────────────────────────────────────────────────
+
+/**
+ * Format a JS value (as the pg driver returns it) into a SQL literal for an
+ * INSERT statement. We lean on Postgres's implicit text→type coercion for
+ * most types — every value goes out as a quoted, escaped string except the
+ * cases below. This round-trips correctly for int / numeric / text / uuid /
+ * timestamp / bool / json on the way back in via a plain INSERT.
+ */
+function sqlLiteral(v: unknown): string {
+  if (v === null || v === undefined) return "NULL";
+  if (typeof v === "number") return Number.isFinite(v) ? String(v) : "NULL";
+  if (typeof v === "boolean") return v ? "TRUE" : "FALSE";
+  if (typeof v === "bigint") return v.toString();
+  if (Buffer.isBuffer(v)) return `'\\x${v.toString("hex")}'`;
+  if (v instanceof Date) return `'${v.toISOString()}'`;
+  if (Array.isArray(v) || (typeof v === "object" && v !== null)) {
+    // JSON / jsonb / composite — serialize and let the column type coerce.
+    return `'${JSON.stringify(v).replace(/'/g, "''")}'`;
+  }
+  return `'${String(v).replace(/'/g, "''")}'`;
+}
+
+export interface DumpOptions {
+  /** Restrict to these schemas; default = all non-system schemas. */
+  schemas?: string[];
+  /** When false, emit DDL only (no INSERT rows). */
+  includeData?: boolean;
+  /** Rows per multi-row INSERT batch. */
+  batchSize?: number;
+}
+
+/**
+ * Streams a portable SQL dump of `database` as an async generator of string
+ * chunks. The output is a single transaction: schema DDL (CREATE TABLE +
+ * indexes) followed by batched multi-row INSERTs. Restorable by executing
+ * the file through {@link restoreSql} or `psql -f`.
+ *
+ * Memory stays bounded: tables are read in keyset-free OFFSET batches and
+ * yielded incrementally rather than buffered.
+ */
+export async function* streamDatabaseDump(
+  config: PostgresConfig,
+  database: string,
+  options: DumpOptions = {},
+): AsyncGenerator<string> {
+  const includeData = options.includeData ?? true;
+  const batchSize = Math.min(Math.max(options.batchSize ?? 1000, 1), 10_000);
+
+  const client = new Client(
+    buildClientConfig(config, database, { statementTimeoutMs: 0 }),
+  );
+  await client.connect();
+  try {
+    // Resolve target schemas.
+    const schemaRows = await client.query<{ nspname: string }>(
+      `select nspname from pg_namespace
+       where nspname not in ('pg_catalog', 'information_schema', 'pg_toast')
+         and nspname not like 'pg_temp_%' and nspname not like 'pg_toast_temp_%'
+       order by nspname`,
+    );
+    let schemas = schemaRows.rows.map((r) => r.nspname);
+    if (options.schemas && options.schemas.length > 0) {
+      const want = new Set(options.schemas);
+      schemas = schemas.filter((s) => want.has(s));
+    }
+
+    const stamp = new Date().toISOString();
+    yield `-- Baklava SQL dump\n-- database: ${database}\n-- generated: ${stamp}\n-- schemas: ${schemas.join(", ") || "(none)"}\n\n`;
+    yield `BEGIN;\n\n`;
+
+    for (const schema of schemas) {
+      if (schema !== "public") {
+        yield `CREATE SCHEMA IF NOT EXISTS ${quoteIdent(schema)};\n\n`;
+      }
+      // Ordinary tables only (skip views / matviews for the data pass).
+      const tableRows = await client.query<{ relname: string }>(
+        `select c.relname from pg_class c
+         join pg_namespace n on n.oid = c.relnamespace
+         where n.nspname = $1 and c.relkind = 'r'
+         order by c.relname`,
+        [schema],
+      );
+
+      for (const { relname: table } of tableRows.rows) {
+        // DDL.
+        const ddl = await getTableDDL(config, database, schema, table);
+        yield `-- table ${schema}.${table}\n${ddl}\n\n`;
+
+        if (!includeData) continue;
+
+        // Column list for stable INSERT ordering.
+        const colRes = await client.query<{ attname: string }>(
+          `select a.attname from pg_attribute a
+           where a.attrelid = $1::regclass and a.attnum > 0 and not a.attisdropped
+           order by a.attnum`,
+          [`${quoteIdent(schema)}.${quoteIdent(table)}`],
+        );
+        const cols = colRes.rows.map((r) => r.attname);
+        if (cols.length === 0) continue;
+        const colList = cols.map((c) => quoteIdent(c)).join(", ");
+        const fqn = `${quoteIdent(schema)}.${quoteIdent(table)}`;
+
+        let offset = 0;
+        for (;;) {
+          const batch = await client.query({
+            text: `SELECT ${colList} FROM ${fqn} LIMIT ${batchSize} OFFSET ${offset}`,
+            rowMode: "array",
+          });
+          if (batch.rows.length === 0) break;
+          const values = (batch.rows as unknown[][])
+            .map((row) => `  (${row.map(sqlLiteral).join(", ")})`)
+            .join(",\n");
+          yield `INSERT INTO ${fqn} (${colList}) VALUES\n${values};\n`;
+          offset += batch.rows.length;
+          if (batch.rows.length < batchSize) break;
+        }
+        yield `\n`;
+      }
+    }
+
+    yield `COMMIT;\n`;
+  } finally {
+    await client.end().catch(() => undefined);
+  }
+}
+
+export interface RestoreResult {
+  ok: boolean;
+  statementsRun: number;
+  error?: string;
+}
+
+/**
+ * Restore by executing an uploaded SQL dump through a single connection so
+ * the dump's own BEGIN/COMMIT bracket works. We feed the whole script via
+ * the simple-query protocol (pg runs all statements). On error nothing is
+ * committed because the dump wraps itself in a transaction.
+ */
+export async function restoreSql(
+  config: PostgresConfig,
+  database: string,
+  sql: string,
+): Promise<RestoreResult> {
+  const client = new Client(
+    buildClientConfig(config, database, { statementTimeoutMs: 0 }),
+  );
+  await client.connect();
+  try {
+    await client.query(sql);
+    // Best-effort statement count for the UI.
+    const statementsRun = (sql.match(/;\s*$/gm) ?? []).length;
+    return { ok: true, statementsRun };
+  } catch (err) {
+    // If the dump didn't wrap itself in a transaction, try a rollback so a
+    // partial restore doesn't linger in an aborted-transaction state.
+    await client.query("ROLLBACK").catch(() => undefined);
+    return {
+      ok: false,
+      statementsRun: 0,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  } finally {
+    await client.end().catch(() => undefined);
+  }
 }
