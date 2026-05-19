@@ -1383,6 +1383,240 @@ export async function searchMessages(
   }
 }
 
+// ─── backup / restore ───────────────────────────────────────────────────
+
+export interface BackupOptions {
+  /** Stop after this many messages (0 = no cap). */
+  limit?: number;
+  /** Only back up messages at/after this wall-clock ms. */
+  startTimestamp?: number;
+  schemaRegistry?: SchemaRegistryClient | null;
+}
+
+export interface BackupLine {
+  partition: number;
+  offset: string;
+  timestamp: string;
+  /** Base64 of the raw key bytes — lossless, so binary keys survive. */
+  keyBase64: string | null;
+  /** Base64 of the raw value bytes. */
+  valueBase64: string | null;
+  headers: Record<string, string>;
+}
+
+/**
+ * Streams a topic to JSONL — one message per line — as an async generator.
+ * Keys and values are base64-encoded so binary payloads (Avro, protobuf,
+ * UUID keys) survive the round-trip losslessly. Restorable via
+ * {@link restoreTopic}.
+ */
+export async function* streamTopicBackup(
+  config: KafkaConfig,
+  topic: string,
+  options: BackupOptions = {},
+): AsyncGenerator<string> {
+  const limit = options.limit ?? 0;
+  const client = createKafkaClient(config);
+  const groupId = `baklava-backup-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const consumer = client.consumer({
+    groupId,
+    sessionTimeout: 10_000,
+    heartbeatInterval: 3_000,
+  });
+  await consumer.connect();
+
+  // Bridge the kafkajs push-callback into an async pull generator via a
+  // bounded queue + promise handshake.
+  const queue: BackupLine[] = [];
+  let resolveNext: (() => void) | null = null;
+  let finished = false;
+  let count = 0;
+
+  const wake = () => {
+    if (resolveNext) {
+      const r = resolveNext;
+      resolveNext = null;
+      r();
+    }
+  };
+
+  try {
+    await consumer.subscribe({ topic, fromBeginning: true });
+
+    let seekOffsets: Record<number, string> | null = null;
+    if (options.startTimestamp != null) {
+      const admin = client.admin();
+      await admin.connect();
+      try {
+        const offs = await admin.fetchTopicOffsetsByTimestamp(
+          topic,
+          options.startTimestamp,
+        );
+        seekOffsets = {};
+        for (const { partition, offset } of offs) seekOffsets[partition] = offset;
+      } finally {
+        await admin.disconnect().catch(() => undefined);
+      }
+    }
+
+    // 8s of silence with an empty queue ends the backup — we've drained the
+    // log. (Kafka has no "end of topic" signal for a live consumer.)
+    let idleTimer: ReturnType<typeof setTimeout> | null = null;
+    const armIdle = () => {
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        finished = true;
+        wake();
+      }, 8_000);
+    };
+
+    void consumer
+      .run({
+        autoCommit: false,
+        eachMessage: async ({ partition, message }) => {
+          queue.push({
+            partition,
+            offset: message.offset,
+            timestamp: message.timestamp,
+            keyBase64: message.key ? message.key.toString("base64") : null,
+            valueBase64: message.value
+              ? message.value.toString("base64")
+              : null,
+            headers: decodeHeaders(message.headers),
+          });
+          armIdle();
+          wake();
+        },
+      })
+      .catch(() => {
+        finished = true;
+        wake();
+      });
+
+    if (seekOffsets) {
+      const trySeek = () => {
+        try {
+          for (const [p, off] of Object.entries(seekOffsets!)) {
+            consumer.seek({ topic, partition: Number(p), offset: off });
+          }
+        } catch {
+          setTimeout(trySeek, 100);
+        }
+      };
+      setTimeout(trySeek, 400);
+    }
+
+    armIdle();
+
+    for (;;) {
+      if (queue.length > 0) {
+        const line = queue.shift()!;
+        yield JSON.stringify(line) + "\n";
+        count += 1;
+        if (limit > 0 && count >= limit) break;
+        continue;
+      }
+      if (finished) break;
+      await new Promise<void>((resolve) => {
+        resolveNext = resolve;
+      });
+    }
+    if (idleTimer) clearTimeout(idleTimer);
+  } finally {
+    await consumer.disconnect().catch(() => undefined);
+    try {
+      const admin = client.admin();
+      await admin.connect();
+      try {
+        await admin.deleteGroups([groupId]);
+      } finally {
+        await admin.disconnect().catch(() => undefined);
+      }
+    } catch {
+      // ignore
+    }
+  }
+}
+
+export interface RestoreTopicResult {
+  produced: number;
+  skipped: number;
+  error?: string;
+}
+
+export type PartitionStrategy = "original" | "auto";
+
+/**
+ * Produce messages from a JSONL backup back into a topic. Keys + headers are
+ * preserved (decoded from base64). `partitionStrategy`:
+ *   - "original": pin each message to its recorded partition (only valid if
+ *     the target has at least as many partitions).
+ *   - "auto": let Kafka assign by key hash / round-robin.
+ */
+export async function restoreTopic(
+  config: KafkaConfig,
+  targetTopic: string,
+  jsonl: string,
+  partitionStrategy: PartitionStrategy = "auto",
+): Promise<RestoreTopicResult> {
+  const client = createKafkaClient(config);
+  const producer = client.producer();
+  await producer.connect();
+  let produced = 0;
+  let skipped = 0;
+  try {
+    const lines = jsonl.split("\n");
+    const batch: {
+      partition?: number;
+      key: Buffer | null;
+      value: Buffer | null;
+      headers: Record<string, string>;
+    }[] = [];
+
+    for (const raw of lines) {
+      const line = raw.trim();
+      if (!line) continue;
+      let parsed: BackupLine;
+      try {
+        parsed = JSON.parse(line) as BackupLine;
+      } catch {
+        skipped += 1;
+        continue;
+      }
+      batch.push({
+        partition:
+          partitionStrategy === "original" ? parsed.partition : undefined,
+        key: parsed.keyBase64
+          ? Buffer.from(parsed.keyBase64, "base64")
+          : null,
+        value: parsed.valueBase64
+          ? Buffer.from(parsed.valueBase64, "base64")
+          : null,
+        headers: parsed.headers ?? {},
+      });
+      // Flush in batches of 500 to bound memory + request size.
+      if (batch.length >= 500) {
+        await producer.send({ topic: targetTopic, messages: batch.splice(0) });
+        produced += 500;
+      }
+    }
+    if (batch.length > 0) {
+      const n = batch.length;
+      await producer.send({ topic: targetTopic, messages: batch });
+      produced += n;
+    }
+    return { produced, skipped };
+  } catch (err) {
+    return {
+      produced,
+      skipped,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  } finally {
+    await producer.disconnect().catch(() => undefined);
+  }
+}
+
 export type TailMessage = KafkaMessage;
 
 export interface TailHandle {
