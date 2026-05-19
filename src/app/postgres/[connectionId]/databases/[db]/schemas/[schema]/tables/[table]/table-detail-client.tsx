@@ -54,6 +54,11 @@ interface IndexInfo {
   definition: string;
   isUnique: boolean;
   isPrimary: boolean;
+  sizeBytes: number;
+  scans: number;
+  tuplesRead: number;
+  tuplesFetched: number;
+  unused: boolean;
 }
 
 interface ConstraintInfo {
@@ -656,25 +661,57 @@ export function TableDetailClient({
                   <TableHeader>
                     <TableRow>
                       <TableHead>Name</TableHead>
-                      <TableHead>Unique</TableHead>
-                      <TableHead>Primary</TableHead>
+                      <TableHead>Kind</TableHead>
+                      <TableHead className="text-right">Size</TableHead>
+                      <TableHead className="text-right">Scans</TableHead>
+                      <TableHead className="text-right">Tuples read</TableHead>
                       <TableHead>Definition</TableHead>
                       <TableHead className="w-px" />
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {indexes.map((i) => (
-                      <TableRow key={i.name} className="group">
+                      <TableRow
+                        key={i.name}
+                        className={cn(
+                          "group",
+                          i.unused && "bg-amber-500/5",
+                        )}
+                      >
                         <TableCell className="font-mono text-xs">
-                          {i.name}
+                          <div className="flex items-center gap-2">
+                            {i.name}
+                            {i.unused ? (
+                              <span
+                                className="inline-flex items-center rounded border border-amber-500/30 bg-amber-500/10 px-1 py-px text-[9px] uppercase tracking-wider text-amber-600"
+                                title="No scans since last stats reset — candidate for drop."
+                              >
+                                unused
+                              </span>
+                            ) : null}
+                          </div>
                         </TableCell>
-                        <TableCell>
-                          {i.isUnique ? (
+                        <TableCell className="space-x-1">
+                          {i.isPrimary ? <Badge>primary</Badge> : null}
+                          {i.isUnique && !i.isPrimary ? (
                             <Badge variant="secondary">unique</Badge>
                           ) : null}
                         </TableCell>
-                        <TableCell>
-                          {i.isPrimary ? <Badge>primary</Badge> : null}
+                        <TableCell className="font-mono text-[11px] text-right tabular-nums text-muted-foreground">
+                          {formatBytes(i.sizeBytes)}
+                        </TableCell>
+                        <TableCell
+                          className={cn(
+                            "font-mono text-[11px] text-right tabular-nums",
+                            i.scans === 0
+                              ? "text-amber-600"
+                              : "text-muted-foreground",
+                          )}
+                        >
+                          {i.scans.toLocaleString()}
+                        </TableCell>
+                        <TableCell className="font-mono text-[11px] text-right tabular-nums text-muted-foreground">
+                          {i.tuplesRead.toLocaleString()}
                         </TableCell>
                         <TableCell className="font-mono text-[11px] text-muted-foreground break-all">
                           {i.definition}

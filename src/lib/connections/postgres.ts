@@ -573,6 +573,16 @@ export interface IndexInfo {
   definition: string;
   isUnique: boolean;
   isPrimary: boolean;
+  /** Bytes on disk. */
+  sizeBytes: number;
+  /** Number of index scans since stats reset. */
+  scans: number;
+  /** Tuples returned by index scans. */
+  tuplesRead: number;
+  /** Tuples fetched via index scans (rows actually pulled from heap). */
+  tuplesFetched: number;
+  /** True when scans=0 AND not unique/primary — safe to consider for drop. */
+  unused: boolean;
 }
 
 export async function listIndexes(
@@ -587,25 +597,42 @@ export async function listIndexes(
       definition: string;
       is_unique: boolean;
       is_primary: boolean;
+      size_bytes: string;
+      scans: string;
+      tuples_read: string;
+      tuples_fetched: string;
     }>(
       `select i.indexname as name,
               i.indexdef as definition,
               x.indisunique as is_unique,
-              x.indisprimary as is_primary
+              x.indisprimary as is_primary,
+              pg_relation_size(c.oid)::text as size_bytes,
+              coalesce(s.idx_scan, 0)::text as scans,
+              coalesce(s.idx_tup_read, 0)::text as tuples_read,
+              coalesce(s.idx_tup_fetch, 0)::text as tuples_fetched
        from pg_indexes i
        join pg_class c on c.relname = i.indexname
        join pg_namespace n on n.oid = c.relnamespace and n.nspname = i.schemaname
        join pg_index x on x.indexrelid = c.oid
+       left join pg_stat_user_indexes s on s.indexrelid = c.oid
        where i.schemaname = $1 and i.tablename = $2
        order by i.indexname`,
       [schema, table]
     );
-    return res.rows.map((r) => ({
-      name: r.name,
-      definition: r.definition,
-      isUnique: r.is_unique,
-      isPrimary: r.is_primary,
-    }));
+    return res.rows.map((r) => {
+      const scans = Number(r.scans) || 0;
+      return {
+        name: r.name,
+        definition: r.definition,
+        isUnique: r.is_unique,
+        isPrimary: r.is_primary,
+        sizeBytes: Number(r.size_bytes) || 0,
+        scans,
+        tuplesRead: Number(r.tuples_read) || 0,
+        tuplesFetched: Number(r.tuples_fetched) || 0,
+        unused: scans === 0 && !r.is_unique && !r.is_primary,
+      };
+    });
   });
 }
 
