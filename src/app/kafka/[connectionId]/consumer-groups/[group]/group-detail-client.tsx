@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PreviewUnconsumed } from "./preview-unconsumed";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -587,6 +588,22 @@ export function GroupDetailClient({ connectionId, group }: Props) {
             )
           ) : (
             <Skeleton className="h-32 w-full" />
+          )}
+        </section>
+
+        {/* What would this consumer see right now? */}
+        <section>
+          <SectionHeader
+            label="Preview unconsumed"
+            sub="Reads the next few messages each lagging partition would deliver."
+          />
+          {detail ? (
+            <PreviewUnconsumed
+              connectionId={connectionId}
+              offsets={detail.offsets}
+            />
+          ) : (
+            <Skeleton className="h-24 w-full" />
           )}
         </section>
       </div>
