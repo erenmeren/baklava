@@ -1493,9 +1493,14 @@ export async function getTableDDL(
 
   const create = `CREATE TABLE ${tableIdent(schema, table)} (\n${[...colLines, ...constraintLines].join(",\n")}\n);`;
 
+  // Skip indexes that back a constraint we already emitted inline. A PRIMARY
+  // KEY or UNIQUE constraint auto-creates an index of the same name, so
+  // emitting `CREATE [UNIQUE] INDEX <name>` again would fail with
+  // "relation <name> already exists" on restore.
+  const constraintNames = new Set(constraints.map((c) => c.name));
   const indexLines = indexes
-    .filter((i) => !i.isPrimary)
-    .map((i) => i.definition.endsWith(";") ? i.definition : i.definition + ";");
+    .filter((i) => !i.isPrimary && !constraintNames.has(i.name))
+    .map((i) => (i.definition.endsWith(";") ? i.definition : i.definition + ";"));
 
   return [create, ...indexLines].join("\n\n");
 }
@@ -3163,23 +3168,15 @@ export async function updateExtension(
 // ─── Backup / restore ───────────────────────────────────────────────────
 
 /**
- * Format a JS value (as the pg driver returns it) into a SQL literal for an
- * INSERT statement. We lean on Postgres's implicit text→type coercion for
- * most types — every value goes out as a quoted, escaped string except the
- * cases below. This round-trips correctly for int / numeric / text / uuid /
- * timestamp / bool / json on the way back in via a plain INSERT.
+ * Format a single value into a SQL literal. The dump query casts every
+ * column to `::text`, so the driver hands us either null or a string that is
+ * already Postgres's canonical text representation. We just NULL-guard and
+ * quote/escape — implicit text→type coercion on INSERT does the rest, which
+ * round-trips int / numeric / text / uuid / timestamp / bool / json / jsonb /
+ * arrays / bytea correctly.
  */
-function sqlLiteral(v: unknown): string {
+function sqlTextLiteral(v: unknown): string {
   if (v === null || v === undefined) return "NULL";
-  if (typeof v === "number") return Number.isFinite(v) ? String(v) : "NULL";
-  if (typeof v === "boolean") return v ? "TRUE" : "FALSE";
-  if (typeof v === "bigint") return v.toString();
-  if (Buffer.isBuffer(v)) return `'\\x${v.toString("hex")}'`;
-  if (v instanceof Date) return `'${v.toISOString()}'`;
-  if (Array.isArray(v) || (typeof v === "object" && v !== null)) {
-    // JSON / jsonb / composite — serialize and let the column type coerce.
-    return `'${JSON.stringify(v).replace(/'/g, "''")}'`;
-  }
   return `'${String(v).replace(/'/g, "''")}'`;
 }
 
@@ -3235,6 +3232,25 @@ export async function* streamDatabaseDump(
       if (schema !== "public") {
         yield `CREATE SCHEMA IF NOT EXISTS ${quoteIdent(schema)};\n\n`;
       }
+
+      // Sequences first — `serial`/`bigserial`/identity columns expand to a
+      // DEFAULT nextval('…_seq') that references a sequence, so it must
+      // exist before the tables that depend on it. We resync each sequence's
+      // current value with setval() after the data load.
+      const seqRows = await client.query<{
+        sequencename: string;
+        last_value: string | null;
+      }>(
+        `select sequencename, last_value
+         from pg_sequences where schemaname = $1
+         order by sequencename`,
+        [schema],
+      );
+      for (const s of seqRows.rows) {
+        yield `CREATE SEQUENCE IF NOT EXISTS ${quoteIdent(schema)}.${quoteIdent(s.sequencename)};\n`;
+      }
+      if (seqRows.rows.length > 0) yield `\n`;
+
       // Ordinary tables only (skip views / matviews for the data pass).
       const tableRows = await client.query<{ relname: string }>(
         `select c.relname from pg_class c
@@ -3261,23 +3277,42 @@ export async function* streamDatabaseDump(
         const cols = colRes.rows.map((r) => r.attname);
         if (cols.length === 0) continue;
         const colList = cols.map((c) => quoteIdent(c)).join(", ");
+        // Cast every column to text so the driver returns Postgres's own
+        // canonical output form (arrays as {a,b}, jsonb as compact JSON,
+        // bytea as \x…, timestamps ISO-ish). Every value then re-parses on
+        // INSERT via implicit text→type coercion, so we don't have to model
+        // each type's literal syntax in JS.
+        const selectList = cols
+          .map((c) => `${quoteIdent(c)}::text`)
+          .join(", ");
         const fqn = `${quoteIdent(schema)}.${quoteIdent(table)}`;
 
         let offset = 0;
         for (;;) {
           const batch = await client.query({
-            text: `SELECT ${colList} FROM ${fqn} LIMIT ${batchSize} OFFSET ${offset}`,
+            text: `SELECT ${selectList} FROM ${fqn} LIMIT ${batchSize} OFFSET ${offset}`,
             rowMode: "array",
           });
           if (batch.rows.length === 0) break;
           const values = (batch.rows as unknown[][])
-            .map((row) => `  (${row.map(sqlLiteral).join(", ")})`)
+            .map((row) => `  (${row.map(sqlTextLiteral).join(", ")})`)
             .join(",\n");
           yield `INSERT INTO ${fqn} (${colList}) VALUES\n${values};\n`;
           offset += batch.rows.length;
           if (batch.rows.length < batchSize) break;
         }
         yield `\n`;
+      }
+
+      // Resync sequence positions so post-restore inserts don't collide with
+      // restored rows. `false` = next nextval() returns exactly last_value
+      // when the sequence was never advanced.
+      if (includeData) {
+        for (const s of seqRows.rows) {
+          if (s.last_value == null) continue;
+          yield `SELECT setval('${schema.replace(/'/g, "''")}.${s.sequencename.replace(/'/g, "''")}', ${s.last_value}, true);\n`;
+        }
+        if (seqRows.rows.some((s) => s.last_value != null)) yield `\n`;
       }
     }
 
