@@ -631,20 +631,246 @@ export interface BrokerInfo {
   port: number;
   rack?: string;
   isController: boolean;
+  /** Total bytes written to any log dir on this broker. */
+  totalLogBytes?: number;
+  /** Total number of partition replicas (leader + follower) hosted here. */
+  partitionCount?: number;
+  /** Number of partitions for which this broker is leader. */
+  leaderCount?: number;
 }
 
+/**
+ * Lists brokers and (when admin permissions allow) joins on log-dir size +
+ * leader / replica counts from the cluster metadata. Failures in the
+ * enrichment steps degrade gracefully — the base broker list still returns.
+ */
 export async function listBrokers(config: KafkaConfig): Promise<BrokerInfo[]> {
   const client = createKafkaClient(config);
   const admin = client.admin();
   await admin.connect();
   try {
     const cluster = await admin.describeCluster();
-    return cluster.brokers.map((b) => ({
+    const brokers = cluster.brokers.map((b) => ({
       nodeId: b.nodeId,
       host: b.host,
       port: b.port,
       isController: b.nodeId === cluster.controller,
     }));
+
+    // Enrich with describeLogDirs (disk usage) — best effort. The admin
+    // method is in kafkajs but not all versions type it.
+    try {
+      const logDirs = await (
+        admin as unknown as {
+          describeLogDirs: (
+            brokerIds: number[],
+          ) => Promise<
+            Array<{
+              brokerId: number;
+              logDirs?: Array<{
+                topics?: Array<{
+                  partitions?: Array<{ size?: number; partition?: number }>;
+                }>;
+              }>;
+            }>
+          >;
+        }
+      ).describeLogDirs(brokers.map((b) => b.nodeId));
+      for (const broker of brokers as BrokerInfo[]) {
+        const ld = logDirs.find((d) => d.brokerId === broker.nodeId);
+        if (ld) {
+          let total = 0;
+          for (const dir of ld.logDirs ?? []) {
+            for (const t of dir.topics ?? []) {
+              for (const p of t.partitions ?? []) {
+                total += Number(p.size ?? 0);
+              }
+            }
+          }
+          broker.totalLogBytes = total;
+        }
+      }
+    } catch {
+      // Older brokers / restricted ACLs — skip silently.
+    }
+
+    // Enrich with leader / replica counts from topic metadata.
+    try {
+      const topicNames = await admin.listTopics();
+      const meta = await admin.fetchTopicMetadata({ topics: topicNames });
+      const partitionByBroker = new Map<number, number>();
+      const leaderByBroker = new Map<number, number>();
+      for (const t of meta.topics) {
+        for (const p of t.partitions) {
+          for (const r of p.replicas) {
+            partitionByBroker.set(r, (partitionByBroker.get(r) ?? 0) + 1);
+          }
+          leaderByBroker.set(
+            p.leader,
+            (leaderByBroker.get(p.leader) ?? 0) + 1,
+          );
+        }
+      }
+      for (const broker of brokers as BrokerInfo[]) {
+        broker.partitionCount = partitionByBroker.get(broker.nodeId) ?? 0;
+        broker.leaderCount = leaderByBroker.get(broker.nodeId) ?? 0;
+      }
+    } catch {
+      // skip
+    }
+
+    return brokers;
+  } finally {
+    await admin.disconnect().catch(() => undefined);
+  }
+}
+
+// ─── cluster health: under-replicated partitions + reassignments ───────
+
+export interface UnderReplicatedPartition {
+  topic: string;
+  partition: number;
+  leader: number;
+  replicas: number[];
+  isr: number[];
+  /** Replicas that are present in `replicas` but missing from ISR. */
+  outOfSync: number[];
+}
+
+export async function listUnderReplicated(
+  config: KafkaConfig,
+): Promise<UnderReplicatedPartition[]> {
+  const client = createKafkaClient(config);
+  const admin = client.admin();
+  await admin.connect();
+  try {
+    const names = await admin.listTopics();
+    if (names.length === 0) return [];
+    const meta = await admin.fetchTopicMetadata({ topics: names });
+    const out: UnderReplicatedPartition[] = [];
+    for (const t of meta.topics) {
+      for (const p of t.partitions) {
+        const oos = p.replicas.filter((r) => !p.isr.includes(r));
+        if (oos.length > 0) {
+          out.push({
+            topic: t.name,
+            partition: p.partitionId,
+            leader: p.leader,
+            replicas: p.replicas,
+            isr: p.isr,
+            outOfSync: oos,
+          });
+        }
+      }
+    }
+    return out;
+  } finally {
+    await admin.disconnect().catch(() => undefined);
+  }
+}
+
+export interface ReassignmentSpec {
+  topic: string;
+  partition: number;
+  replicas: number[];
+}
+
+/**
+ * Kicks off partition reassignment via Kafka's AlterPartitionReassignments
+ * RPC (KIP-455). Returns immediately — call listOngoingReassignments() to
+ * watch progress.
+ */
+export async function alterReassignments(
+  config: KafkaConfig,
+  specs: ReassignmentSpec[],
+): Promise<void> {
+  if (specs.length === 0) return;
+  const client = createKafkaClient(config);
+  const admin = client.admin();
+  await admin.connect();
+  try {
+    // kafkajs exposes alterPartitionReassignments under topics shape.
+    const grouped = new Map<
+      string,
+      Array<{ partition: number; replicas: number[] }>
+    >();
+    for (const s of specs) {
+      const arr = grouped.get(s.topic) ?? [];
+      arr.push({ partition: s.partition, replicas: s.replicas });
+      grouped.set(s.topic, arr);
+    }
+    await (admin as unknown as {
+      alterPartitionReassignments: (args: {
+        topics: Array<{
+          topic: string;
+          partitions: Array<{ partition: number; replicas: number[] }>;
+        }>;
+      }) => Promise<unknown>;
+    }).alterPartitionReassignments({
+      topics: [...grouped.entries()].map(([topic, partitions]) => ({
+        topic,
+        partitions,
+      })),
+    });
+  } finally {
+    await admin.disconnect().catch(() => undefined);
+  }
+}
+
+export interface OngoingReassignment {
+  topic: string;
+  partition: number;
+  /** Current replica set per the broker's view. */
+  replicas: number[];
+  /** Replicas being added (incoming). */
+  addingReplicas: number[];
+  /** Replicas being removed (outgoing). */
+  removingReplicas: number[];
+}
+
+export async function listOngoingReassignments(
+  config: KafkaConfig,
+): Promise<OngoingReassignment[]> {
+  const client = createKafkaClient(config);
+  const admin = client.admin();
+  await admin.connect();
+  try {
+    const res = (await (admin as unknown as {
+      listPartitionReassignments: () => Promise<{
+        topics: Array<{
+          name: string;
+          partitions: Array<{
+            partitionIndex: number;
+            replicas: number[];
+            addingReplicas: number[];
+            removingReplicas: number[];
+          }>;
+        }>;
+      }>;
+    }).listPartitionReassignments()) as {
+      topics?: Array<{
+        name: string;
+        partitions: Array<{
+          partitionIndex: number;
+          replicas: number[];
+          addingReplicas: number[];
+          removingReplicas: number[];
+        }>;
+      }>;
+    };
+    const out: OngoingReassignment[] = [];
+    for (const t of res.topics ?? []) {
+      for (const p of t.partitions) {
+        out.push({
+          topic: t.name,
+          partition: p.partitionIndex,
+          replicas: p.replicas,
+          addingReplicas: p.addingReplicas,
+          removingReplicas: p.removingReplicas,
+        });
+      }
+    }
+    return out;
   } finally {
     await admin.disconnect().catch(() => undefined);
   }
