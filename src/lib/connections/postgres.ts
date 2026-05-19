@@ -1740,6 +1740,152 @@ export interface QueryResult {
   durationMs: number;
 }
 
+// ─── EXPLAIN ─────────────────────────────────────────────────────────────
+
+export interface ExplainResult {
+  /** Whole JSON tree returned by `EXPLAIN (..., FORMAT JSON)`. */
+  plan: ExplainPlanRoot;
+  /** Wall-clock time it took for us to run the EXPLAIN itself. */
+  durationMs: number;
+  /** Modified planner settings (Postgres 12+ via SETTINGS option). */
+  settings?: Record<string, string>;
+}
+
+export interface ExplainPlanRoot {
+  Plan: ExplainPlanNode;
+  "Planning Time"?: number;
+  "Execution Time"?: number;
+  Triggers?: unknown[];
+  Settings?: Record<string, string>;
+  JIT?: Record<string, unknown>;
+  [k: string]: unknown;
+}
+
+export interface ExplainPlanNode {
+  "Node Type": string;
+  "Parallel Aware"?: boolean;
+  "Async Capable"?: boolean;
+  "Startup Cost"?: number;
+  "Total Cost"?: number;
+  "Plan Rows"?: number;
+  "Plan Width"?: number;
+  "Actual Startup Time"?: number;
+  "Actual Total Time"?: number;
+  "Actual Rows"?: number;
+  "Actual Loops"?: number;
+  "Rows Removed by Filter"?: number;
+  "Rows Removed by Index Recheck"?: number;
+  "Rows Removed by Join Filter"?: number;
+  "Relation Name"?: string;
+  "Schema"?: string;
+  "Alias"?: string;
+  "Index Name"?: string;
+  "Filter"?: string;
+  "Index Cond"?: string;
+  "Hash Cond"?: string;
+  "Join Type"?: string;
+  "Strategy"?: string;
+  "Sort Method"?: string;
+  "Sort Space Used"?: number;
+  "Sort Space Type"?: string;
+  "Sort Key"?: string[];
+  "Hash Buckets"?: number;
+  "Hash Batches"?: number;
+  "Original Hash Batches"?: number;
+  "Peak Memory Usage"?: number;
+  "Heap Fetches"?: number;
+  /** Shared blocks */
+  "Shared Hit Blocks"?: number;
+  "Shared Read Blocks"?: number;
+  "Shared Dirtied Blocks"?: number;
+  "Shared Written Blocks"?: number;
+  /** Local blocks (temp tables) */
+  "Local Hit Blocks"?: number;
+  "Local Read Blocks"?: number;
+  "Local Dirtied Blocks"?: number;
+  "Local Written Blocks"?: number;
+  /** Temp (work_mem spill) */
+  "Temp Read Blocks"?: number;
+  "Temp Written Blocks"?: number;
+  /** Children */
+  Plans?: ExplainPlanNode[];
+  [k: string]: unknown;
+}
+
+/**
+ * Run EXPLAIN for the user's SQL and return the parsed JSON plan tree.
+ *
+ * When `analyze=true` the user's statement *actually executes*, so we wrap
+ * it in `BEGIN; ... ROLLBACK;` to make write queries safe. PostgreSQL
+ * EXPLAIN ANALYZE on an INSERT/UPDATE/DELETE will persist the change
+ * without this wrapper — this is the standard Postgres safety dance.
+ *
+ * The SQL itself is the user's free-form text, intentionally unrestricted
+ * (same contract as `runQuery`).
+ */
+export async function explainQuery(
+  config: PostgresConfig,
+  database: string,
+  sql: string,
+  options: { analyze?: boolean; verbose?: boolean; buffers?: boolean } = {},
+): Promise<ExplainResult> {
+  const analyze = options.analyze ?? true;
+  const verbose = options.verbose ?? true;
+  const buffers = options.buffers ?? analyze;
+  // WAL and SETTINGS were added in PG13 and PG12 respectively. The driver
+  // we're targeting is modern; if someone connects to an older server
+  // these options will error and we degrade by retrying once without them.
+  const optionTokens: string[] = [
+    analyze ? "ANALYZE true" : null,
+    "FORMAT JSON",
+    verbose ? "VERBOSE true" : null,
+    buffers ? "BUFFERS true" : null,
+    analyze ? "WAL true" : null,
+    "SETTINGS true",
+  ].filter(Boolean) as string[];
+  const optionsClause = `(${optionTokens.join(", ")})`;
+
+  return withClient(config, database, async (client) => {
+    const start = Date.now();
+    if (analyze) {
+      await client.query("BEGIN");
+    }
+    try {
+      let res;
+      try {
+        res = await client.query<{ "QUERY PLAN": ExplainPlanRoot[] }>(
+          `EXPLAIN ${optionsClause} ${sql}`,
+        );
+      } catch (err) {
+        // Retry once with the conservative option set (no WAL, no SETTINGS).
+        if (analyze) await client.query("ROLLBACK");
+        if (analyze) await client.query("BEGIN");
+        const fallback = analyze
+          ? "(ANALYZE true, FORMAT JSON, VERBOSE true, BUFFERS true)"
+          : "(FORMAT JSON, VERBOSE true)";
+        try {
+          res = await client.query<{ "QUERY PLAN": ExplainPlanRoot[] }>(
+            `EXPLAIN ${fallback} ${sql}`,
+          );
+        } catch {
+          throw err;
+        }
+      }
+      const root = res.rows[0]?.["QUERY PLAN"]?.[0];
+      if (!root) throw new Error("EXPLAIN returned an empty plan");
+      return {
+        plan: root,
+        durationMs: Date.now() - start,
+        settings: root.Settings,
+      };
+    } finally {
+      if (analyze) {
+        await client.query("ROLLBACK").catch(() => undefined);
+      }
+    }
+  });
+}
+
 export async function runQuery(
   config: PostgresConfig,
   database: string,

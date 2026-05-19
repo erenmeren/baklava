@@ -19,6 +19,10 @@ import {
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/components/theme-provider";
+import {
+  ExplainPlanViewer,
+  type ExplainPlanRoot,
+} from "@/components/postgres/explain-plan-viewer";
 
 interface QueryResult {
   fields: string[];
@@ -136,6 +140,45 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [hydrated, setHydrated] = useState(false);
   const { resolvedTheme } = useTheme();
+
+  // EXPLAIN state — separate from the regular query result so the two
+  // panels don't fight. Hitting Explain calls the dedicated endpoint
+  // which wraps the user SQL in EXPLAIN (..., FORMAT JSON) inside a
+  // BEGIN/ROLLBACK and returns the parsed plan tree.
+  const [explainPlan, setExplainPlan] = useState<ExplainPlanRoot | null>(null);
+  const [explainPlanJson, setExplainPlanJson] = useState<string | null>(null);
+  const [explainLoading, setExplainLoading] = useState(false);
+  const [explainError, setExplainError] = useState<string | null>(null);
+
+  const runExplain = useCallback(async () => {
+    const raw = sqlText.trim();
+    if (!raw) return;
+    setExplainLoading(true);
+    setExplainError(null);
+    setExplainPlan(null);
+    setTab("explain");
+    try {
+      const res = await fetch(
+        `/api/postgres/${connectionId}/databases/${encodeURIComponent(db)}/explain`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ sql: raw, analyze: true }),
+        },
+      );
+      const data = await res.json();
+      if (res.ok && data.plan) {
+        setExplainPlan(data.plan as ExplainPlanRoot);
+        setExplainPlanJson(JSON.stringify(data.plan, null, 2));
+      } else {
+        setExplainError(data.error || "EXPLAIN failed");
+      }
+    } catch (e) {
+      setExplainError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setExplainLoading(false);
+    }
+  }, [connectionId, db, sqlText]);
 
   useEffect(() => {
     setSqlText(loadSql(connectionId, db, queryId, defaultSql));
@@ -285,9 +328,9 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
           <Button
             size="sm"
             variant="outline"
-            onClick={() => execute(true)}
-            disabled={phase === "running"}
-            title="Run with EXPLAIN ANALYZE"
+            onClick={runExplain}
+            disabled={phase === "running" || explainLoading}
+            title="Run with EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) inside a rolled-back transaction"
           >
             <Sparkles className="size-3.5" />
             Explain
@@ -423,7 +466,12 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
               />
             ) : null}
             {tab === "explain" ? (
-              <ExplainPanel result={result} phase={phase} />
+              <ExplainPlanViewer
+                plan={explainPlan}
+                loading={explainLoading}
+                error={explainError}
+                planJson={explainPlanJson ?? undefined}
+              />
             ) : null}
           </div>
         </div>
@@ -662,56 +710,6 @@ function HistoryPanel({
         </li>
       ))}
     </ul>
-  );
-}
-
-function ExplainPanel({
-  result,
-  phase,
-}: {
-  result: QueryResult | null;
-  phase: "idle" | "running" | "ok" | "err";
-}) {
-  const planRows =
-    phase === "ok" &&
-    result &&
-    result.fields.length === 1 &&
-    result.fields[0] === "QUERY PLAN"
-      ? (result.rows.map((r) => String(r[0])) as string[])
-      : null;
-
-  if (!planRows) {
-    return (
-      <EmptyState
-        title="No plan yet"
-        hint="Click Explain on the toolbar to capture a query plan."
-        icon={<Sparkles className="size-4" />}
-      />
-    );
-  }
-  return (
-    <pre className="p-3 text-[11.5px] font-mono leading-[1.6] whitespace-pre">
-      {planRows.map((line, i) => {
-        const isArrow = /^->/.test(line.trim());
-        const isHot = /actual time=[\d.]+\.\.([\d.]+)/.exec(line);
-        const slow = isHot && parseFloat(isHot[1]) > 50;
-        return (
-          <span
-            key={i}
-            className={cn(
-              "block",
-              slow
-                ? "text-destructive"
-                : isArrow
-                  ? "text-brand"
-                  : "text-foreground/90",
-            )}
-          >
-            {line}
-          </span>
-        );
-      })}
-    </pre>
   );
 }
 
