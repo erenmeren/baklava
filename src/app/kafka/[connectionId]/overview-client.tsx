@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { WorkspacePage } from "@/components/workspace/workspace-page";
+import { ClusterPulse } from "./cluster-pulse";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
@@ -34,6 +35,7 @@ interface Summary {
   totalPartitions: number;
   underReplicatedPartitions: number;
   underReplicatedTopics: string[];
+  offlinePartitions: number;
   consumerGroupCount: number;
   groupStates: Record<string, number>;
   totalMessages: number;
@@ -129,6 +131,9 @@ export function OverviewClient({ connectionId }: Props) {
               {error}
             </div>
           ) : null}
+
+          {/* ── Cluster pulse — 5-min rolling health, lost on refresh ─── */}
+          <ClusterPulse connectionId={connectionId} />
 
           {/* ── Broker pulse strip ────────────────────────────────────────── */}
           <BrokerStrip

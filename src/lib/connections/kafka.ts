@@ -1087,6 +1087,51 @@ export async function emptyTopic(
   }
 }
 
+export interface PulseSample {
+  /** Wall-clock ms when this snapshot was taken. */
+  at: number;
+  underReplicated: number;
+  offlinePartitions: number;
+  controllerId: number | null;
+  brokerCount: number;
+}
+
+/**
+ * Tiny health snapshot — cheaper than getClusterSummary because it skips
+ * the per-topic offset fan-out and consumer-group describe pass. Used as
+ * the 5-second pulse tick on the cluster overview.
+ */
+export async function fetchPulse(config: KafkaConfig): Promise<PulseSample> {
+  const client = createKafkaClient(config);
+  const admin = client.admin();
+  await admin.connect();
+  try {
+    const [cluster, metadata] = await Promise.all([
+      admin.describeCluster(),
+      admin.fetchTopicMetadata(),
+    ]);
+    let underReplicated = 0;
+    let offlinePartitions = 0;
+    for (const t of metadata?.topics ?? []) {
+      for (const p of t.partitions ?? []) {
+        const replicas = p.replicas ?? [];
+        const isr = p.isr ?? [];
+        if (isr.length < replicas.length) underReplicated += 1;
+        if (typeof p.leader === "number" && p.leader < 0) offlinePartitions += 1;
+      }
+    }
+    return {
+      at: Date.now(),
+      underReplicated,
+      offlinePartitions,
+      controllerId: cluster.controller ?? null,
+      brokerCount: cluster.brokers.length,
+    };
+  } finally {
+    await admin.disconnect().catch(() => undefined);
+  }
+}
+
 // ─── server-side search ─────────────────────────────────────────────────
 
 export interface SearchPredicate {
@@ -1573,6 +1618,8 @@ export interface KafkaClusterSummary {
   totalPartitions: number;
   underReplicatedPartitions: number;
   underReplicatedTopics: string[];
+  /** Partitions reporting leader = -1 (no broker available). */
+  offlinePartitions: number;
   consumerGroupCount: number;
   groupStates: Record<string, number>;
   totalMessages: number;
@@ -1594,6 +1641,7 @@ export async function getClusterSummary(
 
     let totalPartitions = 0;
     let underReplicatedPartitions = 0;
+    let offlinePartitions = 0;
     const underReplicatedTopics = new Set<string>();
     let userTopicCount = 0;
     let internalTopicCount = 0;
@@ -1607,6 +1655,11 @@ export async function getClusterSummary(
         if (p.isr.length < p.replicas.length) {
           underReplicatedPartitions += 1;
           underReplicatedTopics.add(t.name);
+        }
+        // leader === -1 means no broker is currently serving this partition —
+        // the classic "offline" signal that pages on-call.
+        if (typeof p.leader === "number" && p.leader < 0) {
+          offlinePartitions += 1;
         }
       }
     }
@@ -1669,6 +1722,7 @@ export async function getClusterSummary(
       totalPartitions,
       underReplicatedPartitions,
       underReplicatedTopics: [...underReplicatedTopics].sort(),
+      offlinePartitions,
       consumerGroupCount: groupList.groups.length,
       groupStates,
       totalMessages,
