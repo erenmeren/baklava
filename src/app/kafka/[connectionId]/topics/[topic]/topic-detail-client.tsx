@@ -41,6 +41,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import {
   ArrowLeft,
+  DatabaseBackup,
   Eraser,
   Loader2,
   Plus,
@@ -49,6 +50,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { MessagesTab, type ProduceTemplate } from "./messages-tab";
+import { BackupRestoreSheet } from "@/components/backup-restore-sheet";
 
 interface TopicDetail {
   name: string;
@@ -100,6 +102,7 @@ export function TopicDetailClient({ connectionId, topic }: Props) {
   // dialogs
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmEmpty, setConfirmEmpty] = useState(false);
+  const [backupOpen, setBackupOpen] = useState(false);
   const [addPartitionsOpen, setAddPartitionsOpen] = useState(false);
   const [newPartitionCount, setNewPartitionCount] = useState("");
 
@@ -262,6 +265,15 @@ export function TopicDetailClient({ connectionId, topic }: Props) {
           >
             <Plus className="size-3.5" />
             Add partitions
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setBackupOpen(true)}
+            disabled={busy}
+          >
+            <DatabaseBackup className="size-3.5" />
+            Backup
           </Button>
           <Button
             size="sm"
@@ -576,6 +588,14 @@ export function TopicDetailClient({ connectionId, topic }: Props) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <BackupRestoreSheet
+        open={backupOpen}
+        onOpenChange={setBackupOpen}
+        mode="kafka"
+        subject={topic}
+        endpoint={`/api/kafka/${connectionId}/topics/${encodeURIComponent(topic)}/backup`}
+      />
     </WorkspacePage>
   );
 }

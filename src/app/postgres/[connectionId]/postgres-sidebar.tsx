@@ -34,6 +34,7 @@ import {
 import { CreateTableDialog } from "./create-table-dialog";
 import { CreateSchemaDialog } from "./create-schema-dialog";
 import { CreateDatabaseDialog } from "./create-database-dialog";
+import { BackupRestoreSheet } from "@/components/backup-restore-sheet";
 import {
   SequenceFormDialog,
   type SequenceFormSeed,
@@ -140,6 +141,7 @@ export function PostgresSidebar({ connectionId, defaultDatabase }: Props) {
     null,
   );
   const [createDbOpen, setCreateDbOpen] = useState(false);
+  const [backupDb, setBackupDb] = useState<string | null>(null);
   const [seqDialog, setSeqDialog] = useState<
     | { mode: "create"; db: string; schema: string }
     | { mode: "edit"; db: string; schema: string; initial: SequenceFormSeed }
@@ -418,6 +420,7 @@ export function PostgresSidebar({ connectionId, defaultDatabase }: Props) {
                 onDrop={() =>
                   setDropTarget({ kind: "database", database: db.name })
                 }
+                onBackup={() => setBackupDb(db.name)}
               />
               {openDb[db.name] ? (
                 <ul className="ml-4 border-l border-border/50">
@@ -797,6 +800,18 @@ export function PostgresSidebar({ connectionId, defaultDatabase }: Props) {
         }}
       />
 
+      {backupDb ? (
+        <BackupRestoreSheet
+          open={backupDb !== null}
+          onOpenChange={(v) => {
+            if (!v) setBackupDb(null);
+          }}
+          mode="postgres"
+          subject={backupDb}
+          endpoint={`/api/postgres/${connectionId}/databases/${encodeURIComponent(backupDb)}/backup`}
+        />
+      ) : null}
+
       {seqDialog ? (
         seqDialog.mode === "create" ? (
           <SequenceFormDialog
@@ -1156,6 +1171,7 @@ function DatabaseRow({
   onCreateSchema,
   onRefresh,
   onDrop,
+  onBackup,
 }: {
   db: DatabaseInfo;
   isOpen: boolean;
@@ -1163,6 +1179,7 @@ function DatabaseRow({
   onCreateSchema: () => void;
   onRefresh: () => void;
   onDrop: () => void;
+  onBackup: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   return (
@@ -1202,6 +1219,10 @@ function DatabaseRow({
           <DropdownMenuItem onClick={onRefresh}>
             <RefreshCcw className="size-3.5" />
             Refresh
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={onBackup}>
+            <Database className="size-3.5" />
+            Backup &amp; restore…
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem
