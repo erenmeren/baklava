@@ -10,9 +10,11 @@ import {
   FileCode,
   Folder,
   Hash,
+  HeartPulse,
   Loader2,
   Lock,
   MoreHorizontal,
+  Package,
   Plus,
   RefreshCcw,
   Server,
@@ -351,9 +353,13 @@ export function PostgresSidebar({ connectionId, defaultDatabase }: Props) {
   const rolesHref = `/postgres/${connectionId}/roles`;
   const activityHref = `/postgres/${connectionId}/activity`;
   const locksHref = `/postgres/${connectionId}/locks`;
+  const diagnosticsHref = `/postgres/${connectionId}/diagnostics`;
+  const extensionsHref = `/postgres/${connectionId}/extensions`;
   const rolesActive = pathname === rolesHref;
   const activityActive = pathname === activityHref;
   const locksActive = pathname === locksHref;
+  const diagnosticsActive = pathname === diagnosticsHref;
+  const extensionsActive = pathname === extensionsHref;
 
   const serverLinkClass = (active: boolean) =>
     cn(
@@ -750,6 +756,14 @@ export function PostgresSidebar({ connectionId, defaultDatabase }: Props) {
       <Link href={rolesHref} className={serverLinkClass(rolesActive)}>
         <Shield className="size-3 shrink-0" />
         <span className="truncate">Roles</span>
+      </Link>
+      <Link href={diagnosticsHref} className={serverLinkClass(diagnosticsActive)}>
+        <HeartPulse className="size-3 shrink-0" />
+        <span className="truncate">Diagnostics</span>
+      </Link>
+      <Link href={extensionsHref} className={serverLinkClass(extensionsActive)}>
+        <Package className="size-3 shrink-0" />
+        <span className="truncate">Extensions</span>
       </Link>
 
       {/* Dialogs */}

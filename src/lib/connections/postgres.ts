@@ -2459,3 +2459,507 @@ const TYPE_NAMES: Record<number, string> = {
 function pgTypeName(oid: number): string {
   return TYPE_NAMES[oid] || `oid:${oid}`;
 }
+
+// ─── Phase C: diagnostics + extension manager ────────────────────────────
+
+export interface ReplicationSlot {
+  name: string;
+  type: string;
+  active: boolean;
+  database: string | null;
+  walRetainedBytes: number | null;
+  walRetainedMb: number;
+  restartLsn: string | null;
+  confirmedFlushLsn: string | null;
+}
+
+export interface ReplicationPeer {
+  applicationName: string;
+  clientAddr: string | null;
+  state: string;
+  syncState: string;
+  lagBytes: number | null;
+  lagSeconds: number | null;
+}
+
+export interface DatabaseAge {
+  name: string;
+  age: number;
+  /** % of autovacuum_freeze_max_age burnt (0..100). Approaches 100 → emergency vacuum. */
+  pctUsed: number;
+}
+
+export interface AutovacuumActive {
+  pid: number;
+  database: string | null;
+  relation: string | null;
+  phase: string | null;
+  queryStart: string | null;
+  state: string | null;
+}
+
+export interface DiagnosticsSnapshot {
+  sampledAt: number;
+  /** pg_stat_bgwriter / pg_stat_checkpointer (PG 17+) */
+  checkpoints: {
+    timed: number;
+    requested: number;
+    /** Total time spent writing buffers during checkpoints (ms). */
+    writeTimeMs: number;
+    /** Total time spent on sync at end of checkpoints (ms). */
+    syncTimeMs: number;
+    /** Buffers written by checkpointer, bgwriter, and backends. */
+    buffersCheckpoint: number;
+    buffersClean: number;
+    buffersBackend: number;
+  };
+  wal: {
+    /** PG14+: from pg_stat_wal. Null on older PG. */
+    walRecords: number | null;
+    walBytes: number | null;
+    walWriteTimeMs: number | null;
+    walSyncTimeMs: number | null;
+    currentLsn: string | null;
+    /** WAL bytes generated since postmaster start (best-effort). */
+    sinceStartBytes: number | null;
+  };
+  xidWraparound: {
+    autovacuumFreezeMaxAge: number;
+    /** Worst-case database by age. */
+    databases: DatabaseAge[];
+  };
+  replication: {
+    isPrimary: boolean;
+    slots: ReplicationSlot[];
+    peers: ReplicationPeer[];
+  };
+  autovacuum: {
+    active: AutovacuumActive[];
+    /** Tables with the largest dead-tuple count, capped at 10. */
+    deadTuples: Array<{
+      schema: string;
+      table: string;
+      liveTuples: number;
+      deadTuples: number;
+      pctDead: number;
+      lastVacuum: string | null;
+      lastAutovacuum: string | null;
+    }>;
+  };
+}
+
+export async function getDiagnostics(
+  config: PostgresConfig,
+): Promise<DiagnosticsSnapshot> {
+  return withClient(config, undefined, async (client) => {
+    const sampledAt = Date.now();
+
+    // pg_stat_checkpointer arrived in PG17; pg_stat_bgwriter is the
+    // compatibility surface. Try checkpointer first, fall back.
+    const checkpointerSql = `select
+        num_timed::text as timed,
+        num_requested::text as requested,
+        write_time::text as write_time_ms,
+        sync_time::text as sync_time_ms,
+        buffers_written::text as buffers_checkpoint
+      from pg_stat_checkpointer`;
+    const bgwriterSql = `select
+        checkpoints_timed::text as timed,
+        checkpoints_req::text as requested,
+        checkpoint_write_time::text as write_time_ms,
+        checkpoint_sync_time::text as sync_time_ms,
+        buffers_checkpoint::text as buffers_checkpoint,
+        buffers_clean::text as buffers_clean,
+        buffers_backend::text as buffers_backend
+      from pg_stat_bgwriter`;
+
+    const checkpoints: DiagnosticsSnapshot["checkpoints"] = {
+      timed: 0,
+      requested: 0,
+      writeTimeMs: 0,
+      syncTimeMs: 0,
+      buffersCheckpoint: 0,
+      buffersClean: 0,
+      buffersBackend: 0,
+    };
+    try {
+      // Both views may exist in PG17 — fetch in parallel.
+      const [chk, bg] = await Promise.all([
+        client
+          .query<{
+            timed: string;
+            requested: string;
+            write_time_ms: string;
+            sync_time_ms: string;
+            buffers_checkpoint: string;
+          }>(checkpointerSql)
+          .catch(() => null),
+        client
+          .query<{
+            timed: string;
+            requested: string;
+            write_time_ms: string;
+            sync_time_ms: string;
+            buffers_checkpoint: string;
+            buffers_clean: string;
+            buffers_backend: string;
+          }>(bgwriterSql)
+          .catch(() => null),
+      ]);
+      if (chk?.rows[0]) {
+        const r = chk.rows[0];
+        checkpoints.timed = Number(r.timed) || 0;
+        checkpoints.requested = Number(r.requested) || 0;
+        checkpoints.writeTimeMs = Number(r.write_time_ms) || 0;
+        checkpoints.syncTimeMs = Number(r.sync_time_ms) || 0;
+        checkpoints.buffersCheckpoint = Number(r.buffers_checkpoint) || 0;
+      }
+      if (bg?.rows[0]) {
+        const r = bg.rows[0];
+        // Prefer pg_stat_bgwriter for fields not in pg_stat_checkpointer.
+        checkpoints.buffersClean = Number(r.buffers_clean) || 0;
+        checkpoints.buffersBackend = Number(r.buffers_backend) || 0;
+        if (!chk) {
+          checkpoints.timed = Number(r.timed) || 0;
+          checkpoints.requested = Number(r.requested) || 0;
+          checkpoints.writeTimeMs = Number(r.write_time_ms) || 0;
+          checkpoints.syncTimeMs = Number(r.sync_time_ms) || 0;
+          checkpoints.buffersCheckpoint = Number(r.buffers_checkpoint) || 0;
+        }
+      }
+    } catch {
+      // leave defaults
+    }
+
+    // WAL stats. pg_stat_wal exists from PG14.
+    const wal: DiagnosticsSnapshot["wal"] = {
+      walRecords: null,
+      walBytes: null,
+      walWriteTimeMs: null,
+      walSyncTimeMs: null,
+      currentLsn: null,
+      sinceStartBytes: null,
+    };
+    try {
+      const [w, lsn] = await Promise.all([
+        client
+          .query<{
+            wal_records: string;
+            wal_bytes: string;
+            wal_write_time: string;
+            wal_sync_time: string;
+          }>(
+            `select wal_records::text, wal_bytes::text,
+                    wal_write_time::text, wal_sync_time::text
+             from pg_stat_wal`,
+          )
+          .catch(() => null),
+        client
+          .query<{
+            current_lsn: string | null;
+            insert_lsn: string | null;
+            start_lsn: string | null;
+          }>(
+            `select
+               case when pg_is_in_recovery() then null
+                    else pg_current_wal_lsn()::text end as current_lsn,
+               case when pg_is_in_recovery() then null
+                    else pg_current_wal_insert_lsn()::text end as insert_lsn,
+               (select pg_walfile_name(coalesce(
+                  case when pg_is_in_recovery() then null
+                       else pg_current_wal_lsn() end,
+                  '0/0'::pg_lsn))) as start_lsn`,
+          )
+          .catch(() => null),
+      ]);
+      if (w?.rows[0]) {
+        wal.walRecords = Number(w.rows[0].wal_records);
+        wal.walBytes = Number(w.rows[0].wal_bytes);
+        wal.walWriteTimeMs = Number(w.rows[0].wal_write_time);
+        wal.walSyncTimeMs = Number(w.rows[0].wal_sync_time);
+      }
+      if (lsn?.rows[0]) {
+        wal.currentLsn = lsn.rows[0].current_lsn;
+      }
+    } catch {
+      // leave defaults
+    }
+
+    const [xidSetting, dbAge, repPrimary, slots, peers, vacActive, dead] =
+      await Promise.all([
+        client.query<{ v: string }>(
+          `select current_setting('autovacuum_freeze_max_age') as v`,
+        ),
+        client.query<{ name: string; age: string }>(
+          `select datname as name, age(datfrozenxid)::text as age
+           from pg_database
+           where datallowconn
+           order by age(datfrozenxid) desc`,
+        ),
+        client.query<{ p: boolean }>(
+          `select not pg_is_in_recovery() as p`,
+        ),
+        client.query<{
+          slot_name: string;
+          slot_type: string;
+          active: boolean;
+          database: string | null;
+          restart_lsn: string | null;
+          confirmed_flush_lsn: string | null;
+          retained: string | null;
+        }>(
+          `select * from (
+             select slot_name, slot_type, active, database,
+                    restart_lsn::text,
+                    confirmed_flush_lsn::text,
+                    case when not pg_is_in_recovery()
+                         and restart_lsn is not null
+                         then (pg_current_wal_lsn() - restart_lsn)
+                         else null end as retained
+             from pg_replication_slots
+           ) s
+           order by retained desc nulls last`,
+        ),
+        client.query<{
+          application_name: string;
+          client_addr: string | null;
+          state: string;
+          sync_state: string;
+          lag_bytes: string | null;
+          lag_seconds: string | null;
+        }>(
+          `select application_name, client_addr::text,
+                  state, sync_state,
+                  case when not pg_is_in_recovery()
+                       then (pg_current_wal_lsn() - replay_lsn)::text
+                       else null end as lag_bytes,
+                  extract(epoch from (now() - reply_time))::float8::text as lag_seconds
+           from pg_stat_replication`,
+        ),
+        client.query<{
+          pid: number;
+          datname: string | null;
+          relid: string | null;
+          phase: string | null;
+          query_start: string | null;
+          state: string | null;
+        }>(
+          `select a.pid, a.datname,
+                  case when v.relid is not null
+                       then (select relnamespace::regnamespace || '.' || relname
+                             from pg_class where oid = v.relid)
+                       else null end as relid,
+                  v.phase, a.query_start::text, a.state
+           from pg_stat_activity a
+           left join pg_stat_progress_vacuum v on v.pid = a.pid
+           where a.backend_type = 'autovacuum worker'
+              or a.query ilike 'autovacuum:%'
+              or v.pid is not null
+           order by a.query_start asc nulls last`,
+        ),
+        client.query<{
+          schemaname: string;
+          relname: string;
+          n_live_tup: string;
+          n_dead_tup: string;
+          last_vacuum: string | null;
+          last_autovacuum: string | null;
+        }>(
+          `select schemaname, relname,
+                  n_live_tup::text, n_dead_tup::text,
+                  last_vacuum::text, last_autovacuum::text
+           from pg_stat_all_tables
+           where schemaname not in ('pg_catalog', 'information_schema')
+             and n_dead_tup > 0
+           order by n_dead_tup desc
+           limit 10`,
+        ),
+      ]);
+
+    const freezeMax = Number(xidSetting.rows[0]?.v ?? "200000000");
+    const xidDatabases: DatabaseAge[] = dbAge.rows.map((r) => {
+      const age = Number(r.age) || 0;
+      return {
+        name: r.name,
+        age,
+        pctUsed: Math.min(100, (age / freezeMax) * 100),
+      };
+    });
+
+    return {
+      sampledAt,
+      checkpoints,
+      wal,
+      xidWraparound: {
+        autovacuumFreezeMaxAge: freezeMax,
+        databases: xidDatabases,
+      },
+      replication: {
+        isPrimary: repPrimary.rows[0]?.p ?? true,
+        slots: slots.rows.map((r) => {
+          const bytes = r.retained != null ? Number(r.retained) : null;
+          return {
+            name: r.slot_name,
+            type: r.slot_type,
+            active: r.active,
+            database: r.database,
+            walRetainedBytes: bytes,
+            walRetainedMb: bytes ? bytes / (1024 * 1024) : 0,
+            restartLsn: r.restart_lsn,
+            confirmedFlushLsn: r.confirmed_flush_lsn,
+          };
+        }),
+        peers: peers.rows.map((r) => ({
+          applicationName: r.application_name,
+          clientAddr: r.client_addr,
+          state: r.state,
+          syncState: r.sync_state,
+          lagBytes: r.lag_bytes != null ? Number(r.lag_bytes) : null,
+          lagSeconds:
+            r.lag_seconds != null ? Number(r.lag_seconds) : null,
+        })),
+      },
+      autovacuum: {
+        active: vacActive.rows.map((r) => ({
+          pid: r.pid,
+          database: r.datname,
+          relation: r.relid,
+          phase: r.phase,
+          queryStart: r.query_start,
+          state: r.state,
+        })),
+        deadTuples: dead.rows.map((r) => {
+          const live = Number(r.n_live_tup) || 0;
+          const ded = Number(r.n_dead_tup) || 0;
+          return {
+            schema: r.schemaname,
+            table: r.relname,
+            liveTuples: live,
+            deadTuples: ded,
+            pctDead: live + ded > 0 ? (ded / (live + ded)) * 100 : 0,
+            lastVacuum: r.last_vacuum,
+            lastAutovacuum: r.last_autovacuum,
+          };
+        }),
+      },
+    };
+  });
+}
+
+// ─── Extension manager ────────────────────────────────────────────────────
+
+export interface InstalledExtension {
+  name: string;
+  schema: string;
+  installedVersion: string;
+  defaultVersion: string | null;
+  /** True when installedVersion !== defaultVersion. */
+  updateAvailable: boolean;
+  comment: string | null;
+}
+
+export interface AvailableExtension {
+  name: string;
+  defaultVersion: string | null;
+  comment: string | null;
+}
+
+export interface ExtensionsListing {
+  installed: InstalledExtension[];
+  available: AvailableExtension[];
+}
+
+export async function listExtensions(
+  config: PostgresConfig,
+  database: string,
+): Promise<ExtensionsListing> {
+  return withClient(config, database, async (client) => {
+    const [installed, available] = await Promise.all([
+      client.query<{
+        name: string;
+        schema: string;
+        installed_version: string;
+        default_version: string | null;
+        comment: string | null;
+      }>(
+        `select e.extname as name,
+                n.nspname as schema,
+                e.extversion as installed_version,
+                a.default_version,
+                a.comment
+         from pg_extension e
+         join pg_namespace n on n.oid = e.extnamespace
+         left join pg_available_extensions a on a.name = e.extname
+         order by e.extname`,
+      ),
+      client.query<{
+        name: string;
+        default_version: string | null;
+        comment: string | null;
+      }>(
+        `select name, default_version, comment
+         from pg_available_extensions
+         where installed_version is null
+         order by name`,
+      ),
+    ]);
+
+    return {
+      installed: installed.rows.map((r) => ({
+        name: r.name,
+        schema: r.schema,
+        installedVersion: r.installed_version,
+        defaultVersion: r.default_version,
+        updateAvailable:
+          r.default_version != null &&
+          r.default_version !== r.installed_version,
+        comment: r.comment,
+      })),
+      available: available.rows.map((r) => ({
+        name: r.name,
+        defaultVersion: r.default_version,
+        comment: r.comment,
+      })),
+    };
+  });
+}
+
+export async function createExtension(
+  config: PostgresConfig,
+  database: string,
+  name: string,
+  opts: { cascade?: boolean; schema?: string } = {},
+): Promise<void> {
+  validateIdentifier(name, "extension");
+  if (opts.schema) validateIdentifier(opts.schema, "schema");
+  await withClient(config, database, async (client) => {
+    const parts = [`create extension if not exists ${quoteIdent(name)}`];
+    if (opts.schema) parts.push(`schema ${quoteIdent(opts.schema)}`);
+    if (opts.cascade) parts.push("cascade");
+    await client.query(parts.join(" "));
+  });
+}
+
+export async function dropExtension(
+  config: PostgresConfig,
+  database: string,
+  name: string,
+  opts: { cascade?: boolean } = {},
+): Promise<void> {
+  validateIdentifier(name, "extension");
+  await withClient(config, database, async (client) => {
+    const sql = `drop extension ${quoteIdent(name)}${opts.cascade ? " cascade" : ""}`;
+    await client.query(sql);
+  });
+}
+
+export async function updateExtension(
+  config: PostgresConfig,
+  database: string,
+  name: string,
+): Promise<void> {
+  validateIdentifier(name, "extension");
+  await withClient(config, database, async (client) => {
+    await client.query(`alter extension ${quoteIdent(name)} update`);
+  });
+}
