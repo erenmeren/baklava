@@ -1356,7 +1356,7 @@ function MessageDetailSheet({
               <span className="font-mono text-xs">{message.offset}</span>
             </MetaRow>
 
-            <DetailBlock label="Key" content={message.key} />
+            <KeyDetail message={message} />
             {message.valueDecoded ? (
               <>
                 <div className="flex items-center gap-2 text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
@@ -1480,6 +1480,48 @@ function DrawerActions({
             <Sparkles className="size-3.5" />
             Produce similar
           </DropdownMenuItem>
+          {/\.(DLQ|dlt|dlq)$|[-_](DLQ|dlt|dlq)$/.test(topic) ? (
+            <DropdownMenuItem
+              onClick={async () => {
+                const res = await fetch(
+                  `${base}/replay`,
+                  {
+                    method: "POST",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify({
+                      picks: [
+                        { partition: message.partition, offset: message.offset },
+                      ],
+                      // Strip the common DLQ instrumentation headers added by
+                      // Spring / Confluent / kafka-connect so the replayed
+                      // message looks like the original.
+                      stripHeaderPrefixes: [
+                        "kafka_",
+                        "x-exception",
+                        "x-original-topic",
+                        "x-original-offset",
+                      ],
+                    }),
+                  },
+                );
+                const data = await res.json();
+                if (res.ok && data.sent === 1) {
+                  toast.success("Replayed to original topic", {
+                    description: `from ${topic} @${message.partition}:${message.offset}`,
+                  });
+                } else if (data.skipped?.length) {
+                  toast.error("Could not replay", {
+                    description: data.skipped[0].reason,
+                  });
+                } else {
+                  toast.error("Replay failed", { description: data.error });
+                }
+              }}
+            >
+              <RadioTower className="size-3.5" />
+              Replay to original topic
+            </DropdownMenuItem>
+          ) : null}
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
@@ -1529,6 +1571,87 @@ function MetaRow({
         {label}
       </span>
       <span className="flex-1 min-w-0">{children}</span>
+    </div>
+  );
+}
+
+/**
+ * Key viewer that handles binary keys (UUIDs as 16-byte blobs, int64 keys
+ * from Kafka Streams stateful aggregates, opaque tombstones, etc.) by
+ * letting the user pick a render mode rather than mangling everything as
+ * UTF-8.
+ */
+function KeyDetail({ message }: { message: KafkaMessage }) {
+  type Mode = "text" | "hex" | "base64" | "uuid" | "int64";
+  const [mode, setMode] = useState<Mode>("text");
+  const b64 = message.keyBase64 ?? null;
+  if (!b64) {
+    return <DetailBlock label="Key" content={message.key} />;
+  }
+  const raw =
+    typeof window === "undefined" ? null : Buffer.from(b64, "base64");
+  const len = raw?.length ?? 0;
+
+  const renderKey = (): string => {
+    if (!raw) return "";
+    if (mode === "text") return message.key ?? "";
+    if (mode === "hex") {
+      return [...raw].map((b) => b.toString(16).padStart(2, "0")).join(" ");
+    }
+    if (mode === "base64") return b64;
+    if (mode === "uuid" && raw.length === 16) {
+      const h = [...raw].map((b) => b.toString(16).padStart(2, "0")).join("");
+      return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+    }
+    if (mode === "int64" && raw.length === 8) {
+      // Big-endian signed int64 — common for kafka-streams aggregate keys.
+      let v = BigInt(0);
+      for (const b of raw) v = (v << BigInt(8)) | BigInt(b);
+      // Sign-extend if highest bit set.
+      if (raw[0] & 0x80) v -= BigInt(1) << BigInt(64);
+      return v.toString();
+    }
+    return `(${raw.length} bytes — switch render mode)`;
+  };
+
+  const modes: Array<{ id: Mode; label: string; enabled: boolean }> = [
+    { id: "text", label: "text", enabled: true },
+    { id: "hex", label: "hex", enabled: true },
+    { id: "base64", label: "base64", enabled: true },
+    { id: "uuid", label: "uuid", enabled: len === 16 },
+    { id: "int64", label: "int64", enabled: len === 8 },
+  ];
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground inline-flex items-center gap-2">
+          Key
+          <span className="text-muted-foreground/50">· {len} byte{len === 1 ? "" : "s"}</span>
+        </p>
+        <div className="inline-flex rounded border border-border/40 bg-card/60 p-0.5">
+          {modes.map((m) => (
+            <button
+              key={m.id}
+              type="button"
+              disabled={!m.enabled}
+              onClick={() => setMode(m.id)}
+              className={cn(
+                "px-1.5 py-0.5 text-[10px] font-mono uppercase tracking-wider rounded",
+                mode === m.id
+                  ? "bg-foreground/10 text-foreground"
+                  : "text-muted-foreground hover:text-foreground",
+                !m.enabled && "opacity-30 cursor-not-allowed",
+              )}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <pre className="rounded-md border border-border/60 bg-zinc-950 text-zinc-100 p-3 text-xs font-mono whitespace-pre-wrap break-words max-h-[20vh] overflow-auto">
+        {renderKey() || <span className="text-zinc-500">(empty)</span>}
+      </pre>
     </div>
   );
 }

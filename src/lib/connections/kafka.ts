@@ -447,6 +447,125 @@ export async function produceMessage(
   }
 }
 
+export interface ReplayInput {
+  /** Source topic (probably a DLQ). */
+  sourceTopic: string;
+  /** Target topic — defaults to header `x-original-topic` per-message when omitted. */
+  targetTopic?: string;
+  /** Specific (partition, offset) pairs to replay. */
+  picks: Array<{ partition: number; offset: string }>;
+  /** Strip headers matching these prefixes (e.g. "kafka_" or "x-exception"). */
+  stripHeaderPrefixes?: string[];
+  /** When true, only count what would be sent — don't actually produce. */
+  dryRun?: boolean;
+}
+
+export interface ReplayResult {
+  scanned: number;
+  sent: number;
+  skipped: Array<{ partition: number; offset: string; reason: string }>;
+}
+
+/**
+ * Replays specific DLQ messages back to an inferred or explicit target.
+ *
+ * Strategy: for each (partition, offset) we want to replay, briefly join
+ * an ephemeral consumer group, seek, read exactly one message, then
+ * produce it to the target topic preserving key + headers (modulo any
+ * stripped header prefixes). The target is either the explicit
+ * `targetTopic`, the value of the `x-original-topic` header, or — failing
+ * both — derived by trimming the most common DLQ suffixes from the source.
+ */
+export async function replayDeadLetters(
+  config: KafkaConfig,
+  input: ReplayInput,
+): Promise<ReplayResult> {
+  const sourceTopic = input.sourceTopic;
+  const strips = input.stripHeaderPrefixes ?? [];
+  const scanned = 0;
+  let sent = 0;
+  const skipped: ReplayResult["skipped"] = [];
+
+  const inferTarget = (
+    headers: Record<string, string>,
+    fallbackSource: string,
+  ): string | null => {
+    if (input.targetTopic) return input.targetTopic;
+    const hint =
+      headers["x-original-topic"] ??
+      headers["kafka_originalTopic"] ??
+      headers["x_original_topic"];
+    if (hint) return hint;
+    // Strip common DLQ suffixes if present.
+    const suffixes = [".DLQ", ".dlt", "-DLQ", "-dlt", "_dlq", "_DLQ", ".dlq"];
+    for (const s of suffixes) {
+      if (fallbackSource.endsWith(s)) return fallbackSource.slice(0, -s.length);
+    }
+    return null;
+  };
+
+  const client = createKafkaClient(config);
+  const producer = client.producer();
+  await producer.connect();
+
+  try {
+    // Read each pick by spinning up a one-shot consumer per pick. Costly,
+    // but DLQ replays are usually low-volume and this keeps the code
+    // straightforward and correct.
+    for (const pick of input.picks) {
+      const messages = await fetchMessagesFromOffset(
+        config,
+        sourceTopic,
+        pick.partition,
+        pick.offset,
+        1,
+      );
+      if (messages.length === 0) {
+        skipped.push({
+          partition: pick.partition,
+          offset: pick.offset,
+          reason: "not found",
+        });
+        continue;
+      }
+      const m = messages[0];
+      const headers: Record<string, string> = {};
+      for (const [k, v] of Object.entries(m.headers)) {
+        if (strips.some((p) => k.startsWith(p))) continue;
+        headers[k] = v;
+      }
+      const target = inferTarget(m.headers, sourceTopic);
+      if (!target) {
+        skipped.push({
+          partition: pick.partition,
+          offset: pick.offset,
+          reason: "no target topic could be inferred",
+        });
+        continue;
+      }
+      if (input.dryRun) {
+        sent += 1;
+        continue;
+      }
+      await producer.send({
+        topic: target,
+        messages: [
+          {
+            key: m.key,
+            value: m.value ?? null,
+            headers,
+          },
+        ],
+      });
+      sent += 1;
+    }
+  } finally {
+    await producer.disconnect().catch(() => undefined);
+  }
+
+  return { scanned, sent, skipped };
+}
+
 export interface ConsumerGroupSummary {
   groupId: string;
   protocolType: string;
