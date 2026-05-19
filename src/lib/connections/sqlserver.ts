@@ -1307,3 +1307,315 @@ export async function getSqlServerExpensiveQueries(
     });
   });
 }
+
+// ─── Locks / blocking (Phase D) ──────────────────────────────────────────
+
+export interface SqlServerBlockNode {
+  sessionId: number;
+  loginName: string | null;
+  hostName: string | null;
+  databaseName: string | null;
+  status: string | null;
+  waitType: string | null;
+  command: string | null;
+  text: string | null;
+  blockingSessionId: number | null;
+}
+
+/** Sessions that are either blocking or blocked, for the blocking-graph tree. */
+export async function listSqlServerBlocking(
+  config: SqlServerConfig,
+): Promise<SqlServerBlockNode[]> {
+  return withPool(config, async (pool) => {
+    const res = await pool.request().query<{
+      session_id: number;
+      login_name: string | null;
+      host_name: string | null;
+      database_name: string | null;
+      status: string | null;
+      wait_type: string | null;
+      command: string | null;
+      sql_text: string | null;
+      blocking_session_id: number | null;
+    }>(`
+      WITH involved AS (
+        SELECT r.session_id, r.blocking_session_id
+        FROM sys.dm_exec_requests r
+        WHERE r.blocking_session_id <> 0
+        UNION
+        SELECT r.blocking_session_id, 0
+        FROM sys.dm_exec_requests r
+        WHERE r.blocking_session_id <> 0
+      )
+      SELECT DISTINCT
+        s.session_id,
+        s.login_name,
+        s.host_name,
+        DB_NAME(COALESCE(r.database_id, s.database_id)) AS database_name,
+        COALESCE(r.status, s.status) AS status,
+        r.wait_type,
+        r.command,
+        t.text AS sql_text,
+        NULLIF(r.blocking_session_id, 0) AS blocking_session_id
+      FROM involved iv
+      JOIN sys.dm_exec_sessions s ON s.session_id = iv.session_id
+      LEFT JOIN sys.dm_exec_requests r ON r.session_id = s.session_id
+      OUTER APPLY sys.dm_exec_sql_text(r.sql_handle) t
+    `);
+    return res.recordset.map((row) => ({
+      sessionId: Number(row.session_id),
+      loginName: row.login_name ?? null,
+      hostName: row.host_name ?? null,
+      databaseName: row.database_name ?? null,
+      status: row.status ?? null,
+      waitType: row.wait_type ?? null,
+      command: row.command ?? null,
+      text: row.sql_text ?? null,
+      blockingSessionId:
+        row.blocking_session_id != null ? Number(row.blocking_session_id) : null,
+    }));
+  });
+}
+
+// ─── Query Store (Phase D) ───────────────────────────────────────────────
+
+export interface QueryStoreStatus {
+  enabled: boolean;
+  state: string | null;
+}
+
+export interface QueryStoreQuery {
+  queryId: number;
+  planId: number;
+  text: string;
+  executionCount: number;
+  avgDurationMs: number;
+  avgCpuMs: number;
+  avgLogicalReads: number;
+  isForced: boolean;
+}
+
+export async function getQueryStore(
+  config: SqlServerConfig,
+  database: string,
+): Promise<{ status: QueryStoreStatus; top: QueryStoreQuery[] }> {
+  validateSqlServerIdentifier(database, "database name");
+  return withPool(
+    config,
+    async (pool) => {
+      const statusR = await pool
+        .request()
+        .query<{ actual_state_desc: string | null }>(
+          `SELECT actual_state_desc FROM sys.database_query_store_options`,
+        )
+        .catch(() => null);
+      const state = statusR?.recordset[0]?.actual_state_desc ?? null;
+      const enabled = !!state && state !== "OFF";
+      if (!enabled) {
+        return { status: { enabled, state }, top: [] };
+      }
+
+      const topR = await pool.request().query<{
+        query_id: number;
+        plan_id: number;
+        query_sql_text: string | null;
+        count_executions: string | number;
+        avg_duration: number;
+        avg_cpu_time: number;
+        avg_logical_io_reads: number;
+        is_forced_plan: boolean;
+      }>(`
+        SELECT TOP 50
+          q.query_id, p.plan_id, qt.query_sql_text,
+          SUM(rs.count_executions) AS count_executions,
+          AVG(rs.avg_duration) AS avg_duration,
+          AVG(rs.avg_cpu_time) AS avg_cpu_time,
+          AVG(rs.avg_logical_io_reads) AS avg_logical_io_reads,
+          MAX(CAST(p.is_forced_plan AS INT)) AS is_forced_plan
+        FROM sys.query_store_runtime_stats rs
+        JOIN sys.query_store_plan p ON p.plan_id = rs.plan_id
+        JOIN sys.query_store_query q ON q.query_id = p.query_id
+        JOIN sys.query_store_query_text qt ON qt.query_text_id = q.query_text_id
+        GROUP BY q.query_id, p.plan_id, qt.query_sql_text
+        ORDER BY AVG(rs.avg_cpu_time) DESC
+      `);
+
+      return {
+        status: { enabled, state },
+        top: topR.recordset.map((r) => ({
+          queryId: Number(r.query_id),
+          planId: Number(r.plan_id),
+          text: (r.query_sql_text ?? "").trim(),
+          executionCount: Number(r.count_executions ?? 0),
+          // Query Store stores durations in microseconds.
+          avgDurationMs: Number(r.avg_duration ?? 0) / 1000,
+          avgCpuMs: Number(r.avg_cpu_time ?? 0) / 1000,
+          avgLogicalReads: Number(r.avg_logical_io_reads ?? 0),
+          isForced: Boolean(r.is_forced_plan),
+        })),
+      };
+    },
+    { database },
+  );
+}
+
+export async function setQueryStorePlanForced(
+  config: SqlServerConfig,
+  database: string,
+  queryId: number,
+  planId: number,
+  forced: boolean,
+): Promise<void> {
+  validateSqlServerIdentifier(database, "database name");
+  if (!Number.isInteger(queryId) || !Number.isInteger(planId)) {
+    throw new Error("Invalid query/plan id");
+  }
+  await withPool(
+    config,
+    async (pool) => {
+      const proc = forced ? "sp_query_store_force_plan" : "sp_query_store_unforce_plan";
+      await pool.request().batch(`EXEC ${proc} @query_id = ${queryId}, @plan_id = ${planId}`);
+    },
+    { database },
+  );
+}
+
+// ─── Index maintenance (Phase D) ─────────────────────────────────────────
+
+export interface IndexFragmentation {
+  schema: string;
+  table: string;
+  index: string;
+  indexType: string;
+  fragmentationPct: number;
+  pageCount: number;
+  recommendation: "none" | "reorganize" | "rebuild";
+}
+
+export async function getSqlServerIndexFragmentation(
+  config: SqlServerConfig,
+  database: string,
+): Promise<IndexFragmentation[]> {
+  validateSqlServerIdentifier(database, "database name");
+  return withPool(
+    config,
+    async (pool) => {
+      // LIMITED mode only — DETAILED scans every page and would hammer prod.
+      const res = await pool.request().query<{
+        schema_name: string;
+        table_name: string;
+        index_name: string | null;
+        index_type: string;
+        frag: number;
+        page_count: string | number;
+      }>(`
+        SELECT
+          s.name AS schema_name, t.name AS table_name,
+          i.name AS index_name, i.type_desc AS index_type,
+          ips.avg_fragmentation_in_percent AS frag,
+          ips.page_count
+        FROM sys.dm_db_index_physical_stats(DB_ID(), NULL, NULL, NULL, 'LIMITED') ips
+        JOIN sys.tables t ON t.object_id = ips.object_id
+        JOIN sys.schemas s ON s.schema_id = t.schema_id
+        JOIN sys.indexes i ON i.object_id = ips.object_id AND i.index_id = ips.index_id
+        WHERE ips.index_id > 0 AND ips.page_count >= 100
+        ORDER BY ips.avg_fragmentation_in_percent DESC
+      `);
+      return res.recordset
+        .filter((r) => r.index_name)
+        .map((r) => {
+          const frag = Number(r.frag ?? 0);
+          const rec: IndexFragmentation["recommendation"] =
+            frag > 30 ? "rebuild" : frag > 5 ? "reorganize" : "none";
+          return {
+            schema: String(r.schema_name),
+            table: String(r.table_name),
+            index: String(r.index_name),
+            indexType: String(r.index_type),
+            fragmentationPct: frag,
+            pageCount: Number(r.page_count ?? 0),
+            recommendation: rec,
+          };
+        });
+    },
+    { database },
+  );
+}
+
+export async function maintainSqlServerIndex(
+  config: SqlServerConfig,
+  database: string,
+  schema: string,
+  table: string,
+  index: string,
+  action: "rebuild" | "reorganize",
+): Promise<void> {
+  validateSqlServerIdentifier(database, "database name");
+  validateSqlServerIdentifier(schema, "schema name");
+  validateSqlServerIdentifier(table, "table name");
+  validateSqlServerIdentifier(index, "index name");
+  await withPool(
+    config,
+    async (pool) => {
+      const verb = action === "rebuild" ? "REBUILD" : "REORGANIZE";
+      await pool.request().batch(`ALTER INDEX [${index}] ON [${schema}].[${table}] ${verb}`);
+    },
+    { database, requestTimeoutMs: 120_000 },
+  );
+}
+
+export interface SqlServerMissingIndex {
+  schema: string;
+  table: string;
+  impact: number;
+  userSeeks: number;
+  createStatement: string;
+}
+
+export async function getSqlServerMissingIndexes(
+  config: SqlServerConfig,
+  database: string,
+): Promise<SqlServerMissingIndex[]> {
+  validateSqlServerIdentifier(database, "database name");
+  return withPool(
+    config,
+    async (pool) => {
+      const res = await pool.request().query<{
+        schema_name: string;
+        table_name: string;
+        avg_user_impact: number;
+        user_seeks: number;
+        equality_columns: string | null;
+        inequality_columns: string | null;
+        included_columns: string | null;
+      }>(`
+        SELECT
+          s.name AS schema_name, t.name AS table_name,
+          gs.avg_user_impact, gs.user_seeks,
+          id.equality_columns, id.inequality_columns, id.included_columns
+        FROM sys.dm_db_missing_index_group_stats gs
+        JOIN sys.dm_db_missing_index_groups g ON g.index_group_handle = gs.group_handle
+        JOIN sys.dm_db_missing_index_details id ON id.index_handle = g.index_handle
+        JOIN sys.tables t ON t.object_id = id.object_id
+        JOIN sys.schemas s ON s.schema_id = t.schema_id
+        WHERE id.database_id = DB_ID()
+        ORDER BY gs.avg_user_impact * (gs.user_seeks + gs.user_scans) DESC
+      `);
+      return res.recordset.map((r) => {
+        const eq = (r.equality_columns ?? "").replace(/[[\]]/g, "");
+        const ineq = (r.inequality_columns ?? "").replace(/[[\]]/g, "");
+        const incl = (r.included_columns ?? "").replace(/[[\]]/g, "");
+        const keyCols = [eq, ineq].filter(Boolean).join(", ");
+        const inclClause = incl ? ` INCLUDE (${incl})` : "";
+        return {
+          schema: String(r.schema_name),
+          table: String(r.table_name),
+          impact: Number(r.avg_user_impact ?? 0),
+          userSeeks: Number(r.user_seeks ?? 0),
+          createStatement: `CREATE NONCLUSTERED INDEX [IX_${r.table_name}_suggested] ON [${r.schema_name}].[${r.table_name}] (${keyCols})${inclClause};`,
+        };
+      });
+    },
+    { database },
+  );
+}

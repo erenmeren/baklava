@@ -6,7 +6,16 @@ import {
 import { getTech } from "@/lib/tech-catalog";
 import { requireConnection } from "@/lib/connections/server";
 import type { SqlServerConfig } from "@/lib/connections/types";
-import { Activity, Database, Gauge, ListOrdered, Terminal } from "lucide-react";
+import {
+  Activity,
+  Database,
+  Gauge,
+  Lock,
+  ListOrdered,
+  Store,
+  Terminal,
+  Wrench,
+} from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -61,6 +70,24 @@ export default async function SqlServerWorkspaceLayout({
             icon={<ListOrdered className="size-4" />}
           >
             Top queries
+          </SidebarLink>
+          <SidebarLink
+            href={`/sqlserver/${connectionId}/locks`}
+            icon={<Lock className="size-4" />}
+          >
+            Locks
+          </SidebarLink>
+          <SidebarLink
+            href={`/sqlserver/${connectionId}/query-store`}
+            icon={<Store className="size-4" />}
+          >
+            Query Store
+          </SidebarLink>
+          <SidebarLink
+            href={`/sqlserver/${connectionId}/indexes`}
+            icon={<Wrench className="size-4" />}
+          >
+            Index maintenance
           </SidebarLink>
         </SidebarSection>
       }
