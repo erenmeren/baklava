@@ -816,23 +816,32 @@ export async function listBrokers(config: KafkaConfig): Promise<BrokerInfo[]> {
     // Enrich with leader / replica counts from topic metadata.
     try {
       const topicNames = await admin.listTopics();
-      const meta = await admin.fetchTopicMetadata({ topics: topicNames });
-      const partitionByBroker = new Map<number, number>();
-      const leaderByBroker = new Map<number, number>();
-      for (const t of meta.topics) {
-        for (const p of t.partitions) {
-          for (const r of p.replicas) {
-            partitionByBroker.set(r, (partitionByBroker.get(r) ?? 0) + 1);
+      if (topicNames && topicNames.length > 0) {
+        const meta = await admin.fetchTopicMetadata({ topics: topicNames });
+        const partitionByBroker = new Map<number, number>();
+        const leaderByBroker = new Map<number, number>();
+        for (const t of meta?.topics ?? []) {
+          for (const p of t.partitions ?? []) {
+            for (const r of p.replicas ?? []) {
+              partitionByBroker.set(r, (partitionByBroker.get(r) ?? 0) + 1);
+            }
+            if (typeof p.leader === "number") {
+              leaderByBroker.set(
+                p.leader,
+                (leaderByBroker.get(p.leader) ?? 0) + 1,
+              );
+            }
           }
-          leaderByBroker.set(
-            p.leader,
-            (leaderByBroker.get(p.leader) ?? 0) + 1,
-          );
         }
-      }
-      for (const broker of brokers as BrokerInfo[]) {
-        broker.partitionCount = partitionByBroker.get(broker.nodeId) ?? 0;
-        broker.leaderCount = leaderByBroker.get(broker.nodeId) ?? 0;
+        for (const broker of brokers as BrokerInfo[]) {
+          broker.partitionCount = partitionByBroker.get(broker.nodeId) ?? 0;
+          broker.leaderCount = leaderByBroker.get(broker.nodeId) ?? 0;
+        }
+      } else {
+        for (const broker of brokers as BrokerInfo[]) {
+          broker.partitionCount = 0;
+          broker.leaderCount = 0;
+        }
       }
     } catch {
       // skip
@@ -864,19 +873,21 @@ export async function listUnderReplicated(
   await admin.connect();
   try {
     const names = await admin.listTopics();
-    if (names.length === 0) return [];
+    if (!names || names.length === 0) return [];
     const meta = await admin.fetchTopicMetadata({ topics: names });
     const out: UnderReplicatedPartition[] = [];
-    for (const t of meta.topics) {
-      for (const p of t.partitions) {
-        const oos = p.replicas.filter((r) => !p.isr.includes(r));
+    for (const t of meta?.topics ?? []) {
+      for (const p of t.partitions ?? []) {
+        const replicas = p.replicas ?? [];
+        const isr = p.isr ?? [];
+        const oos = replicas.filter((r) => !isr.includes(r));
         if (oos.length > 0) {
           out.push({
             topic: t.name,
             partition: p.partitionId,
             leader: p.leader,
-            replicas: p.replicas,
-            isr: p.isr,
+            replicas,
+            isr,
             outOfSync: oos,
           });
         }
@@ -954,38 +965,51 @@ export async function listOngoingReassignments(
   const admin = client.admin();
   await admin.connect();
   try {
-    const res = (await (admin as unknown as {
-      listPartitionReassignments: () => Promise<{
-        topics: Array<{
-          name: string;
-          partitions: Array<{
-            partitionIndex: number;
-            replicas: number[];
-            addingReplicas: number[];
-            removingReplicas: number[];
+    // Not every kafkajs version exposes listPartitionReassignments, and not
+    // every broker implements KIP-455 (older Zookeeper-based clusters).
+    // Treat any failure here as "no reassignments visible" — the empty
+    // list is the right user-facing answer.
+    const fn = (
+      admin as unknown as {
+        listPartitionReassignments?: () => Promise<{
+          topics?: Array<{
+            name: string;
+            partitions?: Array<{
+              partitionIndex: number;
+              replicas?: number[];
+              addingReplicas?: number[];
+              removingReplicas?: number[];
+            }>;
           }>;
         }>;
-      }>;
-    }).listPartitionReassignments()) as {
+      }
+    ).listPartitionReassignments;
+    if (typeof fn !== "function") return [];
+    let res: {
       topics?: Array<{
         name: string;
-        partitions: Array<{
+        partitions?: Array<{
           partitionIndex: number;
-          replicas: number[];
-          addingReplicas: number[];
-          removingReplicas: number[];
+          replicas?: number[];
+          addingReplicas?: number[];
+          removingReplicas?: number[];
         }>;
       }>;
-    };
+    } | undefined;
+    try {
+      res = await fn.call(admin);
+    } catch {
+      return [];
+    }
     const out: OngoingReassignment[] = [];
-    for (const t of res.topics ?? []) {
-      for (const p of t.partitions) {
+    for (const t of res?.topics ?? []) {
+      for (const p of t.partitions ?? []) {
         out.push({
           topic: t.name,
           partition: p.partitionIndex,
-          replicas: p.replicas,
-          addingReplicas: p.addingReplicas,
-          removingReplicas: p.removingReplicas,
+          replicas: p.replicas ?? [],
+          addingReplicas: p.addingReplicas ?? [],
+          removingReplicas: p.removingReplicas ?? [],
         });
       }
     }
