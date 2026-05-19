@@ -16,6 +16,13 @@ interface ConnectionsResponse {
   connections: ConnectionRecord[];
 }
 
+/**
+ * Technologies enabled in this build. Everything else stays visible on the
+ * grid but is greyed out and non-clickable. Add an id here to switch a tech
+ * back on — the workspace + driver code is unchanged.
+ */
+const ENABLED_TECH_IDS = new Set(["docker", "postgres", "kafka", "sqlserver"]);
+
 export function TechGrid() {
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [filter, setFilter] = useState<TechCategoryFilter>("All");
@@ -104,7 +111,11 @@ export function TechGrid() {
       <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
         {visible.map((tech) => {
           const count = counts[tech.id] ?? 0;
-          const isAvailable = tech.status === "available";
+          const isAvailable =
+            tech.status === "available" && ENABLED_TECH_IDS.has(tech.id);
+          // Genuinely-unbuilt techs get a "soon" badge; ones that are built
+          // but switched off in this build just appear dimmed.
+          const isComingSoon = tech.status === "coming-soon";
 
           const tile = (
             <div
@@ -133,9 +144,9 @@ export function TechGrid() {
                       {count}
                     </>
                   ) : null
-                ) : (
+                ) : isComingSoon ? (
                   "soon"
-                )}
+                ) : null}
               </span>
 
               <div className="size-20 grid place-items-center transition-transform duration-200 group-hover:scale-105">
@@ -171,7 +182,7 @@ export function TechGrid() {
             <div
               key={tech.id}
               aria-disabled
-              title={`${tech.name} — coming soon`}
+              title={`${tech.name} — ${isComingSoon ? "coming soon" : "not enabled in this build"}`}
               className="cursor-not-allowed"
             >
               {tile}
