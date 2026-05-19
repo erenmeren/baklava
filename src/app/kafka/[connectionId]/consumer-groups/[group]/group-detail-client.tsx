@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Sparkline } from "@/components/workspace/sparkline";
 import { PreviewUnconsumed } from "./preview-unconsumed";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -89,6 +90,7 @@ interface Props {
 }
 
 const REFRESH_MS = 3_000;
+const RATE_RING_SIZE = 60; // 60 × 3s ≈ 3 min of per-partition rate history
 const fmt = new Intl.NumberFormat("en-US");
 
 function formatCompact(n: number): string {
@@ -153,6 +155,12 @@ export function GroupDetailClient({ connectionId, group }: Props) {
     state: string;
   } | null>(null);
   const [consumptionRate, setConsumptionRate] = useState<number>(0); // msg/s
+  // Per-partition consume-rate ring buffer keyed by "topic/partition".
+  // Each entry is the last RATE_RING_SIZE samples (msgs/sec) — surfaces
+  // the "one stuck partition" case that the lag heatmap obscures.
+  const [partitionRates, setPartitionRates] = useState<Map<string, number[]>>(
+    new Map(),
+  );
 
   // Rebalance event timeline (Phase E). Each entry is a state transition;
   // we render the recent history as a tiny strip of colored ticks.
@@ -185,13 +193,31 @@ export function GroupDetailClient({ connectionId, group }: Props) {
       const prev = prevSnapshotRef.current;
       if (prev) {
         const dtSec = Math.max(0.001, (now - prev.timestamp) / 1000);
+        const perPartitionRate = new Map<string, number>();
         for (const [key, off] of offsetsMap) {
           const prevOff = prev.offsets.get(key);
+          let delta = 0;
           if (prevOff != null && off > prevOff) {
-            consumedSincePrev += off - prevOff;
+            delta = off - prevOff;
+            consumedSincePrev += delta;
           }
+          perPartitionRate.set(key, delta / dtSec);
         }
         setConsumptionRate(consumedSincePrev / dtSec);
+        setPartitionRates((existing) => {
+          const next = new Map(existing);
+          for (const [key, rate] of perPartitionRate) {
+            const series = [...(next.get(key) ?? []), rate];
+            if (series.length > RATE_RING_SIZE)
+              series.splice(0, series.length - RATE_RING_SIZE);
+            next.set(key, series);
+          }
+          // Drop series for partitions that vanished from the group.
+          for (const k of [...next.keys()]) {
+            if (!perPartitionRate.has(k)) next.delete(k);
+          }
+          return next;
+        });
         // Detect a state transition and record it.
         if (prev.state !== next.state) {
           setRebalanceEvents((prev) => {
@@ -588,6 +614,22 @@ export function GroupDetailClient({ connectionId, group }: Props) {
             )
           ) : (
             <Skeleton className="h-32 w-full" />
+          )}
+        </section>
+
+        {/* Per-partition consume rate — surfaces "one stuck partition" */}
+        <section>
+          <SectionHeader
+            label="Consume rate per partition"
+            sub="msgs/sec over the last ~3 min, live. Flat lines while peers are busy = stuck partition."
+          />
+          {detail && detail.offsets.length > 0 ? (
+            <PartitionRatePanel
+              offsets={detail.offsets}
+              history={partitionRates}
+            />
+          ) : (
+            <Skeleton className="h-24 w-full" />
           )}
         </section>
 
@@ -1394,5 +1436,114 @@ function PartitionCell({
         </span>
       ) : null}
     </Link>
+  );
+}
+
+// ─── Per-partition consume rate panel ───────────────────────────────────
+
+interface RateOffset {
+  topic: string;
+  partition: number;
+  lag: number;
+}
+
+function PartitionRatePanel({
+  offsets,
+  history,
+}: {
+  offsets: RateOffset[];
+  history: Map<string, number[]>;
+}) {
+  const grouped = useMemo(() => {
+    const m = new Map<string, RateOffset[]>();
+    for (const o of offsets) {
+      const arr = m.get(o.topic) ?? [];
+      arr.push(o);
+      m.set(o.topic, arr);
+    }
+    for (const [, parts] of m) parts.sort((a, b) => a.partition - b.partition);
+    return [...m.entries()].sort(([a], [b]) => a.localeCompare(b));
+  }, [offsets]);
+
+  // Cap rendered partitions per topic so a 256-partition stream-processor
+  // topic doesn't blow out the page.
+  const MAX_PER_TOPIC = 32;
+
+  return (
+    <div className="space-y-4">
+      {grouped.map(([topic, parts]) => {
+        const truncated = parts.length > MAX_PER_TOPIC;
+        const shown = truncated ? parts.slice(0, MAX_PER_TOPIC) : parts;
+        return (
+          <div key={topic}>
+            <div className="flex items-baseline justify-between mb-1.5">
+              <h4 className="text-xs font-mono">{topic}</h4>
+              <span className="text-[10px] font-mono text-muted-foreground">
+                {parts.length} partition{parts.length === 1 ? "" : "s"}
+                {truncated ? ` · showing first ${MAX_PER_TOPIC}` : ""}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-2">
+              {shown.map((o) => {
+                const key = `${o.topic}/${o.partition}`;
+                const series = history.get(key) ?? [];
+                const latest = series[series.length - 1] ?? 0;
+                const stuck = o.lag > 0 && latest < 0.01 && series.length > 5;
+                return (
+                  <div
+                    key={key}
+                    className={cn(
+                      "rounded-md border bg-card/40 px-2 py-1.5",
+                      stuck
+                        ? "border-rose-500/40 bg-rose-500/5"
+                        : "border-border/60",
+                    )}
+                    title={
+                      stuck
+                        ? `Lag ${o.lag} but no consumption in the last samples — partition may be stuck`
+                        : undefined
+                    }
+                  >
+                    <div className="flex items-baseline justify-between gap-1">
+                      <span className="text-[10px] font-mono text-muted-foreground">
+                        p{o.partition}
+                      </span>
+                      <span
+                        className={cn(
+                          "font-mono text-[10px] tabular-nums",
+                          stuck
+                            ? "text-rose-600"
+                            : latest > 0
+                              ? "text-emerald-600"
+                              : "text-muted-foreground/60",
+                        )}
+                      >
+                        {latest >= 1
+                          ? `${latest.toFixed(0)}/s`
+                          : latest > 0
+                            ? `${latest.toFixed(2)}/s`
+                            : "·"}
+                      </span>
+                    </div>
+                    <Sparkline
+                      values={series}
+                      tone="neutral"
+                      width={120}
+                      height={20}
+                      className={cn(
+                        stuck && "text-rose-500",
+                        !stuck && latest > 0 && "text-emerald-500",
+                        !stuck && latest === 0 && "text-muted-foreground/40",
+                      )}
+                      ariaLabel={`p${o.partition} consume rate`}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }
