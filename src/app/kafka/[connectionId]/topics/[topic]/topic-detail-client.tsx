@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -37,6 +37,12 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { WorkspacePage } from "@/components/workspace/workspace-page";
+import {
+  HeatLegend,
+  PartitionCell,
+  PartitionHeatmapGrid,
+  formatPartitionCount,
+} from "@/components/workspace/partition-heatmap";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import {
@@ -72,11 +78,56 @@ interface Props {
 
 export function TopicDetailClient({ connectionId, topic }: Props) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const base = `/api/kafka/${connectionId}/topics/${encodeURIComponent(topic)}`;
 
-  const [tab, setTab] = useState("partitions");
+  // Deep-link entry: a partition-heatmap box elsewhere (e.g. the consumer-group
+  // view) links here with ?tab=messages&partition=N. Seed the tab + partition
+  // filter from the URL on mount so the messages tab opens already filtered.
+  const partitionParam = searchParams.get("partition");
+  const tabParam = searchParams.get("tab");
+  const [tab, setTab] = useState(tabParam ?? "partitions");
+  // Partition fed to the messages tab. Drives a React key on <MessagesTab> so a
+  // new selection remounts it and re-fetches. undefined ⇒ "all".
+  const [msgPartition, setMsgPartition] = useState<string | undefined>(
+    partitionParam ?? undefined,
+  );
+
+  // React to URL changes after mount (cross-page navigation into this already
+  // mounted page). Manual tab clicks don't touch the params, so they're safe.
+  useEffect(() => {
+    if (partitionParam != null) {
+      setMsgPartition(partitionParam);
+      setTab("messages");
+    } else if (tabParam) {
+      setTab(tabParam);
+    }
+  }, [partitionParam, tabParam]);
+
+  // Same-page jump from the Partitions-tab heatmap: switch to messages filtered
+  // by this partition, no URL round-trip (so re-clicking the same box works).
+  const openPartitionInMessages = useCallback((partition: number) => {
+    setMsgPartition(String(partition));
+    setTab("messages");
+  }, []);
   const [detail, setDetail] = useState<TopicDetail | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // Message volume per partition (high − low) for the heatmap. Surfaces data
+  // skew — a hot partition (often a poor key choice) lights up red.
+  const partitionVolume = useMemo(() => {
+    if (!detail) return { max: 0, total: 0 };
+    let max = 0;
+    let total = 0;
+    for (const p of detail.partitions) {
+      const hi = Number(p.high);
+      const lo = Number(p.low);
+      const msgs = hi >= 0 && lo >= 0 ? Math.max(0, hi - lo) : 0;
+      total += msgs;
+      if (msgs > max) max = msgs;
+    }
+    return { max, total };
+  }, [detail]);
 
   // produce tab (state lives here so MessagesTab → "Produce similar" can
   // prefill the form and switch tabs via onProduceSimilar)
@@ -313,48 +364,59 @@ export function TopicDetailClient({ connectionId, topic }: Props) {
 
         <TabsContent value="partitions" className="pt-4">
           {detail ? (
-            <div className="rounded-lg border border-border/60 overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Partition</TableHead>
-                    <TableHead>Leader</TableHead>
-                    <TableHead>Replicas</TableHead>
-                    <TableHead>ISR</TableHead>
-                    <TableHead>Low</TableHead>
-                    <TableHead>High</TableHead>
-                    <TableHead>Messages</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {detail.partitions.map((p) => (
-                    <TableRow key={p.partition}>
-                      <TableCell className="font-mono text-xs tabular-nums">
-                        {p.partition}
-                      </TableCell>
-                      <TableCell className="font-mono text-xs">
-                        {p.leader}
-                      </TableCell>
-                      <TableCell className="font-mono text-xs">
-                        {p.replicas.join(", ")}
-                      </TableCell>
-                      <TableCell className="font-mono text-xs">
-                        {p.isr.join(", ")}
-                      </TableCell>
-                      <TableCell className="font-mono text-xs tabular-nums">
-                        {p.low}
-                      </TableCell>
-                      <TableCell className="font-mono text-xs tabular-nums">
-                        {p.high}
-                      </TableCell>
-                      <TableCell className="font-mono text-xs tabular-nums">
-                        {(Number(p.high) - Number(p.low)).toLocaleString()}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+            detail.partitions.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-border/60 px-4 py-8 text-center text-sm text-muted-foreground">
+                This topic has no partitions.
+              </div>
+            ) : (
+              <div className="rounded-lg border border-border/60 p-3">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-[10px] font-mono uppercase tracking-[0.14em] text-muted-foreground tabular-nums">
+                    {detail.partitions.length} partition
+                    {detail.partitions.length === 1 ? "" : "s"} ·{" "}
+                    {formatPartitionCount(partitionVolume.total)} messages
+                  </span>
+                  <HeatLegend
+                    low="0 msgs"
+                    high={formatPartitionCount(partitionVolume.max)}
+                    title="Box color encodes message volume (high − low); the number inside is that partition's message count"
+                  />
+                </div>
+                <PartitionHeatmapGrid>
+                  {detail.partitions.map((p) => {
+                    const hi = Number(p.high);
+                    const lo = Number(p.low);
+                    const known = hi >= 0 && lo >= 0;
+                    const msgs = known ? Math.max(0, hi - lo) : 0;
+                    return (
+                      <PartitionCell
+                        key={p.partition}
+                        data={{
+                          partition: p.partition,
+                          intensity:
+                            partitionVolume.max > 0
+                              ? msgs / partitionVolume.max
+                              : 0,
+                          idle: !known || msgs === 0,
+                          countLabel:
+                            msgs > 0 ? formatPartitionCount(msgs) : undefined,
+                          onClick: () => openPartitionInMessages(p.partition),
+                          tooltip: [
+                            `partition ${p.partition}`,
+                            known ? `${msgs.toLocaleString()} messages` : "size unknown",
+                            `offsets ${p.low} – ${p.high}`,
+                            `leader ${p.leader}`,
+                            `replicas ${p.replicas.join(", ")}`,
+                            `isr ${p.isr.join(", ")}`,
+                            "click → browse this partition's messages",
+                          ].join("\n"),
+                        }}
+                      />
+                    );
+                  })}
+                </PartitionHeatmapGrid>
+              </div>
+            )
           ) : (
             <Skeleton className="h-32 w-full" />
           )}
@@ -362,6 +424,7 @@ export function TopicDetailClient({ connectionId, topic }: Props) {
 
         <TabsContent value="messages" className="pt-4">
           <MessagesTab
+            key={msgPartition ?? "all"}
             base={base}
             topic={topic}
             partitions={
@@ -372,6 +435,7 @@ export function TopicDetailClient({ connectionId, topic }: Props) {
                 high: p.high,
               })) ?? []
             }
+            initialPartition={msgPartition}
             onProduceSimilar={onProduceSimilar}
           />
         </TabsContent>
