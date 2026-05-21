@@ -38,6 +38,7 @@ import {
 import { CreateDatabaseDialog } from "./create-database-dialog";
 import { CreateSchemaDialog } from "./create-schema-dialog";
 import { CreateTableDialog } from "./create-table-dialog";
+import { DropConfirm, type DropTarget } from "./drop-confirm";
 
 interface DatabaseInfo {
   name: string;
@@ -158,6 +159,7 @@ export function SqlServerSidebar({ connectionId, defaultDatabase }: Props) {
     db: string;
     schema: string;
   } | null>(null);
+  const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
 
   const loadDatabases = useCallback(async () => {
     setLoadingDbs(true);
@@ -314,6 +316,7 @@ export function SqlServerSidebar({ connectionId, defaultDatabase }: Props) {
                     loadDb(db.name);
                   }}
                   onCreateSchema={() => setCreateSchemaDb(db.name)}
+                  onDrop={() => setDropTarget({ kind: "database", database: db.name })}
                   onCopyName={() => copy(db.name)}
                 />
                 {openDb[db.name] ? (
@@ -338,6 +341,7 @@ export function SqlServerSidebar({ connectionId, defaultDatabase }: Props) {
                         onCreateTable={(schema) =>
                           setCreateTableTarget({ db: db.name, schema })
                         }
+                        onDrop={setDropTarget}
                         onCopy={copy}
                       />
                     )}
@@ -409,6 +413,30 @@ export function SqlServerSidebar({ connectionId, defaultDatabase }: Props) {
           }}
         />
       ) : null}
+
+      <DropConfirm
+        open={dropTarget !== null}
+        onOpenChange={(v) => {
+          if (!v) setDropTarget(null);
+        }}
+        connectionId={connectionId}
+        target={dropTarget}
+        onDropped={(t) => {
+          if (t.kind === "database") {
+            setOpenDb((s) => {
+              const next = { ...s };
+              delete next[t.database];
+              return next;
+            });
+            refreshAll();
+            return;
+          }
+          // schema or object → reload that database's tree.
+          setObjectsByDb((s) => ({ ...s, [t.database]: undefined }));
+          setSchemasByDb((s) => ({ ...s, [t.database]: undefined }));
+          loadDb(t.database);
+        }}
+      />
     </div>
   );
 }
@@ -426,6 +454,7 @@ function SchemaList({
   onToggleSchema,
   onToggleGroup,
   onCreateTable,
+  onDrop,
   onCopy,
 }: {
   connectionId: string;
@@ -439,6 +468,7 @@ function SchemaList({
   onToggleSchema: (schema: string) => void;
   onToggleGroup: (schema: string, kind: GroupKind) => void;
   onCreateTable: (schema: string) => void;
+  onDrop: (target: DropTarget) => void;
   onCopy: (text: string) => void;
 }) {
   // Group objects: schema → groupKind → objects.
@@ -487,6 +517,7 @@ function SchemaList({
               isOpen={isOpen}
               onToggle={() => onToggleSchema(schema)}
               onCreateTable={() => onCreateTable(schema)}
+              onDrop={() => onDrop({ kind: "schema", database: db, schema })}
               onCopyName={() => onCopy(schema)}
             />
             {isOpen ? (
@@ -515,6 +546,15 @@ function SchemaList({
                             group={kind}
                             pathname={pathname}
                             onCopy={() => onCopy(`${o.schema}.${o.name}`)}
+                            onDrop={() =>
+                              onDrop({
+                                kind: "object",
+                                database: db,
+                                schema: o.schema,
+                                name: o.name,
+                                objectKind: o.kind,
+                              })
+                            }
                           />
                         )}
                       />
@@ -536,6 +576,7 @@ function DatabaseRow({
   onToggle,
   onRefresh,
   onCreateSchema,
+  onDrop,
   onCopyName,
 }: {
   db: DatabaseInfo;
@@ -543,6 +584,7 @@ function DatabaseRow({
   onToggle: () => void;
   onRefresh: () => void;
   onCreateSchema: () => void;
+  onDrop: () => void;
   onCopyName: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -594,6 +636,13 @@ function DatabaseRow({
             Refresh
           </DropdownMenuItem>
           <DropdownMenuItem onClick={onCopyName}>Copy name</DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            onClick={onDrop}
+            className="text-destructive focus:text-destructive"
+          >
+            Drop database…
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
@@ -605,12 +654,14 @@ function SchemaRow({
   isOpen,
   onToggle,
   onCreateTable,
+  onDrop,
   onCopyName,
 }: {
   name: string;
   isOpen: boolean;
   onToggle: () => void;
   onCreateTable: () => void;
+  onDrop: () => void;
   onCopyName: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -647,8 +698,14 @@ function SchemaRow({
             <Plus className="size-3.5" />
             New table…
           </DropdownMenuItem>
-          <DropdownMenuSeparator />
           <DropdownMenuItem onClick={onCopyName}>Copy name</DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            onClick={onDrop}
+            className="text-destructive focus:text-destructive"
+          >
+            Drop schema…
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
@@ -701,6 +758,7 @@ function ObjectRow({
   group,
   pathname,
   onCopy,
+  onDrop,
 }: {
   connectionId: string;
   db: string;
@@ -708,8 +766,10 @@ function ObjectRow({
   group: GroupKind;
   pathname: string;
   onCopy: () => void;
+  onDrop: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const dropNoun = group.replace(/s$/, ""); // tables → table, views → view, …
 
   // Tables & views → table-detail page; procs / functions / triggers →
   // module-detail page. Synonyms have no detail view, so they render as a
@@ -767,6 +827,13 @@ function ObjectRow({
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={onCopy}>Copy name</DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={onDrop}
+                className="text-destructive focus:text-destructive"
+              >
+                Drop {dropNoun}…
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
