@@ -19,7 +19,7 @@ const FIRST_PAGE: Record<TechId, string> = {
   kafka: "",
   redis: "keys",
   mysql: "databases",
-  sqlserver: "databases",
+  sqlserver: "",
   mongo: "databases",
   rabbit: "queues",
   elastic: "indices",

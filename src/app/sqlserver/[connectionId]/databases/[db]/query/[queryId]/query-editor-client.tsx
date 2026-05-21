@@ -39,14 +39,20 @@ interface MultiResult {
 
 interface Props {
   connectionId: string;
-  defaultDatabase: string;
+  /** Active database (from the route). All batches run against this db. */
+  db: string;
+  /** Stable per-tab id so each query tab keeps its own SQL text. */
+  queryId: string;
 }
 
-const SQL_KEY = (cid: string) => `baklava:mssql-sql:${cid}`;
+// Per-tab SQL persistence, scoped by connection + database + queryId so two
+// query tabs never clobber each other (mirrors the Postgres editor).
+const SQL_KEY = (cid: string, db: string, qid: string) =>
+  `baklava:mssql-query-sql:${cid}:${db}:${qid}`;
 
-export function QueryEditorClient({ connectionId, defaultDatabase }: Props) {
+export function QueryEditorClient({ connectionId, db, queryId }: Props) {
   const { resolvedTheme } = useTheme();
-  const defaultSql = `-- ${defaultDatabase}\nSELECT @@VERSION AS version;`;
+  const defaultSql = `-- ${db}\nSELECT @@VERSION AS version;`;
   const [sqlText, setSqlText] = useState(defaultSql);
   const [hydrated, setHydrated] = useState(false);
   const [phase, setPhase] = useState<"idle" | "running" | "ok" | "err">("idle");
@@ -61,22 +67,22 @@ export function QueryEditorClient({ connectionId, defaultDatabase }: Props) {
 
   useEffect(() => {
     try {
-      const saved = window.localStorage.getItem(SQL_KEY(connectionId));
+      const saved = window.localStorage.getItem(SQL_KEY(connectionId, db, queryId));
       if (saved) setSqlText(saved);
     } catch {
       /* ignore */
     }
     setHydrated(true);
-  }, [connectionId]);
+  }, [connectionId, db, queryId]);
 
   useEffect(() => {
     if (!hydrated) return;
     try {
-      window.localStorage.setItem(SQL_KEY(connectionId), sqlText);
+      window.localStorage.setItem(SQL_KEY(connectionId, db, queryId), sqlText);
     } catch {
       /* ignore */
     }
-  }, [sqlText, hydrated, connectionId]);
+  }, [sqlText, hydrated, connectionId, db, queryId]);
 
   const execute = useCallback(async () => {
     const raw = sqlText.trim();
@@ -92,7 +98,7 @@ export function QueryEditorClient({ connectionId, defaultDatabase }: Props) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           sql: raw,
-          database: defaultDatabase,
+          database: db,
           statistics: withStats,
         }),
       });
@@ -112,7 +118,7 @@ export function QueryEditorClient({ connectionId, defaultDatabase }: Props) {
       setConnError(e instanceof Error ? e.message : String(e));
       setPhase("err");
     }
-  }, [connectionId, sqlText, defaultDatabase, withStats]);
+  }, [connectionId, sqlText, db, withStats]);
 
   const explain = useCallback(async () => {
     const raw = sqlText.trim();
@@ -125,7 +131,7 @@ export function QueryEditorClient({ connectionId, defaultDatabase }: Props) {
       const res = await fetch(`/api/sqlserver/${connectionId}/plan`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ sql: raw, database: defaultDatabase }),
+        body: JSON.stringify({ sql: raw, database: db }),
       });
       const data = await res.json();
       if (data.error && data.root === undefined) {
@@ -138,7 +144,7 @@ export function QueryEditorClient({ connectionId, defaultDatabase }: Props) {
     } finally {
       setPlanLoading(false);
     }
-  }, [connectionId, sqlText, defaultDatabase]);
+  }, [connectionId, sqlText, db]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -181,7 +187,7 @@ export function QueryEditorClient({ connectionId, defaultDatabase }: Props) {
     <WorkspacePage
       title={
         <span>
-          SQL editor <span className="text-muted-foreground text-base">· {defaultDatabase}</span>
+          SQL editor <span className="text-muted-foreground text-base">· {db}</span>
         </span>
       }
       description="T-SQL · GO splits batches · ⌘↵ to run · results capped at 1000 rows"

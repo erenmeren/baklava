@@ -1,23 +1,9 @@
 import { WorkspaceShell } from "@/components/workspace/workspace-shell";
-import {
-  SidebarLink,
-  SidebarSection,
-} from "@/components/workspace/sidebar-link";
 import { getTech } from "@/lib/tech-catalog";
 import { requireConnection } from "@/lib/connections/server";
 import type { SqlServerConfig } from "@/lib/connections/types";
-import {
-  Activity,
-  Database,
-  DatabaseBackup,
-  Gauge,
-  Lock,
-  ListOrdered,
-  ShieldCheck,
-  Store,
-  Terminal,
-  Wrench,
-} from "lucide-react";
+import { SqlServerSidebar } from "./sqlserver-sidebar";
+import { SqlServerTabs } from "./sqlserver-tabs";
 import { CommandPaletteHost } from "./command-palette-host";
 
 export const dynamic = "force-dynamic";
@@ -34,7 +20,8 @@ export default async function SqlServerWorkspaceLayout({
   const { connectionId } = await params;
   const record = requireConnection<SqlServerConfig>(connectionId, "sqlserver");
   const tech = getTech("sqlserver")!;
-  const subtitle = `${record.config.user}@${record.config.host}:${record.config.port}/${record.config.database}`;
+  const cfg = record.config;
+  const subtitle = `${cfg.user}@${cfg.host}:${cfg.port}/${cfg.database}`;
 
   return (
     <WorkspaceShell
@@ -42,75 +29,19 @@ export default async function SqlServerWorkspaceLayout({
       connectionName={record.name}
       subtitle={subtitle}
       sidebar={
-        <SidebarSection>
-          <SidebarLink
-            href={`/sqlserver/${connectionId}`}
-            icon={<Gauge className="size-4" />}
-            exact
-          >
-            Overview
-          </SidebarLink>
-          <SidebarLink
-            href={`/sqlserver/${connectionId}/databases`}
-            icon={<Database className="size-4" />}
-          >
-            Databases
-          </SidebarLink>
-          <SidebarLink
-            href={`/sqlserver/${connectionId}/query`}
-            icon={<Terminal className="size-4" />}
-          >
-            Query editor
-          </SidebarLink>
-          <SidebarLink
-            href={`/sqlserver/${connectionId}/activity`}
-            icon={<Activity className="size-4" />}
-          >
-            Activity
-          </SidebarLink>
-          <SidebarLink
-            href={`/sqlserver/${connectionId}/queries`}
-            icon={<ListOrdered className="size-4" />}
-          >
-            Top queries
-          </SidebarLink>
-          <SidebarLink
-            href={`/sqlserver/${connectionId}/locks`}
-            icon={<Lock className="size-4" />}
-          >
-            Locks
-          </SidebarLink>
-          <SidebarLink
-            href={`/sqlserver/${connectionId}/query-store`}
-            icon={<Store className="size-4" />}
-          >
-            Query Store
-          </SidebarLink>
-          <SidebarLink
-            href={`/sqlserver/${connectionId}/indexes`}
-            icon={<Wrench className="size-4" />}
-          >
-            Index maintenance
-          </SidebarLink>
-          <SidebarLink
-            href={`/sqlserver/${connectionId}/security`}
-            icon={<ShieldCheck className="size-4" />}
-          >
-            Security
-          </SidebarLink>
-          <SidebarLink
-            href={`/sqlserver/${connectionId}/backup`}
-            icon={<DatabaseBackup className="size-4" />}
-          >
-            Backup
-          </SidebarLink>
-        </SidebarSection>
+        <SqlServerSidebar
+          connectionId={connectionId}
+          defaultDatabase={cfg.database}
+        />
       }
     >
-      {children}
+      <div className="flex flex-col h-full min-h-0">
+        <SqlServerTabs connectionId={connectionId} defaultDatabase={cfg.database} />
+        <div className="flex-1 min-h-0">{children}</div>
+      </div>
       <CommandPaletteHost
         connectionId={connectionId}
-        defaultDatabase={record.config.database}
+        defaultDatabase={cfg.database}
       />
     </WorkspaceShell>
   );
