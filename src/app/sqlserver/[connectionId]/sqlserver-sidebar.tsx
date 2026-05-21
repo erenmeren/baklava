@@ -37,6 +37,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { CreateDatabaseDialog } from "./create-database-dialog";
 import { CreateSchemaDialog } from "./create-schema-dialog";
+import { CreateTableDialog } from "./create-table-dialog";
 
 interface DatabaseInfo {
   name: string;
@@ -153,6 +154,10 @@ export function SqlServerSidebar({ connectionId, defaultDatabase }: Props) {
   // Create dialogs.
   const [createDbOpen, setCreateDbOpen] = useState(false);
   const [createSchemaDb, setCreateSchemaDb] = useState<string | null>(null);
+  const [createTableTarget, setCreateTableTarget] = useState<{
+    db: string;
+    schema: string;
+  } | null>(null);
 
   const loadDatabases = useCallback(async () => {
     setLoadingDbs(true);
@@ -330,6 +335,9 @@ export function SqlServerSidebar({ connectionId, defaultDatabase }: Props) {
                         onToggleGroup={(schema, kind) =>
                           toggleGroup(db.name, schema, kind)
                         }
+                        onCreateTable={(schema) =>
+                          setCreateTableTarget({ db: db.name, schema })
+                        }
                         onCopy={copy}
                       />
                     )}
@@ -380,6 +388,27 @@ export function SqlServerSidebar({ connectionId, defaultDatabase }: Props) {
           }}
         />
       ) : null}
+      {createTableTarget ? (
+        <CreateTableDialog
+          open
+          onOpenChange={(v) => {
+            if (!v) setCreateTableTarget(null);
+          }}
+          connectionId={connectionId}
+          database={createTableTarget.db}
+          schema={createTableTarget.schema}
+          onCreated={() => {
+            const t = createTableTarget;
+            if (!t) return;
+            setOpenDb((s) => ({ ...s, [t.db]: true }));
+            setOpenSchema((s) => ({ ...s, [`${t.db}.${t.schema}`]: true }));
+            setOpenGroup((s) => ({ ...s, [`${t.db}.${t.schema}.tables`]: true }));
+            setObjectsByDb((s) => ({ ...s, [t.db]: undefined }));
+            setSchemasByDb((s) => ({ ...s, [t.db]: undefined }));
+            loadDb(t.db);
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -396,6 +425,7 @@ function SchemaList({
   openGroup,
   onToggleSchema,
   onToggleGroup,
+  onCreateTable,
   onCopy,
 }: {
   connectionId: string;
@@ -408,6 +438,7 @@ function SchemaList({
   openGroup: Record<string, boolean>;
   onToggleSchema: (schema: string) => void;
   onToggleGroup: (schema: string, kind: GroupKind) => void;
+  onCreateTable: (schema: string) => void;
   onCopy: (text: string) => void;
 }) {
   // Group objects: schema → groupKind → objects.
@@ -455,6 +486,7 @@ function SchemaList({
               name={schema}
               isOpen={isOpen}
               onToggle={() => onToggleSchema(schema)}
+              onCreateTable={() => onCreateTable(schema)}
               onCopyName={() => onCopy(schema)}
             />
             {isOpen ? (
@@ -572,11 +604,13 @@ function SchemaRow({
   name,
   isOpen,
   onToggle,
+  onCreateTable,
   onCopyName,
 }: {
   name: string;
   isOpen: boolean;
   onToggle: () => void;
+  onCreateTable: () => void;
   onCopyName: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -609,6 +643,11 @@ function SchemaRow({
           <MoreHorizontal className="size-3" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={onCreateTable}>
+            <Plus className="size-3.5" />
+            New table…
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
           <DropdownMenuItem onClick={onCopyName}>Copy name</DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
