@@ -334,6 +334,77 @@ export async function createSqlServerTable(
 }
 
 /**
+ * Drop a database. Runs on `master`. With `force`, first flips the database to
+ * SINGLE_USER WITH ROLLBACK IMMEDIATE to terminate active connections (SQL
+ * Server refuses DROP DATABASE while sessions are connected) — the analogue of
+ * Postgres's "force / terminate connections".
+ */
+export async function dropSqlServerDatabase(
+  config: SqlServerConfig,
+  name: string,
+  opts?: { force?: boolean }
+): Promise<void> {
+  validateSqlServerDatabaseName(name);
+  const sql = opts?.force
+    ? `ALTER DATABASE [${name}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [${name}];`
+    : `DROP DATABASE [${name}]`;
+  await withPool(
+    config,
+    async (pool) => {
+      await pool.request().batch(sql);
+    },
+    { database: "master" }
+  );
+}
+
+/** Drop a schema (must be empty — SQL Server has no cascading DROP SCHEMA). */
+export async function dropSqlServerSchema(
+  config: SqlServerConfig,
+  database: string,
+  schema: string
+): Promise<void> {
+  validateSqlServerIdentifier(database, "database name");
+  validateSqlServerIdentifier(schema, "schema name");
+  await withPool(
+    config,
+    async (pool) => {
+      await pool.request().batch(`DROP SCHEMA [${schema}]`);
+    },
+    { database }
+  );
+}
+
+const DROP_KEYWORD: Record<string, string> = {
+  table: "TABLE",
+  view: "VIEW",
+  proc: "PROCEDURE",
+  scalar_fn: "FUNCTION",
+  table_fn: "FUNCTION",
+  trigger: "TRIGGER",
+  synonym: "SYNONYM",
+};
+
+/** Drop a schema-scoped object (table / view / proc / function / trigger / synonym). */
+export async function dropSqlServerObject(
+  config: SqlServerConfig,
+  database: string,
+  object: { schema: string; name: string; kind: string }
+): Promise<void> {
+  validateSqlServerIdentifier(database, "database name");
+  const schema = validateSqlServerIdentifier(object.schema, "schema name");
+  const name = validateSqlServerIdentifier(object.name, "object name");
+  const keyword = DROP_KEYWORD[object.kind];
+  if (!keyword) throw new Error(`Cannot drop object of kind "${object.kind}"`);
+  await withPool(
+    config,
+    async (pool) => {
+      await pool.request().batch(`DROP ${keyword} [${schema}].[${name}]`);
+    },
+    { database }
+  );
+}
+
+/**
  * List user schemas in a database (dbo + custom), excluding the built-in
  * system schemas and the nine fixed database-role schemas. Used by the sidebar
  * tree so empty / freshly-created schemas show up (object listing alone would
