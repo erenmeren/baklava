@@ -17,6 +17,7 @@ import {
   Loader2,
   Lock,
   MoreHorizontal,
+  Plus,
   RefreshCcw,
   Server,
   ShieldCheck,
@@ -31,8 +32,12 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { CreateDatabaseDialog } from "./create-database-dialog";
+import { CreateSchemaDialog } from "./create-schema-dialog";
+import { CreateTableDialog } from "./create-table-dialog";
 
 interface DatabaseInfo {
   name: string;
@@ -138,10 +143,21 @@ export function SqlServerSidebar({ connectionId, defaultDatabase }: Props) {
   const [objectsByDb, setObjectsByDb] = useState<
     Record<string, SqlObject[] | undefined>
   >({});
+  const [schemasByDb, setSchemasByDb] = useState<
+    Record<string, string[] | undefined>
+  >({});
   const [openSchema, setOpenSchema] = useState<Record<string, boolean>>({});
   const [openGroup, setOpenGroup] = useState<Record<string, boolean>>({});
   const [loadingDbs, setLoadingDbs] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+
+  // Create dialogs.
+  const [createDbOpen, setCreateDbOpen] = useState(false);
+  const [createSchemaDb, setCreateSchemaDb] = useState<string | null>(null);
+  const [createTableTarget, setCreateTableTarget] = useState<{
+    db: string;
+    schema: string;
+  } | null>(null);
 
   const loadDatabases = useCallback(async () => {
     setLoadingDbs(true);
@@ -162,33 +178,42 @@ export function SqlServerSidebar({ connectionId, defaultDatabase }: Props) {
     loadDatabases();
   }, [loadDatabases, refreshKey]);
 
-  const loadObjects = useCallback(
+  // Load a database's schemas (authoritative list, so empty schemas show) and
+  // its objects (grouped under each schema) in parallel.
+  const loadDb = useCallback(
     async (db: string) => {
-      const res = await fetch(
-        `/api/sqlserver/${connectionId}/databases/${encodeURIComponent(db)}/objects`,
-        { cache: "no-store" },
-      );
-      if (!res.ok) {
+      const base = `/api/sqlserver/${connectionId}/databases/${encodeURIComponent(db)}`;
+      const [objectsRes, schemasRes] = await Promise.allSettled([
+        fetch(`${base}/objects`, { cache: "no-store" }),
+        fetch(`${base}/schemas`, { cache: "no-store" }),
+      ]);
+      if (objectsRes.status === "fulfilled" && objectsRes.value.ok) {
+        const data = await objectsRes.value.json();
+        setObjectsByDb((s) => ({ ...s, [db]: (data.objects as SqlObject[]) ?? [] }));
+      } else {
         setObjectsByDb((s) => ({ ...s, [db]: [] }));
-        return;
       }
-      const data = await res.json();
-      setObjectsByDb((s) => ({ ...s, [db]: (data.objects as SqlObject[]) ?? [] }));
+      if (schemasRes.status === "fulfilled" && schemasRes.value.ok) {
+        const data = await schemasRes.value.json();
+        setSchemasByDb((s) => ({ ...s, [db]: (data.schemas as string[]) ?? [] }));
+      } else {
+        setSchemasByDb((s) => ({ ...s, [db]: [] }));
+      }
     },
     [connectionId],
   );
 
-  // Auto-load objects for the default (open) database on first paint.
+  // Auto-load the default (open) database on first paint.
   useEffect(() => {
     if (databases && openDb[defaultDatabase] && !objectsByDb[defaultDatabase]) {
-      loadObjects(defaultDatabase);
+      loadDb(defaultDatabase);
     }
-  }, [databases, defaultDatabase, openDb, objectsByDb, loadObjects]);
+  }, [databases, defaultDatabase, openDb, objectsByDb, loadDb]);
 
   const toggleDb = (db: string) => {
     const next = !openDb[db];
     setOpenDb((s) => ({ ...s, [db]: next }));
-    if (next && !objectsByDb[db]) loadObjects(db);
+    if (next && !objectsByDb[db]) loadDb(db);
   };
 
   const toggleSchema = (db: string, schema: string) => {
@@ -208,6 +233,7 @@ export function SqlServerSidebar({ connectionId, defaultDatabase }: Props) {
 
   const refreshAll = () => {
     setObjectsByDb({});
+    setSchemasByDb({});
     setRefreshKey((n) => n + 1);
   };
 
@@ -249,13 +275,23 @@ export function SqlServerSidebar({ connectionId, defaultDatabase }: Props) {
           <Database className="size-3" />
           Databases
         </span>
-        <Button size="icon-xs" variant="ghost" onClick={refreshAll} title="Refresh">
-          {loadingDbs ? (
-            <Loader2 className="size-3 animate-spin" />
-          ) : (
-            <RefreshCcw className="size-3" />
-          )}
-        </Button>
+        <div className="flex items-center gap-0.5">
+          <Button
+            size="icon-xs"
+            variant="ghost"
+            onClick={() => setCreateDbOpen(true)}
+            title="New database"
+          >
+            <Plus className="size-3" />
+          </Button>
+          <Button size="icon-xs" variant="ghost" onClick={refreshAll} title="Refresh">
+            {loadingDbs ? (
+              <Loader2 className="size-3 animate-spin" />
+            ) : (
+              <RefreshCcw className="size-3" />
+            )}
+          </Button>
+        </div>
       </div>
 
       {databases === null ? (
@@ -274,8 +310,10 @@ export function SqlServerSidebar({ connectionId, defaultDatabase }: Props) {
                   onToggle={() => toggleDb(db.name)}
                   onRefresh={() => {
                     setObjectsByDb((s) => ({ ...s, [db.name]: undefined }));
-                    loadObjects(db.name);
+                    setSchemasByDb((s) => ({ ...s, [db.name]: undefined }));
+                    loadDb(db.name);
                   }}
+                  onCreateSchema={() => setCreateSchemaDb(db.name)}
                   onCopyName={() => copy(db.name)}
                 />
                 {openDb[db.name] ? (
@@ -289,12 +327,16 @@ export function SqlServerSidebar({ connectionId, defaultDatabase }: Props) {
                         connectionId={connectionId}
                         db={db.name}
                         objects={objects}
+                        schemas={schemasByDb[db.name] ?? []}
                         pathname={pathname}
                         openSchema={openSchema}
                         openGroup={openGroup}
                         onToggleSchema={(schema) => toggleSchema(db.name, schema)}
                         onToggleGroup={(schema, kind) =>
                           toggleGroup(db.name, schema, kind)
+                        }
+                        onCreateTable={(schema) =>
+                          setCreateTableTarget({ db: db.name, schema })
                         }
                         onCopy={copy}
                       />
@@ -319,6 +361,54 @@ export function SqlServerSidebar({ connectionId, defaultDatabase }: Props) {
           <span className="truncate">{label}</span>
         </Link>
       ))}
+
+      {/* Create dialogs */}
+      <CreateDatabaseDialog
+        open={createDbOpen}
+        onOpenChange={setCreateDbOpen}
+        connectionId={connectionId}
+        onCreated={() => refreshAll()}
+      />
+      {createSchemaDb ? (
+        <CreateSchemaDialog
+          open
+          onOpenChange={(v) => {
+            if (!v) setCreateSchemaDb(null);
+          }}
+          connectionId={connectionId}
+          database={createSchemaDb}
+          onCreated={() => {
+            const db = createSchemaDb;
+            if (!db) return;
+            setOpenDb((s) => ({ ...s, [db]: true }));
+            // Reload so the new schema shows in the tree.
+            setObjectsByDb((s) => ({ ...s, [db]: undefined }));
+            setSchemasByDb((s) => ({ ...s, [db]: undefined }));
+            loadDb(db);
+          }}
+        />
+      ) : null}
+      {createTableTarget ? (
+        <CreateTableDialog
+          open
+          onOpenChange={(v) => {
+            if (!v) setCreateTableTarget(null);
+          }}
+          connectionId={connectionId}
+          database={createTableTarget.db}
+          schema={createTableTarget.schema}
+          onCreated={() => {
+            const t = createTableTarget;
+            if (!t) return;
+            setOpenDb((s) => ({ ...s, [t.db]: true }));
+            setOpenSchema((s) => ({ ...s, [`${t.db}.${t.schema}`]: true }));
+            setOpenGroup((s) => ({ ...s, [`${t.db}.${t.schema}.tables`]: true }));
+            setObjectsByDb((s) => ({ ...s, [t.db]: undefined }));
+            setSchemasByDb((s) => ({ ...s, [t.db]: undefined }));
+            loadDb(t.db);
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -329,21 +419,26 @@ function SchemaList({
   connectionId,
   db,
   objects,
+  schemas: schemaNames,
   pathname,
   openSchema,
   openGroup,
   onToggleSchema,
   onToggleGroup,
+  onCreateTable,
   onCopy,
 }: {
   connectionId: string;
   db: string;
   objects: SqlObject[];
+  /** Authoritative schema list, so empty / freshly-created schemas show. */
+  schemas: string[];
   pathname: string;
   openSchema: Record<string, boolean>;
   openGroup: Record<string, boolean>;
   onToggleSchema: (schema: string) => void;
   onToggleGroup: (schema: string, kind: GroupKind) => void;
+  onCreateTable: (schema: string) => void;
   onCopy: (text: string) => void;
 }) {
   // Group objects: schema → groupKind → objects.
@@ -364,14 +459,17 @@ function SchemaList({
     return map;
   }, [objects]);
 
-  const schemas = useMemo(
-    () => [...bySchema.keys()].sort((a, b) => a.localeCompare(b)),
-    [bySchema],
-  );
+  // Union of the authoritative schema list with any schema that owns objects
+  // (defensive — the two should already agree).
+  const schemas = useMemo(() => {
+    const set = new Set<string>(schemaNames);
+    for (const k of bySchema.keys()) set.add(k);
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [schemaNames, bySchema]);
 
   if (schemas.length === 0) {
     return (
-      <li className="px-2 py-1 text-xs text-muted-foreground">(no objects)</li>
+      <li className="px-2 py-1 text-xs text-muted-foreground">(no schemas)</li>
     );
   }
 
@@ -380,41 +478,49 @@ function SchemaList({
       {schemas.map((schema) => {
         const key = `${db}.${schema}`;
         const isOpen = !!openSchema[key];
-        const groups = bySchema.get(schema)!;
+        const groups = bySchema.get(schema) ?? new Map<GroupKind, SqlObject[]>();
+        const hasObjects = groups.size > 0;
         return (
           <li key={schema}>
             <SchemaRow
               name={schema}
               isOpen={isOpen}
               onToggle={() => onToggleSchema(schema)}
+              onCreateTable={() => onCreateTable(schema)}
               onCopyName={() => onCopy(schema)}
             />
             {isOpen ? (
               <ul className="ml-4 border-l border-border/50">
-                {GROUP_ORDER.map((kind) => {
-                  const items = groups.get(kind) ?? [];
-                  if (items.length === 0) return null;
-                  return (
-                    <Group
-                      key={kind}
-                      kind={kind}
-                      items={items}
-                      isOpen={!!openGroup[`${key}.${kind}`]}
-                      onToggle={() => onToggleGroup(schema, kind)}
-                      renderItem={(o) => (
-                        <ObjectRow
-                          key={`${kind}:${o.name}`}
-                          connectionId={connectionId}
-                          db={db}
-                          object={o}
-                          group={kind}
-                          pathname={pathname}
-                          onCopy={() => onCopy(`${o.schema}.${o.name}`)}
-                        />
-                      )}
-                    />
-                  );
-                })}
+                {!hasObjects ? (
+                  <li className="px-2 py-1 text-[11px] text-muted-foreground/70 italic">
+                    empty
+                  </li>
+                ) : (
+                  GROUP_ORDER.map((kind) => {
+                    const items = groups.get(kind) ?? [];
+                    if (items.length === 0) return null;
+                    return (
+                      <Group
+                        key={kind}
+                        kind={kind}
+                        items={items}
+                        isOpen={!!openGroup[`${key}.${kind}`]}
+                        onToggle={() => onToggleGroup(schema, kind)}
+                        renderItem={(o) => (
+                          <ObjectRow
+                            key={`${kind}:${o.name}`}
+                            connectionId={connectionId}
+                            db={db}
+                            object={o}
+                            group={kind}
+                            pathname={pathname}
+                            onCopy={() => onCopy(`${o.schema}.${o.name}`)}
+                          />
+                        )}
+                      />
+                    );
+                  })
+                )}
               </ul>
             ) : null}
           </li>
@@ -429,12 +535,14 @@ function DatabaseRow({
   isOpen,
   onToggle,
   onRefresh,
+  onCreateSchema,
   onCopyName,
 }: {
   db: DatabaseInfo;
   isOpen: boolean;
   onToggle: () => void;
   onRefresh: () => void;
+  onCreateSchema: () => void;
   onCopyName: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -476,6 +584,11 @@ function DatabaseRow({
           <MoreHorizontal className="size-3" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={onCreateSchema}>
+            <Plus className="size-3.5" />
+            New schema…
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
           <DropdownMenuItem onClick={onRefresh}>
             <RefreshCcw className="size-3.5" />
             Refresh
@@ -491,11 +604,13 @@ function SchemaRow({
   name,
   isOpen,
   onToggle,
+  onCreateTable,
   onCopyName,
 }: {
   name: string;
   isOpen: boolean;
   onToggle: () => void;
+  onCreateTable: () => void;
   onCopyName: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -528,6 +643,11 @@ function SchemaRow({
           <MoreHorizontal className="size-3" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={onCreateTable}>
+            <Plus className="size-3.5" />
+            New table…
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
           <DropdownMenuItem onClick={onCopyName}>Copy name</DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

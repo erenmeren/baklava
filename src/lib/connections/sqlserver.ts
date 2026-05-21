@@ -227,6 +227,163 @@ export function validateSqlServerDatabaseName(name: string): string {
   return name;
 }
 
+/**
+ * Create a database. Runs `CREATE DATABASE [name]` against `master`. The name
+ * is whitelisted to the regular-identifier alphabet (letters/digits/underscore)
+ * before being spliced into the bracketed identifier — `]` injection is
+ * therefore impossible, which is the same guard `USE [name]` relies on.
+ */
+export async function createSqlServerDatabase(
+  config: SqlServerConfig,
+  name: string
+): Promise<void> {
+  validateSqlServerDatabaseName(name);
+  await withPool(
+    config,
+    async (pool) => {
+      await pool.request().batch(`CREATE DATABASE [${name}]`);
+    },
+    { database: "master" }
+  );
+}
+
+/**
+ * Reject `;` in free-form SQL fragments (column types, DEFAULT expressions).
+ * T-SQL lets `;` separate statements, so blocking it is the SQLi guard for
+ * fragments that can't be parameterized — mirrors the Postgres adapter.
+ */
+export function requireNoStatementTerminator(value: string, fieldName: string): string {
+  if (value.includes(";")) {
+    throw new Error(`${fieldName} cannot contain ';'`);
+  }
+  return value;
+}
+
+export interface CreateSqlServerColumnInput {
+  name: string;
+  dataType: string;
+  nullable: boolean;
+  default?: string;
+  isPrimaryKey: boolean;
+  identity: boolean;
+}
+
+export interface CreateSqlServerTableInput {
+  schema: string;
+  name: string;
+  columns: CreateSqlServerColumnInput[];
+  ifNotExists?: boolean;
+}
+
+/**
+ * Build + run a `CREATE TABLE [schema].[table] (...)`. Identifiers (schema /
+ * table / column) are whitelisted then bracket-quoted; column types and
+ * DEFAULT expressions are free-form fragments guarded against `;`.
+ */
+export async function createSqlServerTable(
+  config: SqlServerConfig,
+  database: string,
+  input: CreateSqlServerTableInput
+): Promise<void> {
+  validateSqlServerIdentifier(database, "database name");
+  const schema = validateSqlServerIdentifier(input.schema, "schema name");
+  if (!input.name.trim()) throw new Error("Table name is required");
+  const table = validateSqlServerIdentifier(input.name.trim(), "table name");
+  if (!input.columns.length) throw new Error("At least one column is required");
+
+  const seen = new Set<string>();
+  const colDefs = input.columns.map((c) => {
+    const name = validateSqlServerIdentifier(c.name.trim(), "column name");
+    const key = name.toLowerCase();
+    if (seen.has(key)) throw new Error(`Duplicate column name "${name}"`);
+    seen.add(key);
+    if (!c.dataType.trim()) throw new Error(`Column "${name}" needs a data type`);
+
+    const parts = [`[${name}]`, requireNoStatementTerminator(c.dataType.trim(), "Column type")];
+    if (c.identity) parts.push("IDENTITY(1,1)");
+    parts.push(c.nullable ? "NULL" : "NOT NULL");
+    if (c.default && c.default.trim()) {
+      parts.push(`DEFAULT (${requireNoStatementTerminator(c.default.trim(), "Default expression")})`);
+    }
+    return parts.join(" ");
+  });
+
+  const pkCols = input.columns.filter((c) => c.isPrimaryKey);
+  if (pkCols.length) {
+    const cols = pkCols
+      .map((c) => `[${validateSqlServerIdentifier(c.name.trim(), "column name")}]`)
+      .join(", ");
+    colDefs.push(`PRIMARY KEY (${cols})`);
+  }
+
+  const create = `CREATE TABLE [${schema}].[${table}] (\n  ${colDefs.join(",\n  ")}\n)`;
+  // No native CREATE TABLE IF NOT EXISTS in T-SQL — guard with OBJECT_ID. The
+  // identifiers are whitelisted alnum/underscore, so embedding them in the
+  // N'…' literal can't break out of the string.
+  const sql = input.ifNotExists
+    ? `IF OBJECT_ID(N'[${schema}].[${table}]', N'U') IS NULL\n${create}`
+    : create;
+
+  await withPool(
+    config,
+    async (pool) => {
+      await pool.request().batch(sql);
+    },
+    { database }
+  );
+}
+
+/**
+ * List user schemas in a database (dbo + custom), excluding the built-in
+ * system schemas and the nine fixed database-role schemas. Used by the sidebar
+ * tree so empty / freshly-created schemas show up (object listing alone would
+ * only surface schemas that already contain something).
+ */
+export async function listSqlServerSchemas(
+  config: SqlServerConfig,
+  database: string
+): Promise<string[]> {
+  validateSqlServerIdentifier(database, "database name");
+  return withPool(
+    config,
+    async (pool) => {
+      const res = await pool.request().query<{ name: string }>(`
+        SELECT name FROM sys.schemas
+        WHERE name NOT IN (
+          'guest','sys','INFORMATION_SCHEMA',
+          'db_owner','db_accessadmin','db_securityadmin','db_ddladmin',
+          'db_backupoperator','db_datareader','db_datawriter',
+          'db_denydatareader','db_denydatawriter'
+        )
+        ORDER BY name
+      `);
+      return res.recordset.map((r) => String(r.name));
+    },
+    { database }
+  );
+}
+
+/**
+ * Create a schema in `database`. `CREATE SCHEMA` must be the only statement in
+ * its batch, so it runs on its own. Both identifiers are whitelisted before
+ * splicing (see {@link createSqlServerDatabase}).
+ */
+export async function createSqlServerSchema(
+  config: SqlServerConfig,
+  database: string,
+  schema: string
+): Promise<void> {
+  validateSqlServerIdentifier(database, "database name");
+  validateSqlServerIdentifier(schema, "schema name");
+  await withPool(
+    config,
+    async (pool) => {
+      await pool.request().batch(`CREATE SCHEMA [${schema}]`);
+    },
+    { database }
+  );
+}
+
 export async function listSqlServerTables(
   config: SqlServerConfig,
   database: string
