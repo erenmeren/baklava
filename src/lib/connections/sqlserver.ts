@@ -227,6 +227,77 @@ export function validateSqlServerDatabaseName(name: string): string {
   return name;
 }
 
+/**
+ * Create a database. Runs `CREATE DATABASE [name]` against `master`. The name
+ * is whitelisted to the regular-identifier alphabet (letters/digits/underscore)
+ * before being spliced into the bracketed identifier — `]` injection is
+ * therefore impossible, which is the same guard `USE [name]` relies on.
+ */
+export async function createSqlServerDatabase(
+  config: SqlServerConfig,
+  name: string
+): Promise<void> {
+  validateSqlServerDatabaseName(name);
+  await withPool(
+    config,
+    async (pool) => {
+      await pool.request().batch(`CREATE DATABASE [${name}]`);
+    },
+    { database: "master" }
+  );
+}
+
+/**
+ * List user schemas in a database (dbo + custom), excluding the built-in
+ * system schemas and the nine fixed database-role schemas. Used by the sidebar
+ * tree so empty / freshly-created schemas show up (object listing alone would
+ * only surface schemas that already contain something).
+ */
+export async function listSqlServerSchemas(
+  config: SqlServerConfig,
+  database: string
+): Promise<string[]> {
+  validateSqlServerIdentifier(database, "database name");
+  return withPool(
+    config,
+    async (pool) => {
+      const res = await pool.request().query<{ name: string }>(`
+        SELECT name FROM sys.schemas
+        WHERE name NOT IN (
+          'guest','sys','INFORMATION_SCHEMA',
+          'db_owner','db_accessadmin','db_securityadmin','db_ddladmin',
+          'db_backupoperator','db_datareader','db_datawriter',
+          'db_denydatareader','db_denydatawriter'
+        )
+        ORDER BY name
+      `);
+      return res.recordset.map((r) => String(r.name));
+    },
+    { database }
+  );
+}
+
+/**
+ * Create a schema in `database`. `CREATE SCHEMA` must be the only statement in
+ * its batch, so it runs on its own. Both identifiers are whitelisted before
+ * splicing (see {@link createSqlServerDatabase}).
+ */
+export async function createSqlServerSchema(
+  config: SqlServerConfig,
+  database: string,
+  schema: string
+): Promise<void> {
+  validateSqlServerIdentifier(database, "database name");
+  validateSqlServerIdentifier(schema, "schema name");
+  await withPool(
+    config,
+    async (pool) => {
+      await pool.request().batch(`CREATE SCHEMA [${schema}]`);
+    },
+    { database }
+  );
+}
+
 export async function listSqlServerTables(
   config: SqlServerConfig,
   database: string
