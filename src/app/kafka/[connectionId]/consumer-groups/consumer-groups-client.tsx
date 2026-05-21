@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -8,6 +8,11 @@ import { Input } from "@/components/ui/input";
 import { WorkspacePage } from "@/components/workspace/workspace-page";
 import { AutoRefresh } from "@/components/workspace/auto-refresh";
 import { Sparkline } from "@/components/workspace/sparkline";
+import {
+  HeatLegend,
+  PartitionCell,
+  PartitionHeatmapGrid,
+} from "@/components/workspace/partition-heatmap";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
@@ -24,7 +29,11 @@ import { Button } from "@/components/ui/button";
 import {
   Activity,
   AlertTriangle,
+  ArrowDown,
   ArrowDownUp,
+  ArrowUp,
+  ChevronRight,
+  ExternalLink,
   Layers,
   PinIcon,
   PinOff,
@@ -46,7 +55,7 @@ interface Props {
   connectionId: string;
 }
 
-type SortKey = "lag" | "name" | "members";
+type SortKey = "lag" | "name" | "members" | "rate" | "eta";
 type SortDir = "asc" | "desc";
 
 const fmt = new Intl.NumberFormat("en-US");
@@ -60,6 +69,96 @@ function formatCompact(n: number): string {
   if (n < 1_000_000_000)
     return (n / 1_000_000).toFixed(n < 10_000_000 ? 1 : 0) + "M";
   return (n / 1_000_000_000).toFixed(1) + "B";
+}
+
+// ─── Drain rate + ETA ─────────────────────────────────────────────────────
+// Both derive purely from the per-group totalLag ring buffer (no API change).
+// What we can measure from the list is *net* lag velocity (consumption minus
+// production), not gross consumer throughput — committed-offset deltas aren't
+// in this payload. Net velocity is exactly what answers "will this drain?",
+// so we label it as a lag/drain rate, never as "throughput".
+const DRAIN_WINDOW = 12; // fit over the last ~1 min (12 × 5s) — responsive but stable
+const DRAIN_MIN_SAMPLES = 3; // need a few points before a slope means anything
+
+type DrainStatus = "measuring" | "draining" | "growing" | "stalled" | "drained";
+
+interface DrainInfo {
+  status: DrainStatus;
+  ratePerSec: number; // signed: < 0 = lag shrinking (draining), > 0 = growing
+  etaSeconds: number | null; // set only when draining
+}
+
+// Least-squares slope over the buffer rather than a last-two-point delta —
+// a single noisy poll otherwise whipsaws the rate and ETA. Samples are evenly
+// spaced REFRESH_MS apart, so x is just the sample index.
+function computeDrain(history: number[], currentLag: number): DrainInfo {
+  if (currentLag === 0) {
+    return { status: "drained", ratePerSec: 0, etaSeconds: 0 };
+  }
+  if (history.length < DRAIN_MIN_SAMPLES) {
+    return { status: "measuring", ratePerSec: 0, etaSeconds: null };
+  }
+  const win = history.slice(-DRAIN_WINDOW);
+  const n = win.length;
+  let sumX = 0;
+  let sumY = 0;
+  let sumXY = 0;
+  let sumXX = 0;
+  for (let i = 0; i < n; i++) {
+    sumX += i;
+    sumY += win[i];
+    sumXY += i * win[i];
+    sumXX += i * i;
+  }
+  const denom = n * sumXX - sumX * sumX;
+  const slopePerSample = denom === 0 ? 0 : (n * sumXY - sumX * sumY) / denom;
+  const ratePerSec = slopePerSample / (REFRESH_MS / 1000);
+
+  // Dead-band: treat sub-0.05%/s drift as flat so a basically-idle group with
+  // jittery offsets doesn't flicker between "draining" and "growing".
+  const noiseFloor = Math.max(1, currentLag * 0.0005);
+  if (Math.abs(ratePerSec) < noiseFloor) {
+    return { status: "stalled", ratePerSec: 0, etaSeconds: null };
+  }
+  if (ratePerSec > 0) {
+    return { status: "growing", ratePerSec, etaSeconds: null };
+  }
+  return { status: "draining", ratePerSec, etaSeconds: currentLag / -ratePerSec };
+}
+
+// Collapse a DrainInfo to a single comparable number so the ETA column sorts
+// sensibly: already-drained first, then soonest-to-drain, with groups that
+// never drain (growing / stalled / still measuring) pushed to the far end.
+function etaSortValue(d: DrainInfo | undefined): number {
+  if (!d) return Number.POSITIVE_INFINITY;
+  if (d.status === "drained") return 0;
+  if (d.status === "draining" && d.etaSeconds != null) return d.etaSeconds;
+  return Number.POSITIVE_INFINITY;
+}
+
+function formatRate(ratePerSec: number): string {
+  const mag = Math.abs(ratePerSec);
+  const body = mag < 10 ? mag.toFixed(1) : formatCompact(Math.round(mag));
+  const sign = ratePerSec > 0 ? "+" : ratePerSec < 0 ? "−" : "";
+  return `${sign}${body}/s`;
+}
+
+function formatEta(seconds: number): string {
+  if (seconds < 1) return "<1s";
+  if (seconds < 60) return `~${Math.round(seconds)}s`;
+  if (seconds < 3600) {
+    const m = Math.floor(seconds / 60);
+    const s = Math.round(seconds % 60);
+    return s > 0 ? `~${m}m ${s}s` : `~${m}m`;
+  }
+  if (seconds < 86_400) {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.round((seconds % 3600) / 60);
+    return m > 0 ? `~${h}h ${m}m` : `~${h}h`;
+  }
+  const d = Math.floor(seconds / 86_400);
+  const h = Math.round((seconds % 86_400) / 3600);
+  return h > 0 ? `~${d}d ${h}h` : `~${d}d`;
 }
 
 const STATE_TONE: Record<string, string> = {
@@ -129,6 +228,27 @@ export function ConsumerGroupsClient({ connectionId }: Props) {
     [PIN_KEY],
   );
 
+  // Inline expansion (the accordion). Multiple groups can be open at once so
+  // operators can compare two groups' partition heatmaps side by side.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const toggleExpand = useCallback((groupId: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(groupId)) next.delete(groupId);
+      else next.add(groupId);
+      return next;
+    });
+  }, []);
+
+  const setRowSelected = useCallback((groupId: string, checked: boolean) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(groupId);
+      else next.delete(groupId);
+      return next;
+    });
+  }, []);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -196,6 +316,17 @@ export function ConsumerGroupsClient({ connectionId }: Props) {
     return set;
   }, [groups, lagHistory]);
 
+  // Drain rate + ETA per group, computed once per render off the lag buffer so
+  // the sort comparator and the row cells read identical numbers.
+  const drainByGroup = useMemo(() => {
+    const map = new Map<string, DrainInfo>();
+    if (!groups) return map;
+    for (const g of groups) {
+      map.set(g.groupId, computeDrain(lagHistory.get(g.groupId) ?? [], g.totalLag));
+    }
+    return map;
+  }, [groups, lagHistory]);
+
   const filtered = useMemo(() => {
     if (!groups) return null;
     const q = search.trim().toLowerCase();
@@ -216,10 +347,22 @@ export function ConsumerGroupsClient({ connectionId }: Props) {
       const mult = sort.dir === "asc" ? 1 : -1;
       if (sort.key === "name") return a.groupId.localeCompare(b.groupId) * mult;
       if (sort.key === "members") return (a.memberCount - b.memberCount) * mult;
+      if (sort.key === "rate") {
+        const ar = drainByGroup.get(a.groupId)?.ratePerSec ?? 0;
+        const br = drainByGroup.get(b.groupId)?.ratePerSec ?? 0;
+        return (ar - br) * mult;
+      }
+      if (sort.key === "eta") {
+        return (
+          (etaSortValue(drainByGroup.get(a.groupId)) -
+            etaSortValue(drainByGroup.get(b.groupId))) *
+          mult
+        );
+      }
       return (a.totalLag - b.totalLag) * mult;
     });
     return out;
-  }, [groups, search, sort, stateFilter, quickFilter, stuckSet]);
+  }, [groups, search, sort, stateFilter, quickFilter, stuckSet, drainByGroup]);
 
   // Split into pinned / unpinned so pinned rows always render at the top.
   const { pinnedRows, restRows } = useMemo(() => {
@@ -248,7 +391,7 @@ export function ConsumerGroupsClient({ connectionId }: Props) {
     setSort((prev) =>
       prev.key === key
         ? { key, dir: prev.dir === "asc" ? "desc" : "asc" }
-        : { key, dir: key === "name" ? "asc" : "desc" },
+        : { key, dir: key === "name" || key === "eta" ? "asc" : "desc" },
     );
   };
 
@@ -312,6 +455,46 @@ export function ConsumerGroupsClient({ connectionId }: Props) {
     } finally {
       setBulkBusy(false);
     }
+  };
+
+  // Renders a group row plus, when open, the inline expansion row beneath it.
+  // Shared by the pinned and unpinned tbodies so both behave identically.
+  const renderRow = (g: GroupStat, isPinned: boolean) => {
+    const isOpen = expanded.has(g.groupId);
+    return (
+      <Fragment key={g.groupId}>
+        <GroupRow
+          group={g}
+          connectionId={connectionId}
+          maxLag={maxLag}
+          lagHistory={lagHistory.get(g.groupId) ?? []}
+          drain={
+            drainByGroup.get(g.groupId) ?? {
+              status: "measuring",
+              ratePerSec: 0,
+              etaSeconds: null,
+            }
+          }
+          isStuck={stuckSet.has(g.groupId)}
+          isPinned={isPinned}
+          isExpanded={isOpen}
+          onToggleExpand={() => toggleExpand(g.groupId)}
+          onTogglePin={() => togglePin(g.groupId)}
+          selected={selected.has(g.groupId)}
+          onToggleSelect={(checked) => setRowSelected(g.groupId, checked)}
+        />
+        {isOpen ? (
+          <tr className="border-t border-border/40">
+            <td colSpan={10} className="p-0 bg-muted/[0.18]">
+              <GroupExpansion
+                connectionId={connectionId}
+                groupId={g.groupId}
+              />
+            </td>
+          </tr>
+        ) : null}
+      </Fragment>
+    );
   };
 
   return (
@@ -504,6 +687,20 @@ export function ConsumerGroupsClient({ connectionId }: Props) {
                   />
                   <th className="px-3 py-2 text-left w-[120px]">Trend</th>
                   <SortableTh
+                    label="Rate"
+                    keyName="rate"
+                    sort={sort}
+                    onClick={toggleSort}
+                    className="px-3 py-2 text-left w-[96px]"
+                  />
+                  <SortableTh
+                    label="ETA"
+                    keyName="eta"
+                    sort={sort}
+                    onClick={toggleSort}
+                    className="px-3 py-2 text-left w-[110px]"
+                  />
+                  <SortableTh
                     label="Members"
                     keyName="members"
                     sort={sort}
@@ -518,65 +715,17 @@ export function ConsumerGroupsClient({ connectionId }: Props) {
                 <tbody className="bg-brand/[0.03]">
                   <tr>
                     <td
-                      colSpan={8}
+                      colSpan={10}
                       className="px-3 py-1 text-[9px] font-mono uppercase tracking-[0.18em] text-brand/80 border-t border-brand/20"
                     >
                       <PinIcon className="inline size-2.5 mr-1" />
                       Pinned · {pinnedRows.length}
                     </td>
                   </tr>
-                  {pinnedRows.map((g) => {
-                    const history = lagHistory.get(g.groupId) ?? [];
-                    return (
-                      <GroupRow
-                        key={g.groupId}
-                        group={g}
-                        connectionId={connectionId}
-                        maxLag={maxLag}
-                        lagHistory={history}
-                        isStuck={stuckSet.has(g.groupId)}
-                        isPinned
-                        onTogglePin={() => togglePin(g.groupId)}
-                        selected={selected.has(g.groupId)}
-                        onToggleSelect={(checked) => {
-                          setSelected((prev) => {
-                            const next = new Set(prev);
-                            if (checked) next.add(g.groupId);
-                            else next.delete(g.groupId);
-                            return next;
-                          });
-                        }}
-                      />
-                    );
-                  })}
+                  {pinnedRows.map((g) => renderRow(g, true))}
                 </tbody>
               ) : null}
-              <tbody>
-                {restRows.map((g) => {
-                  const history = lagHistory.get(g.groupId) ?? [];
-                  return (
-                    <GroupRow
-                      key={g.groupId}
-                      group={g}
-                      connectionId={connectionId}
-                      maxLag={maxLag}
-                      lagHistory={history}
-                      isStuck={stuckSet.has(g.groupId)}
-                      isPinned={false}
-                      onTogglePin={() => togglePin(g.groupId)}
-                      selected={selected.has(g.groupId)}
-                      onToggleSelect={(checked) => {
-                        setSelected((prev) => {
-                          const next = new Set(prev);
-                          if (checked) next.add(g.groupId);
-                          else next.delete(g.groupId);
-                          return next;
-                        });
-                      }}
-                    />
-                  );
-                })}
-              </tbody>
+              <tbody>{restRows.map((g) => renderRow(g, false))}</tbody>
             </table>
           </div>
         )}
@@ -731,8 +880,11 @@ function GroupRow({
   connectionId,
   maxLag,
   lagHistory,
+  drain,
   isStuck,
   isPinned,
+  isExpanded,
+  onToggleExpand,
   onTogglePin,
   selected,
   onToggleSelect,
@@ -741,8 +893,11 @@ function GroupRow({
   connectionId: string;
   maxLag: number;
   lagHistory: number[];
+  drain: DrainInfo;
   isStuck: boolean;
   isPinned: boolean;
+  isExpanded: boolean;
+  onToggleExpand: () => void;
   onTogglePin: () => void;
   selected: boolean;
   onToggleSelect: (checked: boolean) => void;
@@ -768,13 +923,19 @@ function GroupRow({
 
   return (
     <tr
+      onClick={onToggleExpand}
+      aria-expanded={isExpanded}
       className={cn(
-        "group/row border-t border-border/40 hover:bg-muted/30 transition-colors",
+        "group/row cursor-pointer border-t border-border/40 hover:bg-muted/30 transition-colors",
         isStuck && "bg-red-500/[0.03]",
         selected && "bg-red-500/[0.05]",
+        isExpanded && "bg-muted/40 hover:bg-muted/40",
       )}
     >
-      <td className="w-9 px-2 py-2 text-center align-middle">
+      <td
+        className="w-9 px-2 py-2 text-center align-middle"
+        onClick={(e) => e.stopPropagation()}
+      >
         <input
           type="checkbox"
           aria-label={
@@ -797,10 +958,20 @@ function GroupRow({
         />
       </td>
       <td className="px-3 py-2 align-middle">
-        <div className="flex items-center gap-2 min-w-0">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <ChevronRight
+            aria-hidden
+            className={cn(
+              "size-3.5 shrink-0 text-muted-foreground/50 transition-transform duration-200",
+              isExpanded && "rotate-90 text-brand",
+            )}
+          />
           <button
             type="button"
-            onClick={onTogglePin}
+            onClick={(e) => {
+              e.stopPropagation();
+              onTogglePin();
+            }}
             aria-label={isPinned ? "Unpin group" : "Pin group"}
             title={isPinned ? "Unpin" : "Pin to top"}
             className={cn(
@@ -818,6 +989,7 @@ function GroupRow({
           </button>
           <Link
             href={`/kafka/${connectionId}/consumer-groups/${encodeURIComponent(group.groupId)}`}
+            onClick={(e) => e.stopPropagation()}
             className="font-mono text-xs hover:underline truncate"
           >
             {group.groupId}
@@ -883,6 +1055,12 @@ function GroupRow({
         />
       </td>
       <td className="px-3 py-2 align-middle">
+        <RateCell drain={drain} />
+      </td>
+      <td className="px-3 py-2 align-middle">
+        <EtaCell drain={drain} />
+      </td>
+      <td className="px-3 py-2 align-middle">
         <span
           className={cn(
             "font-mono text-xs tabular-nums",
@@ -906,6 +1084,308 @@ function GroupRow({
         {group.protocolType || "—"}
       </td>
     </tr>
+  );
+}
+
+// Signed net lag velocity. Draining (lag shrinking) reads green with a down
+// arrow; growing reads red with an up arrow; everything else is muted.
+function RateCell({ drain }: { drain: DrainInfo }) {
+  if (drain.status === "measuring") {
+    return (
+      <span className="font-mono text-[11px] text-muted-foreground/50 tabular-nums">
+        measuring…
+      </span>
+    );
+  }
+  if (drain.status === "drained" || drain.status === "stalled") {
+    return (
+      <span className="font-mono text-xs text-muted-foreground/60 tabular-nums">
+        0/s
+      </span>
+    );
+  }
+  const draining = drain.status === "draining";
+  const Arrow = draining ? ArrowDown : ArrowUp;
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 font-mono text-xs tabular-nums",
+        draining
+          ? "text-emerald-600 dark:text-emerald-400"
+          : "text-red-600 dark:text-red-400 font-semibold",
+      )}
+      title={
+        draining
+          ? "Net lag shrinking — group is catching up"
+          : "Net lag growing — production is outpacing consumption"
+      }
+    >
+      <Arrow className="size-3 shrink-0" />
+      {formatRate(drain.ratePerSec)}
+    </span>
+  );
+}
+
+// Time-to-zero at the current drain rate. Only meaningful while draining;
+// otherwise we say so plainly rather than inventing a number.
+function EtaCell({ drain }: { drain: DrainInfo }) {
+  if (drain.status === "drained") {
+    return (
+      <span className="inline-flex items-center gap-1 font-mono text-xs tabular-nums text-emerald-600 dark:text-emerald-400">
+        drained
+      </span>
+    );
+  }
+  if (drain.status === "draining" && drain.etaSeconds != null) {
+    return (
+      <span
+        className="font-mono text-xs tabular-nums text-foreground"
+        title={`At the current rate, lag reaches zero in ~${Math.round(drain.etaSeconds)}s`}
+      >
+        {formatEta(drain.etaSeconds)}
+      </span>
+    );
+  }
+  if (drain.status === "growing") {
+    return (
+      <span
+        className="font-mono text-[11px] uppercase tracking-wider text-red-600 dark:text-red-400"
+        title="Lag is increasing — it will never drain at the current rate"
+      >
+        diverging
+      </span>
+    );
+  }
+  if (drain.status === "stalled") {
+    return (
+      <span
+        className="font-mono text-[11px] uppercase tracking-wider text-amber-600 dark:text-amber-400"
+        title="Lag is holding steady — not draining"
+      >
+        stalled
+      </span>
+    );
+  }
+  return (
+    <span className="font-mono text-[11px] text-muted-foreground/50 tabular-nums">
+      measuring…
+    </span>
+  );
+}
+
+// ─── Inline expansion: per-topic partition lag heatmap ────────────────────
+
+interface GroupOffset {
+  topic: string;
+  partition: number;
+  offset: string;
+  high: string;
+  lag: number;
+  ownerMemberId?: string;
+  ownerClientId?: string;
+}
+
+interface GroupDetail {
+  groupId: string;
+  state: string;
+  protocolType?: string;
+  protocol?: string;
+  members: Array<{ memberId: string; clientId: string; clientHost: string }>;
+  offsets: GroupOffset[];
+}
+
+function GroupExpansion({
+  connectionId,
+  groupId,
+}: {
+  connectionId: string;
+  groupId: string;
+}) {
+  const [detail, setDetail] = useState<GroupDetail | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  const fetchDetail = useCallback(async () => {
+    abortRef.current?.abort();
+    const ac = new AbortController();
+    abortRef.current = ac;
+    try {
+      const res = await fetch(
+        `/api/kafka/${connectionId}/consumer-groups/${encodeURIComponent(groupId)}`,
+        { cache: "no-store", signal: ac.signal },
+      );
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Failed to load group detail");
+        return;
+      }
+      setError(null);
+      setDetail(data as GroupDetail);
+    } catch (e) {
+      if ((e as Error).name !== "AbortError") setError((e as Error).message);
+    }
+  }, [connectionId, groupId]);
+
+  // Fetch on open, then keep the heatmap live on the same cadence as the list.
+  // The interval and any in-flight request are torn down when the row collapses
+  // (this component unmounts), matching the SSE/abort convention in AGENTS.md.
+  useEffect(() => {
+    void fetchDetail();
+    const t = setInterval(() => void fetchDetail(), REFRESH_MS);
+    return () => {
+      clearInterval(t);
+      abortRef.current?.abort();
+    };
+  }, [fetchDetail]);
+
+  const topics = useMemo(() => {
+    if (!detail) return [];
+    const byTopic = new Map<string, GroupOffset[]>();
+    for (const o of detail.offsets) {
+      const arr = byTopic.get(o.topic) ?? [];
+      arr.push(o);
+      byTopic.set(o.topic, arr);
+    }
+    return [...byTopic.entries()]
+      .map(([topic, parts]) => {
+        const sorted = [...parts].sort((a, b) => a.partition - b.partition);
+        let totalLag = 0;
+        const owners = new Set<string>();
+        for (const p of sorted) {
+          totalLag += p.lag;
+          if (p.ownerClientId) owners.add(p.ownerClientId);
+        }
+        return { topic, parts: sorted, totalLag, owners: owners.size };
+      })
+      .sort((a, b) => b.totalLag - a.totalLag);
+  }, [detail]);
+
+  const groupMaxLag = useMemo(() => {
+    if (!detail || detail.offsets.length === 0) return 0;
+    return detail.offsets.reduce((m, o) => Math.max(m, o.lag), 0);
+  }, [detail]);
+
+  if (!detail && !error) {
+    return (
+      <div className="px-4 py-4 space-y-2 animate-in fade-in-0 duration-150">
+        <Skeleton className="h-3.5 w-56" />
+        <Skeleton className="h-20 w-full" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="px-4 py-3 font-mono text-xs text-red-600 dark:text-red-400">
+        {error}
+      </div>
+    );
+  }
+
+  const totalLag = detail!.offsets.reduce((s, o) => s + o.lag, 0);
+  const totalParts = detail!.offsets.length;
+  const fullHref = `/kafka/${connectionId}/consumer-groups/${encodeURIComponent(groupId)}`;
+
+  return (
+    <div className="px-4 py-4 animate-in fade-in-0 slide-in-from-top-1 duration-200">
+      {/* summary header */}
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2.5 text-[10px] font-mono uppercase tracking-[0.14em] text-muted-foreground">
+          <span className="tabular-nums">
+            {topics.length} topic{topics.length === 1 ? "" : "s"}
+          </span>
+          <span aria-hidden className="h-3 w-px bg-border" />
+          <span className="tabular-nums">
+            {fmt.format(totalParts)} partition{totalParts === 1 ? "" : "s"}
+          </span>
+          <span aria-hidden className="h-3 w-px bg-border" />
+          <span className="tabular-nums">
+            {formatCompact(totalLag)} lag
+          </span>
+          <span aria-hidden className="h-3 w-px bg-border" />
+          <span className="tabular-nums">
+            {detail!.members.length} member
+            {detail!.members.length === 1 ? "" : "s"}
+          </span>
+        </div>
+        <div className="flex items-center gap-3">
+          <HeatLegend
+            low="lag 0"
+            high={formatCompact(groupMaxLag)}
+            title="Box color encodes lag; the number inside is the partition's total message count"
+          />
+          <Link
+            href={fullHref}
+            className="inline-flex items-center gap-1 text-[11px] text-brand hover:underline"
+          >
+            Open full view
+            <ExternalLink className="size-3" />
+          </Link>
+        </div>
+      </div>
+
+      {totalParts === 0 ? (
+        <div className="rounded-lg border border-dashed border-border/60 px-4 py-6 text-center text-xs text-muted-foreground">
+          This group has no committed offsets yet.
+        </div>
+      ) : (
+        <div className="grid gap-2.5 sm:grid-cols-2">
+          {topics.map((t) => {
+            // Shade relative to the worst partition in *this* topic so each
+            // topic's internal skew is visible (matches the canonical heatmap).
+            const topicMaxLag = Math.max(1, ...t.parts.map((p) => p.lag));
+            return (
+              <div
+                key={t.topic}
+                className="rounded-lg border border-border/50 bg-card/50 p-3"
+              >
+                <div className="mb-2.5 flex items-center justify-between gap-2">
+                  <span className="truncate font-mono text-xs text-foreground">
+                    {t.topic}
+                  </span>
+                  <span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground">
+                    {t.parts.length}p · {formatCompact(t.totalLag)} lag
+                    {t.owners > 0 ? ` · ${t.owners} owner${t.owners === 1 ? "" : "s"}` : ""}
+                  </span>
+                </div>
+                <PartitionHeatmapGrid>
+                  {t.parts.map((p) => {
+                    const high = Number(p.high);
+                    const known = high >= 0;
+                    return (
+                      <PartitionCell
+                        key={p.partition}
+                        data={{
+                          partition: p.partition,
+                          intensity:
+                            p.lag === 0 ? 0 : Math.min(1, p.lag / topicMaxLag),
+                          idle: !known || high === 0,
+                          countLabel:
+                            known && high > 0 ? formatCompact(high) : undefined,
+                          owner: p.ownerClientId,
+                          href: `/kafka/${connectionId}/topics/${encodeURIComponent(p.topic)}?tab=messages&partition=${p.partition}`,
+                          tooltip: [
+                            `partition ${p.partition}`,
+                            known
+                              ? `${fmt.format(high)} messages`
+                              : "no messages produced yet",
+                            `offset ${p.offset} / high ${p.high}`,
+                            `lag ${fmt.format(p.lag)}`,
+                            p.ownerClientId
+                              ? `owned by ${p.ownerClientId}`
+                              : "no owner",
+                          ].join("\n"),
+                        }}
+                      />
+                    );
+                  })}
+                </PartitionHeatmapGrid>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 

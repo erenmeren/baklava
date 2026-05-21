@@ -109,6 +109,10 @@ interface Props {
   base: string;
   topic: string;
   partitions: PartitionInfo[];
+  /** Pre-select a partition in the filter (e.g. arriving from a heatmap box
+   *  click). Defaults to "all". The component is remounted (via React key) when
+   *  this changes, so it re-fetches for the new partition. */
+  initialPartition?: string;
   /** Called when the user picks "Produce similar" in the detail drawer. */
   onProduceSimilar?: (template: ProduceTemplate) => void;
 }
@@ -311,10 +315,18 @@ function shellQuote(s: string): string {
 // MessagesTab — the full component
 // ─────────────────────────────────────────────────────────────────────────
 
-export function MessagesTab({ base, topic, partitions, onProduceSimilar }: Props) {
+export function MessagesTab({
+  base,
+  topic,
+  partitions,
+  initialPartition,
+  onProduceSimilar,
+}: Props) {
   const [messages, setMessages] = useState<KafkaMessage[] | null>(null);
   const [loadingMessages, setLoadingMessages] = useState(false);
-  const [partitionFilter, setPartitionFilter] = useState<string>("all");
+  const [partitionFilter, setPartitionFilter] = useState<string>(
+    initialPartition ?? "all",
+  );
   const [fromBeginning, setFromBeginning] = useState(true);
   const [live, setLive] = useState(false);
   const [keyFilter, setKeyFilter] = useState("");
