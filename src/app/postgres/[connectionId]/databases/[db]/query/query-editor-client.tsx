@@ -1,13 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import CodeMirror from "@uiw/react-codemirror";
+import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { sql, PostgreSQL } from "@codemirror/lang-sql";
 import { EditorView } from "@codemirror/view";
 import { Button } from "@/components/ui/button";
 import { WorkspacePage } from "@/components/workspace/workspace-page";
 import {
+  AlignLeft,
   AlertCircle,
   Check,
   History as HistoryIcon,
@@ -25,6 +26,13 @@ import {
   type ExplainPlanRoot,
 } from "@/components/postgres/explain-plan-viewer";
 import { pushRecentQuery } from "@/lib/postgres/recent-queries";
+import { formatSql } from "@/lib/sql/format";
+import { ResultActions } from "@/components/sql/result-actions";
+import {
+  ShortcutCheatsheet,
+  useIsMac,
+  runHint,
+} from "@/components/sql/keyboard-shortcuts";
 
 interface QueryResult {
   fields: string[];
@@ -165,6 +173,8 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [hydrated, setHydrated] = useState(false);
   const { resolvedTheme } = useTheme();
+  const isMac = useIsMac();
+  const kbd = runHint(isMac);
 
   // EXPLAIN state — separate from the regular query result so the two
   // panels don't fight. Hitting Explain calls the dedicated endpoint
@@ -175,8 +185,31 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
   const [explainLoading, setExplainLoading] = useState(false);
   const [explainError, setExplainError] = useState<string | null>(null);
 
+  // Editor handle — lets us read the current selection so ⌘↵ / Run can run
+  // just the highlighted text (falling back to the whole editor).
+  const cmRef = useRef<ReactCodeMirrorRef>(null);
+  const runText = useCallback(() => {
+    const view = cmRef.current?.view;
+    if (view) {
+      const { from, to } = view.state.selection.main;
+      if (to > from) return view.state.sliceDoc(from, to);
+    }
+    return sqlText;
+  }, [sqlText]);
+
+  const onFormat = useCallback(() => {
+    if (!sqlText.trim()) return;
+    try {
+      setSqlText(formatSql(sqlText, "postgresql"));
+    } catch (e) {
+      toast.error("Could not format SQL", {
+        description: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }, [sqlText]);
+
   const runExplain = useCallback(async () => {
-    const raw = sqlText.trim();
+    const raw = runText().trim();
     if (!raw) return;
     setExplainLoading(true);
     setExplainError(null);
@@ -203,7 +236,7 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
     } finally {
       setExplainLoading(false);
     }
-  }, [connectionId, db, sqlText]);
+  }, [connectionId, db, runText]);
 
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -242,7 +275,7 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
 
   const execute = useCallback(
     async (asExplain = false) => {
-      const raw = sqlText.trim();
+      const raw = runText().trim();
       if (!raw) return;
       const finalSql =
         asExplain && !/^\s*explain\b/i.test(raw)
@@ -383,21 +416,29 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
         });
       }
     },
-    [connectionId, db, sqlText],
+    [connectionId, db, runText],
   );
 
   // Cmd/Ctrl+Enter to run — bound at the window level so the editor doesn't
   // need to swap extensions on every keystroke.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+      const mod = e.metaKey || e.ctrlKey;
+      if (!mod) return;
+      if (e.key === "Enter") {
         e.preventDefault();
         execute(false);
+      } else if (e.shiftKey && (e.key === "F" || e.key === "f")) {
+        e.preventDefault();
+        onFormat();
+      } else if (!e.shiftKey && (e.key === "E" || e.key === "e")) {
+        e.preventDefault();
+        runExplain();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [execute]);
+  }, [execute, onFormat, runExplain]);
 
   const extensions = useMemo(
     () => [
@@ -438,11 +479,22 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
       }
       description={
         <span className="text-xs">
-          PostgreSQL · ⌘↵ to run · results capped at 500 rows
+          PostgreSQL · {kbd} to run · results capped at 500 rows
         </span>
       }
       actions={
         <>
+          <ShortcutCheatsheet />
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={onFormat}
+            disabled={!sqlText.trim()}
+            title={`Format SQL · ${isMac ? "⌘⇧F" : "Ctrl+Shift+F"}`}
+          >
+            <AlignLeft className="size-3.5" />
+            Format
+          </Button>
           <Button
             size="sm"
             variant="outline"
@@ -465,7 +517,7 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
             )}
             Run
             <span className="ml-1 hidden sm:inline text-[10px] font-mono opacity-70">
-              ⌘↵
+              {kbd}
             </span>
           </Button>
         </>
@@ -475,6 +527,7 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
         {/* Editor */}
         <div className="rounded-md border border-border/60 overflow-hidden bg-card">
           <CodeMirror
+            ref={cmRef}
             value={sqlText}
             onChange={setSqlText}
             extensions={extensions}
@@ -489,7 +542,7 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
               closeBrackets: true,
               indentOnInput: true,
             }}
-            placeholder="-- write SQL · ⌘↵ to run"
+            placeholder={`-- write SQL · ${kbd} to run · select text to run only that`}
             height="100%"
             className="h-full text-[12.5px]"
           />
@@ -497,7 +550,7 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
 
         {/* Status line */}
         <div className="flex items-center gap-2 text-[11px] font-mono">
-          <StatusIndicator phase={phase} result={result} error={error} />
+          <StatusIndicator phase={phase} result={result} error={error} kbd={kbd} />
           {result?.truncated ? (
             <span className="ml-auto text-muted-foreground">
               · truncated to first 500 rows
@@ -553,6 +606,15 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
               >
                 <Trash2 className="size-3" /> clear
               </button>
+            ) : null}
+            {tab === "data" && result && result.fields.length > 0 ? (
+              <ResultActions
+                className="ml-auto mr-2"
+                fields={result.fields}
+                rows={result.rows}
+                rowCount={result.rowCount}
+                filenameBase={`${db}-query`}
+              />
             ) : null}
           </div>
 
@@ -617,6 +679,7 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
                 error={error}
                 cellPad={cellPad}
                 headPad={headPad}
+                kbd={kbd}
               />
             ) : null}
             {tab === "messages" ? (
@@ -655,16 +718,18 @@ function StatusIndicator({
   phase,
   result,
   error,
+  kbd,
 }: {
   phase: "idle" | "running" | "ok" | "err";
   result: QueryResult | null;
   error: string | null;
+  kbd: string;
 }) {
   if (phase === "idle") {
     return (
       <span className="text-muted-foreground inline-flex items-center gap-1.5">
         <span className="size-1.5 rounded-full bg-muted-foreground/40" />
-        ready · ⌘↵ to run
+        ready · {kbd} to run
       </span>
     );
   }
@@ -705,18 +770,20 @@ function DataPanel({
   error,
   cellPad,
   headPad,
+  kbd,
 }: {
   phase: "idle" | "running" | "ok" | "err";
   result: QueryResult | null;
   error: string | null;
   cellPad: string;
   headPad: string;
+  kbd: string;
 }) {
   if (phase === "idle" && !result && !error) {
     return (
       <EmptyState
         title="No result yet"
-        hint="Run a query to see rows here. ⌘↵ to run."
+        hint={`Run a query to see rows here. ${kbd} to run.`}
       />
     );
   }

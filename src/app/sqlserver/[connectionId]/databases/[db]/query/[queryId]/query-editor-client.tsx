@@ -1,22 +1,44 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import CodeMirror from "@uiw/react-codemirror";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { sql, MSSQL } from "@codemirror/lang-sql";
 import { EditorView } from "@codemirror/view";
 import { Button } from "@/components/ui/button";
 import { WorkspacePage } from "@/components/workspace/workspace-page";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/components/theme-provider";
+import { toast } from "sonner";
 import {
+  AlignLeft,
   AlertCircle,
   Check,
+  History as HistoryIcon,
   Loader2,
   Play,
   Sparkles,
   Terminal,
+  Trash2,
 } from "lucide-react";
 import { PlanViewer, type SqlServerPlan } from "@/components/sqlserver/plan-viewer";
+import { formatSql } from "@/lib/sql/format";
+import { ResultActions } from "@/components/sql/result-actions";
+import {
+  ShortcutCheatsheet,
+  useIsMac,
+  runHint,
+} from "@/components/sql/keyboard-shortcuts";
+
+interface HistoryItem {
+  sql: string;
+  rowCount: number | null;
+  durationMs: number | null;
+  ok: boolean;
+  error?: string;
+  at: number;
+}
+
+const HISTORY_LIMIT = 25;
 
 interface ResultSet {
   fields: string[];
@@ -45,10 +67,18 @@ interface Props {
   queryId: string;
 }
 
-// Per-tab SQL persistence, scoped by connection + database + queryId so two
+// Per-tab persistence, scoped by connection + database + queryId so two
 // query tabs never clobber each other (mirrors the Postgres editor).
 const SQL_KEY = (cid: string, db: string, qid: string) =>
   `baklava:mssql-query-sql:${cid}:${db}:${qid}`;
+const HISTORY_KEY = (cid: string, db: string, qid: string) =>
+  `baklava:mssql-query-history:${cid}:${db}:${qid}`;
+
+function formatTimestamp(ms: number): string {
+  const d = new Date(ms);
+  const p = (n: number) => n.toString().padStart(2, "0");
+  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
 
 export function QueryEditorClient({ connectionId, db, queryId }: Props) {
   const { resolvedTheme } = useTheme();
@@ -60,15 +90,49 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
   const [connError, setConnError] = useState<string | null>(null);
   const [activeBatch, setActiveBatch] = useState(0);
   const [withStats, setWithStats] = useState(false);
-  const [tab, setTab] = useState<"results" | "messages" | "plan">("results");
+  const [tab, setTab] = useState<"results" | "messages" | "plan" | "history">(
+    "results",
+  );
   const [plan, setPlan] = useState<SqlServerPlan | null>(null);
   const [planLoading, setPlanLoading] = useState(false);
   const [planError, setPlanError] = useState<string | null>(null);
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+  const cmRef = useRef<ReactCodeMirrorRef>(null);
+  const isMac = useIsMac();
+  const kbd = runHint(isMac);
+
+  // Run the highlighted selection if there is one, else the whole editor.
+  const runText = useCallback(() => {
+    const view = cmRef.current?.view;
+    if (view) {
+      const { from, to } = view.state.selection.main;
+      if (to > from) return view.state.sliceDoc(from, to);
+    }
+    return sqlText;
+  }, [sqlText]);
+
+  const onFormat = useCallback(() => {
+    if (!sqlText.trim()) return;
+    try {
+      setSqlText(formatSql(sqlText, "tsql"));
+    } catch (e) {
+      toast.error("Could not format SQL", {
+        description: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }, [sqlText]);
 
   useEffect(() => {
     try {
       const saved = window.localStorage.getItem(SQL_KEY(connectionId, db, queryId));
       if (saved) setSqlText(saved);
+      const rawHist = window.localStorage.getItem(
+        HISTORY_KEY(connectionId, db, queryId),
+      );
+      if (rawHist) {
+        const parsed = JSON.parse(rawHist);
+        if (Array.isArray(parsed)) setHistory(parsed as HistoryItem[]);
+      }
     } catch {
       /* ignore */
     }
@@ -84,8 +148,24 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
     }
   }, [sqlText, hydrated, connectionId, db, queryId]);
 
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
+      window.localStorage.setItem(
+        HISTORY_KEY(connectionId, db, queryId),
+        JSON.stringify(history),
+      );
+    } catch {
+      /* ignore */
+    }
+  }, [history, hydrated, connectionId, db, queryId]);
+
+  const record = useCallback((item: HistoryItem) => {
+    setHistory((h) => [item, ...h].slice(0, HISTORY_LIMIT));
+  }, []);
+
   const execute = useCallback(async () => {
-    const raw = sqlText.trim();
+    const raw = runText().trim();
     if (!raw) return;
     setPhase("running");
     setConnError(null);
@@ -106,6 +186,7 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
       if (data.error && !data.batches) {
         setConnError(data.error);
         setPhase("err");
+        record({ sql: raw, rowCount: null, durationMs: null, ok: false, error: data.error, at: Date.now() });
         return;
       }
       const m = data as MultiResult;
@@ -114,14 +195,28 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
       setActiveBatch(firstErr === -1 ? 0 : firstErr);
       setPhase(firstErr === -1 ? "ok" : "err");
       if (firstErr !== -1) setTab("messages");
+      const rows = m.batches.reduce(
+        (sum, b) => sum + b.resultSets.reduce((s, rs) => s + rs.rowCount, 0),
+        0,
+      );
+      record({
+        sql: raw,
+        rowCount: rows,
+        durationMs: m.totalDurationMs,
+        ok: firstErr === -1,
+        error: firstErr === -1 ? undefined : m.batches[firstErr]?.error,
+        at: Date.now(),
+      });
     } catch (e) {
-      setConnError(e instanceof Error ? e.message : String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      setConnError(msg);
       setPhase("err");
+      record({ sql: raw, rowCount: null, durationMs: null, ok: false, error: msg, at: Date.now() });
     }
-  }, [connectionId, sqlText, db, withStats]);
+  }, [connectionId, runText, db, withStats, record]);
 
   const explain = useCallback(async () => {
-    const raw = sqlText.trim();
+    const raw = runText().trim();
     if (!raw) return;
     setPlanLoading(true);
     setPlanError(null);
@@ -144,18 +239,26 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
     } finally {
       setPlanLoading(false);
     }
-  }, [connectionId, sqlText, db]);
+  }, [connectionId, runText, db]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+      const mod = e.metaKey || e.ctrlKey;
+      if (!mod) return;
+      if (e.key === "Enter") {
         e.preventDefault();
         void execute();
+      } else if (e.shiftKey && (e.key === "F" || e.key === "f")) {
+        e.preventDefault();
+        onFormat();
+      } else if (!e.shiftKey && (e.key === "E" || e.key === "e")) {
+        e.preventDefault();
+        void explain();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [execute]);
+  }, [execute, onFormat, explain]);
 
   const extensions = useMemo(
     () => [
@@ -190,9 +293,10 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
           SQL editor <span className="text-muted-foreground text-base">· {db}</span>
         </span>
       }
-      description="T-SQL · GO splits batches · ⌘↵ to run · results capped at 1000 rows"
+      description={`T-SQL · GO splits batches · ${kbd} to run · results capped at 1000 rows`}
       actions={
         <div className="flex items-center gap-2">
+          <ShortcutCheatsheet />
           <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
             <input
               type="checkbox"
@@ -202,6 +306,17 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
             />
             STATISTICS IO/TIME
           </label>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={onFormat}
+            disabled={!sqlText.trim()}
+            className="gap-1.5"
+            title={`Format SQL · ${isMac ? "⌘⇧F" : "Ctrl+Shift+F"}`}
+          >
+            <AlignLeft className="size-3.5" />
+            Format
+          </Button>
           <Button
             size="sm"
             variant="outline"
@@ -228,7 +343,7 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
               <Play className="size-3.5" />
             )}
             Run
-            <span className="text-[10px] opacity-70">⌘↵</span>
+            <span className="text-[10px] opacity-70">{kbd}</span>
           </Button>
         </div>
       }
@@ -236,6 +351,7 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
       <div className="flex flex-col h-full min-h-0 gap-3">
         <div className="rounded-lg border border-border/60 overflow-hidden bg-card min-h-[180px] max-h-[40vh]">
           <CodeMirror
+            ref={cmRef}
             value={sqlText}
             onChange={setSqlText}
             extensions={extensions}
@@ -248,6 +364,7 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
               bracketMatching: true,
               closeBrackets: true,
             }}
+            placeholder={`-- T-SQL · ${kbd} to run · select text to run only that`}
             height="100%"
           />
         </div>
@@ -259,7 +376,7 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
               ? `done · ${result.batches.length} batch${result.batches.length === 1 ? "" : "es"} · ${result.totalDurationMs}ms`
               : phase === "err"
                 ? "completed with errors"
-                : "ready · ⌘↵ to run"}
+                : `ready · ${kbd} to run`}
         </div>
 
         {connError ? (
@@ -269,8 +386,7 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
           </div>
         ) : null}
 
-        {result || plan || planLoading || planError ? (
-          <div className="flex-1 min-h-0 flex flex-col rounded-lg border border-border/60 overflow-hidden">
+        <div className="flex-1 min-h-0 flex flex-col rounded-lg border border-border/60 overflow-hidden">
             {/* Batch strip (only when >1 batch) */}
             {result && result.batches.length > 1 ? (
               <div className="border-b border-border/40 px-1.5 py-1 flex items-center gap-0.5 overflow-x-auto bg-muted/20">
@@ -309,7 +425,7 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
 
             {/* Sub-tabs */}
             <div className="flex items-center gap-1 border-b border-border/40 px-2 py-1">
-              {(["results", "messages", "plan"] as const).map((t) => (
+              {(["results", "messages", "plan", "history"] as const).map((t) => (
                 <button
                   key={t}
                   type="button"
@@ -329,16 +445,40 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
                     <span className="inline-flex items-center gap-1">
                       <Sparkles className="size-3" /> Plan
                     </span>
+                  ) : t === "history" ? (
+                    <span className="inline-flex items-center gap-1">
+                      <HistoryIcon className="size-3" /> History
+                    </span>
                   ) : (
                     "Results"
                   )}
                 </button>
               ))}
+              {tab === "history" && history.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setHistory([]);
+                    toast.success("Query history cleared");
+                  }}
+                  className="ml-auto text-[11px] text-muted-foreground hover:text-destructive transition-colors inline-flex items-center gap-1"
+                >
+                  <Trash2 className="size-3" /> clear
+                </button>
+              ) : null}
             </div>
 
             <div className="flex-1 min-h-0 overflow-auto">
               {tab === "plan" ? (
                 <PlanViewer plan={plan} loading={planLoading} error={planError} />
+              ) : tab === "history" ? (
+                <HistoryPanel
+                  history={history}
+                  onPick={(s) => {
+                    setSqlText(s);
+                    setTab("results");
+                  }}
+                />
               ) : tab === "results" ? (
                 active?.error ? (
                   <div className="p-4 text-sm text-rose-500 font-mono whitespace-pre-wrap">
@@ -347,7 +487,13 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
                 ) : active && active.resultSets.length > 0 ? (
                   <div className="divide-y divide-border/40">
                     {active.resultSets.map((rs, ri) => (
-                      <ResultGrid key={ri} rs={rs} index={ri} multi={active.resultSets.length > 1} />
+                      <ResultGrid
+                        key={ri}
+                        rs={rs}
+                        index={ri}
+                        multi={active.resultSets.length > 1}
+                        filenameBase={`${db}-query`}
+                      />
                     ))}
                   </div>
                 ) : active ? (
@@ -355,7 +501,12 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
                     <Check className="size-4 text-emerald-500" />
                     {active.rowsAffected.reduce((a, c) => a + c, 0)} row(s) affected · no result set
                   </div>
-                ) : null
+                ) : (
+                  <div className="p-6 text-center text-xs text-muted-foreground">
+                    Run a query to see results. {kbd} to run · select text to run
+                    only that.
+                  </div>
+                )
               ) : (
                 <pre className="p-3 text-[11px] font-mono whitespace-pre-wrap text-muted-foreground">
                   {allMessages && allMessages.length > 0
@@ -367,20 +518,85 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
               )}
             </div>
           </div>
-        ) : null}
       </div>
     </WorkspacePage>
   );
 }
 
-function ResultGrid({ rs, index, multi }: { rs: ResultSet; index: number; multi: boolean }) {
+function HistoryPanel({
+  history,
+  onPick,
+}: {
+  history: HistoryItem[];
+  onPick: (sql: string) => void;
+}) {
+  if (history.length === 0) {
+    return (
+      <div className="p-6 text-center text-xs text-muted-foreground">
+        No history yet. Past runs from this tab show up here.
+      </div>
+    );
+  }
+  return (
+    <ul>
+      {history.map((h, i) => (
+        <li
+          key={i}
+          className="border-b border-border/30 last:border-b-0 hover:bg-foreground/[0.03]"
+        >
+          <button
+            type="button"
+            onClick={() => onPick(h.sql)}
+            className="grid grid-cols-[60px_72px_auto_1fr] gap-3 items-center text-left w-full px-3 py-1.5 font-mono text-[11.5px]"
+          >
+            <span className="text-muted-foreground">{formatTimestamp(h.at)}</span>
+            <span className="text-muted-foreground tabular-nums">
+              {h.durationMs != null ? `${h.durationMs}ms` : "—"}
+            </span>
+            <span
+              className={cn(
+                "text-[10px] uppercase tracking-wider px-1.5 py-px rounded border tabular-nums",
+                h.ok
+                  ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                  : "border-rose-500/40 bg-rose-500/10 text-rose-500",
+              )}
+            >
+              {h.ok ? `${h.rowCount ?? 0} rows` : "error"}
+            </span>
+            <span className="truncate text-foreground/90">
+              {h.error ?? h.sql.replace(/\s+/g, " ")}
+            </span>
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function ResultGrid({
+  rs,
+  index,
+  multi,
+  filenameBase,
+}: {
+  rs: ResultSet;
+  index: number;
+  multi: boolean;
+  filenameBase: string;
+}) {
   return (
     <div>
-      {multi ? (
-        <div className="px-3 py-1 text-[10px] uppercase tracking-wider font-mono text-muted-foreground bg-muted/20 border-b border-border/40">
-          Result set {index + 1} · {rs.rowCount} rows
-        </div>
-      ) : null}
+      <div className="flex items-center justify-between gap-2 px-2 py-1 bg-muted/20 border-b border-border/40">
+        <span className="text-[10px] uppercase tracking-wider font-mono text-muted-foreground">
+          {multi ? `Result set ${index + 1}` : "Result"}
+        </span>
+        <ResultActions
+          fields={rs.fields}
+          rows={rs.rows}
+          rowCount={rs.rowCount}
+          filenameBase={multi ? `${filenameBase}-${index + 1}` : filenameBase}
+        />
+      </div>
       <table className="w-full text-xs font-mono">
         <thead className="bg-muted/40 sticky top-0">
           <tr>
