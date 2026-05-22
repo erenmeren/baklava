@@ -7,7 +7,8 @@ test.describe("home page", () => {
     await page.goto("/");
     // The home page is purely the tile grid — there's no hero heading.
     // Each tile uses <h3>{TechName}</h3>, so we verify by tile presence.
-    for (const tech of ["Docker", "PostgreSQL", "Kafka", "Redis"]) {
+    // Only the enabled techs are rendered (others are hidden, not dimmed).
+    for (const tech of ["Docker", "PostgreSQL", "Kafka", "SQL Server"]) {
       await expect(
         page.getByRole("heading", { level: 3, name: tech }),
       ).toBeVisible();
