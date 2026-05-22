@@ -17,11 +17,18 @@ interface ConnectionsResponse {
 }
 
 /**
- * Technologies enabled in this build. Everything else stays visible on the
- * grid but is greyed out and non-clickable. Add an id here to switch a tech
- * back on — the workspace + driver code is unchanged.
+ * Technologies enabled in this build. Everything else is hidden from the grid
+ * entirely (cards + their category tabs). Add an id here to switch a tech back
+ * on — the workspace + driver code is unchanged.
  */
 const ENABLED_TECH_IDS = new Set(["docker", "postgres", "kafka", "sqlserver"]);
+
+// The grid only ever shows enabled techs, so derive the catalog + the set of
+// categories that actually have something in them once, up front.
+const ENABLED_CATALOG = TECH_CATALOG.filter((t) => ENABLED_TECH_IDS.has(t.id));
+const ENABLED_CATEGORIES = TECH_CATEGORIES.filter(
+  (c) => c === "All" || ENABLED_CATALOG.some((t) => t.category === c),
+);
 
 export function TechGrid() {
   const [counts, setCounts] = useState<Record<string, number>>({});
@@ -54,16 +61,16 @@ export function TechGrid() {
   }, []);
 
   const categoryCounts = useMemo(() => {
-    const c: Record<string, number> = { All: TECH_CATALOG.length };
-    for (const t of TECH_CATALOG) c[t.category] = (c[t.category] ?? 0) + 1;
+    const c: Record<string, number> = { All: ENABLED_CATALOG.length };
+    for (const t of ENABLED_CATALOG) c[t.category] = (c[t.category] ?? 0) + 1;
     return c;
   }, []);
 
   const visible = useMemo(
     () =>
       filter === "All"
-        ? TECH_CATALOG
-        : TECH_CATALOG.filter((t) => t.category === filter),
+        ? ENABLED_CATALOG
+        : ENABLED_CATALOG.filter((t) => t.category === filter),
     [filter],
   );
 
@@ -73,7 +80,7 @@ export function TechGrid() {
         role="tablist"
         className="flex flex-wrap items-center gap-x-7 gap-y-1 border-b border-border/60"
       >
-        {TECH_CATEGORIES.map((c) => {
+        {ENABLED_CATEGORIES.map((c) => {
           const active = filter === c;
           return (
             <button
