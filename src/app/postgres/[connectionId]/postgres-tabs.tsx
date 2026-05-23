@@ -375,54 +375,24 @@ function Tab({
       aria-selected={active}
       onMouseDown={(e) => {
         // Middle-click would otherwise open in a new browser tab. Suppress the
-        // default and let onAuxClick handle the close.
-        if (e.button === 1 && onClose) e.preventDefault();
+        // default and let onAuxClick handle the close. Skip while renaming so
+        // a stray middle-click can't tear down the input.
+        if (e.button === 1 && onClose && !editing) e.preventDefault();
       }}
       onAuxClick={(e) => {
-        if (e.button === 1 && onClose) {
+        if (e.button === 1 && onClose && !editing) {
           e.preventDefault();
           onClose();
         }
       }}
     >
-      {editing ? (
-        <input
-          autoFocus
-          defaultValue={label}
-          onFocus={(e) => e.currentTarget.select()}
-          onClick={(e) => e.stopPropagation()}
-          onBlur={(e) => onCommit?.(e.currentTarget.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              onCommit?.(e.currentTarget.value);
-            } else if (e.key === "Escape") {
-              e.preventDefault();
-              onCancel?.();
-            }
-          }}
-          className={cn(
-            "inline-flex h-7 self-center min-w-[60px] max-w-[220px] mx-1 px-1.5",
-            "rounded-sm text-[12px] font-mono text-foreground bg-transparent",
-            "border-b border-brand outline-none",
-          )}
-          aria-label="Rename tab"
-        />
-      ) : (
-        <Link
-          href={href}
-          title={editable ? `${title} · double-click to rename` : title}
-          onDoubleClick={(e) => {
-            if (!editable) return;
-            e.preventDefault();
-            onStartEdit?.();
-          }}
-          className={cn(
-            "inline-flex items-center gap-1.5 pl-3 min-w-0",
-            showClose ? "pr-1" : "pr-3",
-            "text-[12px] font-mono whitespace-nowrap",
-          )}
-        >
+      {(() => {
+        const rowClass = cn(
+          "inline-flex items-center gap-1.5 pl-3 min-w-0",
+          showClose && !editing ? "pr-1" : "pr-3",
+          "text-[12px] font-mono whitespace-nowrap",
+        );
+        const iconNode = (
           <span
             className={cn(
               "shrink-0 grid place-items-center transition-opacity",
@@ -431,10 +401,52 @@ function Tab({
           >
             {icon}
           </span>
-          <span className="truncate">{label}</span>
-        </Link>
-      )}
-      {showClose && onClose ? (
+        );
+        return editing ? (
+          <div className={rowClass}>
+            {iconNode}
+            <input
+              autoFocus
+              defaultValue={label}
+              onFocus={(e) => e.currentTarget.select()}
+              onClick={(e) => e.stopPropagation()}
+              onBlur={(e) => onCommit?.(e.currentTarget.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  onCommit?.(e.currentTarget.value);
+                } else if (e.key === "Escape") {
+                  e.preventDefault();
+                  onCancel?.();
+                }
+              }}
+              aria-label="Rename tab"
+              className={cn(
+                "h-6 min-w-[60px] max-w-[200px] px-1.5 [field-sizing:content]",
+                "rounded-md border border-border/80 bg-background",
+                "text-[12px] font-mono text-foreground caret-brand",
+                "outline-none transition-shadow",
+                "focus:border-brand focus:ring-2 focus:ring-brand/25",
+              )}
+            />
+          </div>
+        ) : (
+          <Link
+            href={href}
+            title={editable ? `${title} · double-click to rename` : title}
+            onDoubleClick={(e) => {
+              if (!editable) return;
+              e.preventDefault();
+              onStartEdit?.();
+            }}
+            className={rowClass}
+          >
+            {iconNode}
+            <span className="truncate">{label}</span>
+          </Link>
+        );
+      })()}
+      {showClose && onClose && !editing ? (
         <button
           type="button"
           onClick={(e) => {
