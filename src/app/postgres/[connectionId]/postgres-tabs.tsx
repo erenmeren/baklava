@@ -180,6 +180,18 @@ export function PostgresTabs({ connectionId, defaultDatabase }: Props) {
   const router = useRouter();
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [hydrated, setHydrated] = useState(false);
+  // Tab being renamed (by tabKey). Only query tabs are renamable.
+  const [editingKey, setEditingKey] = useState<string | null>(null);
+  const commitRename = useCallback((key: string, next: string) => {
+    const trimmed = next.trim();
+    setTabs((prev) =>
+      prev.map((t) => {
+        if (tabKey(t) !== key || t.kind !== "query") return t;
+        return { ...t, title: trimmed || t.title };
+      }),
+    );
+    setEditingKey(null);
+  }, []);
 
   // Hydrate from localStorage once.
   useEffect(() => {
@@ -283,6 +295,11 @@ export function PostgresTabs({ connectionId, defaultDatabase }: Props) {
               label={tabLabel(t)}
               showClose
               onClose={() => closeTab(k)}
+              editable={t.kind === "query"}
+              editing={editingKey === k}
+              onStartEdit={() => setEditingKey(k)}
+              onCommit={(text) => commitRename(k, text)}
+              onCancel={() => setEditingKey(null)}
             />
           );
         })}
@@ -327,6 +344,11 @@ function Tab({
   label,
   showClose,
   onClose,
+  editable = false,
+  editing = false,
+  onStartEdit,
+  onCommit,
+  onCancel,
 }: {
   href: string;
   active: boolean;
@@ -335,6 +357,12 @@ function Tab({
   label: string;
   showClose: boolean;
   onClose?: () => void;
+  /** When true, double-clicking the tab enters inline rename mode. */
+  editable?: boolean;
+  editing?: boolean;
+  onStartEdit?: () => void;
+  onCommit?: (text: string) => void;
+  onCancel?: () => void;
 }) {
   return (
     <div
@@ -357,25 +385,55 @@ function Tab({
         }
       }}
     >
-      <Link
-        href={href}
-        title={title}
-        className={cn(
-          "inline-flex items-center gap-1.5 pl-3 min-w-0",
-          showClose ? "pr-1" : "pr-3",
-          "text-[12px] font-mono whitespace-nowrap",
-        )}
-      >
-        <span
+      {editing ? (
+        <input
+          autoFocus
+          defaultValue={label}
+          onFocus={(e) => e.currentTarget.select()}
+          onClick={(e) => e.stopPropagation()}
+          onBlur={(e) => onCommit?.(e.currentTarget.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              onCommit?.(e.currentTarget.value);
+            } else if (e.key === "Escape") {
+              e.preventDefault();
+              onCancel?.();
+            }
+          }}
           className={cn(
-            "shrink-0 grid place-items-center transition-opacity",
-            active ? "opacity-100" : "opacity-70 group-hover/pgtab:opacity-100",
+            "inline-flex h-7 self-center min-w-[60px] max-w-[220px] mx-1 px-1.5",
+            "rounded-sm text-[12px] font-mono text-foreground bg-transparent",
+            "border-b border-brand outline-none",
+          )}
+          aria-label="Rename tab"
+        />
+      ) : (
+        <Link
+          href={href}
+          title={editable ? `${title} · double-click to rename` : title}
+          onDoubleClick={(e) => {
+            if (!editable) return;
+            e.preventDefault();
+            onStartEdit?.();
+          }}
+          className={cn(
+            "inline-flex items-center gap-1.5 pl-3 min-w-0",
+            showClose ? "pr-1" : "pr-3",
+            "text-[12px] font-mono whitespace-nowrap",
           )}
         >
-          {icon}
-        </span>
-        <span className="truncate">{label}</span>
-      </Link>
+          <span
+            className={cn(
+              "shrink-0 grid place-items-center transition-opacity",
+              active ? "opacity-100" : "opacity-70 group-hover/pgtab:opacity-100",
+            )}
+          >
+            {icon}
+          </span>
+          <span className="truncate">{label}</span>
+        </Link>
+      )}
       {showClose && onClose ? (
         <button
           type="button"
