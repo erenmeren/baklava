@@ -8,13 +8,11 @@ import { EditorView } from "@codemirror/view";
 import { Button } from "@/components/ui/button";
 import { WorkspacePage } from "@/components/workspace/workspace-page";
 import {
-  AlignLeft,
   AlertCircle,
   Check,
   History as HistoryIcon,
   Loader2,
   Play,
-  Sparkles,
   Trash2,
   Terminal,
 } from "lucide-react";
@@ -484,27 +482,11 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
       }
       actions={
         <>
-          <ShortcutCheatsheet />
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={onFormat}
-            disabled={!sqlText.trim()}
-            title={`Format SQL · ${isMac ? "⌘⇧F" : "Ctrl+Shift+F"}`}
-          >
-            <AlignLeft className="size-3.5" />
-            Format
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={runExplain}
-            disabled={phase === "running" || explainLoading}
-            title="Run with EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) inside a rolled-back transaction"
-          >
-            <Sparkles className="size-3.5" />
-            Explain
-          </Button>
+          <ShortcutCheatsheet
+            onRun={() => execute(false)}
+            onFormat={onFormat}
+            onExplain={runExplain}
+          />
           <Button
             size="sm"
             onClick={() => execute(false)}
