@@ -31,6 +31,8 @@ import {
   useIsMac,
   runHint,
 } from "@/components/sql/keyboard-shortcuts";
+import { DbSelector } from "@/components/sql/db-selector";
+import { SchemaSelector } from "@/components/sql/schema-selector";
 
 interface QueryResult {
   fields: string[];
@@ -85,6 +87,10 @@ function sqlKey(connectionId: string, db: string, queryId: string) {
 
 function historyKey(connectionId: string, db: string, queryId: string) {
   return `baklava:pg-query-history:${connectionId}:${db}:${queryId}`;
+}
+
+function searchPathKey(connectionId: string, db: string, queryId: string) {
+  return `baklava:pg-query-searchpath:${connectionId}:${db}:${queryId}`;
 }
 
 function loadHistory(
@@ -158,7 +164,7 @@ function formatTimestamp(ms: number): string {
 }
 
 export function QueryEditorClient({ connectionId, db, queryId }: Props) {
-  const defaultSql = `-- ${db}\nselect now() as now, current_user as user;`;
+  const defaultSql = `-- ${db}\nSELECT * FROM `;
   const [sqlText, setSqlText] = useState(defaultSql);
   const [phase, setPhase] = useState<"idle" | "running" | "ok" | "err">("idle");
   const [result, setResult] = useState<QueryResult | null>(null);
@@ -170,6 +176,7 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
   const [tab, setTab] = useState<ResultTab>("data");
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [hydrated, setHydrated] = useState(false);
+  const [searchPath, setSearchPath] = useState<string | null>(null);
   const { resolvedTheme } = useTheme();
   const isMac = useIsMac();
   const kbd = runHint(isMac);
@@ -240,9 +247,21 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
   const router = useRouter();
   const pathname = usePathname();
 
+  // One-shot guard so the cursor-at-end nudge below doesn't fire again on a
+  // remount that happens to leave the scaffold untouched.
+  const placedCursor = useRef(false);
+
   useEffect(() => {
     setSqlText(loadSql(connectionId, db, queryId, defaultSql));
     setHistory(loadHistory(connectionId, db, queryId));
+    try {
+      const sp = window.localStorage.getItem(
+        searchPathKey(connectionId, db, queryId),
+      );
+      setSearchPath(sp && sp.length > 0 ? sp : null);
+    } catch {
+      /* ignore */
+    }
     setHydrated(true);
     // defaultSql intentionally excluded: it would re-trigger on every render
     // and overwrite user edits.
@@ -271,6 +290,33 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
     if (hydrated) saveSql(connectionId, db, queryId, sqlText);
   }, [sqlText, hydrated, connectionId, db, queryId]);
 
+  // When the editor opens with the unchanged scaffold (`SELECT * FROM `), drop
+  // the cursor at the end of the line so the user types the table immediately.
+  // Skipped if localStorage replaced sqlText with previously-saved SQL.
+  useEffect(() => {
+    if (!hydrated || placedCursor.current) return;
+    placedCursor.current = true;
+    if (sqlText !== defaultSql) return;
+    const view = cmRef.current?.view;
+    if (!view) return;
+    const len = view.state.doc.length;
+    view.dispatch({ selection: { anchor: len, head: len } });
+    view.focus();
+    // sqlText / defaultSql intentionally read at-call; this effect runs once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
+      const k = searchPathKey(connectionId, db, queryId);
+      if (searchPath) window.localStorage.setItem(k, searchPath);
+      else window.localStorage.removeItem(k);
+    } catch {
+      /* ignore */
+    }
+  }, [searchPath, hydrated, connectionId, db, queryId]);
+
   const execute = useCallback(
     async (asExplain = false) => {
       const raw = runText().trim();
@@ -293,7 +339,11 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
           {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ sql: finalSql, multi: true }),
+            body: JSON.stringify({
+              sql: finalSql,
+              multi: true,
+              searchPath: searchPath ?? undefined,
+            }),
           },
         );
         const data = await res.json();
@@ -414,7 +464,7 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
         });
       }
     },
-    [connectionId, db, runText],
+    [connectionId, db, runText, searchPath],
   );
 
   // Cmd/Ctrl+Enter to run — bound at the window level so the editor doesn't
@@ -482,10 +532,14 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
       }
       actions={
         <>
-          <ShortcutCheatsheet
-            onRun={() => execute(false)}
-            onFormat={onFormat}
-            onExplain={runExplain}
+          <DbSelector tech="postgres" connectionId={connectionId} currentDb={db} />
+          <SchemaSelector
+            tech="postgres"
+            connectionId={connectionId}
+            db={db}
+            value={searchPath}
+            onChange={setSearchPath}
+            mode="search_path"
           />
           <Button
             size="sm"
@@ -533,11 +587,15 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
         {/* Status line */}
         <div className="flex items-center gap-2 text-[11px] font-mono">
           <StatusIndicator phase={phase} result={result} error={error} kbd={kbd} />
-          {result?.truncated ? (
-            <span className="ml-auto text-muted-foreground">
-              · truncated to first 500 rows
-            </span>
-          ) : null}
+          <div className="ml-auto flex items-center gap-2 text-muted-foreground">
+            {result?.truncated ? <span>· truncated to first 500 rows</span> : null}
+            <ShortcutCheatsheet
+              compact
+              onRun={() => execute(false)}
+              onFormat={onFormat}
+              onExplain={runExplain}
+            />
+          </div>
         </div>
 
         {/* Tabs + result */}
