@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Loader2, Plus, X } from "lucide-react";
 import { toast } from "sonner";
+import { TypeCombobox } from "@/components/sql/type-combobox";
 
 const COMMON_TYPES = [
   "int",
@@ -229,19 +230,12 @@ export function CreateTableDialog({
                     spellCheck={false}
                     className="font-mono text-xs"
                   />
-                  <Input
-                    list={`ct-types-${i}`}
+                  <TypeCombobox
                     value={c.dataType}
-                    onChange={(e) => updateColumn(i, { dataType: e.target.value })}
+                    onChange={(v) => updateColumn(i, { dataType: v })}
+                    options={COMMON_TYPES}
                     placeholder="nvarchar(255)"
-                    spellCheck={false}
-                    className="font-mono text-xs"
                   />
-                  <datalist id={`ct-types-${i}`}>
-                    {COMMON_TYPES.map((t) => (
-                      <option key={t} value={t} />
-                    ))}
-                  </datalist>
                   <label className="flex items-center justify-center cursor-pointer">
                     <input
                       type="checkbox"
