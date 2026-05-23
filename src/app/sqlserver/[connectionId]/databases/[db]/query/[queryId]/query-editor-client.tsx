@@ -22,6 +22,8 @@ import { PlanViewer, type SqlServerPlan } from "@/components/sqlserver/plan-view
 import { formatSql } from "@/lib/sql/format";
 import { editorTheme } from "@/lib/sql/editor-theme";
 import { useSchemaCompletions } from "@/lib/sql/use-schema-completions";
+import { smartSqlCompletions } from "@/lib/sql/editor-completions";
+import { SQLSERVER_KEYWORDS, SQLSERVER_TYPES } from "@/lib/sql/dialect-keywords";
 import { ResultActions } from "@/components/sql/result-actions";
 import {
   ShortcutCheatsheet,
@@ -86,7 +88,7 @@ function formatTimestamp(ms: number): string {
 
 export function QueryEditorClient({ connectionId, db, queryId }: Props) {
   const { resolvedTheme } = useTheme();
-  const defaultSql = `-- ${db}\nSELECT * FROM `;
+  const defaultSql = `-- ${db}\nSELECT\n  *\nFROM\n  `;
   const [sqlText, setSqlText] = useState(defaultSql);
   const [hydrated, setHydrated] = useState(false);
   const [phase, setPhase] = useState<"idle" | "running" | "ok" | "err">("idle");
@@ -320,9 +322,19 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
   });
   const extensions = useMemo(
     () => [
+      // sql() handles syntax / parser / highlighting; we override its
+      // autocomplete with a context-aware source via smartSqlCompletions.
       sql({
         dialect: MSSQL,
         upperCaseKeywords: false,
+        schema: completions
+          ? { [completions.schemaName]: completions.tables }
+          : undefined,
+        defaultSchema: completions?.schemaName,
+      }),
+      smartSqlCompletions({
+        keywords: SQLSERVER_KEYWORDS,
+        types: SQLSERVER_TYPES,
         schema: completions
           ? { [completions.schemaName]: completions.tables }
           : undefined,
@@ -396,7 +408,9 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
               lineNumbers: true,
               highlightActiveLine: true,
               foldGutter: true,
-              autocompletion: true,
+              // Disabled — we add our own context-aware autocompletion above
+              // (smartSqlCompletions) so suggestions stay on-topic.
+              autocompletion: false,
               bracketMatching: true,
               closeBrackets: true,
             }}
