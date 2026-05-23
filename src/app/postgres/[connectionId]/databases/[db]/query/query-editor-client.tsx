@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { sql, PostgreSQL } from "@codemirror/lang-sql";
-import { EditorView } from "@codemirror/view";
 import { Button } from "@/components/ui/button";
 import { WorkspacePage } from "@/components/workspace/workspace-page";
 import {
@@ -25,6 +24,7 @@ import {
 } from "@/components/postgres/explain-plan-viewer";
 import { pushRecentQuery } from "@/lib/postgres/recent-queries";
 import { formatSql } from "@/lib/sql/format";
+import { editorTheme } from "@/lib/sql/editor-theme";
 import { ResultActions } from "@/components/sql/result-actions";
 import {
   ShortcutCheatsheet,
@@ -489,21 +489,7 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
   }, [execute, onFormat, runExplain]);
 
   const extensions = useMemo(
-    () => [
-      sql({ dialect: PostgreSQL, upperCaseKeywords: false }),
-      EditorView.theme({
-        "&": { height: "100%", fontSize: "12.5px" },
-        ".cm-scroller": { fontFamily: "var(--font-jetbrains-mono), monospace" },
-        ".cm-content": { padding: "10px 0" },
-        ".cm-gutters": {
-          backgroundColor: "transparent",
-          borderRight: "1px solid var(--border)",
-          color: "var(--muted-foreground)",
-        },
-        ".cm-activeLine": { backgroundColor: "color-mix(in oklch, var(--brand) 5%, transparent)" },
-        ".cm-activeLineGutter": { backgroundColor: "transparent" },
-      }),
-    ],
+    () => [sql({ dialect: PostgreSQL, upperCaseKeywords: false }), editorTheme],
     [],
   );
 
