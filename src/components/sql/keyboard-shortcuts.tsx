@@ -54,6 +54,8 @@ interface Props {
   onFormat?: () => void;
   onExplain?: () => void;
   className?: string;
+  /** Smaller (status-line) appearance instead of the default toolbar size. */
+  compact?: boolean;
 }
 
 /**
@@ -62,7 +64,13 @@ interface Props {
  * anywhere on the page with `?`. When the editor passes `onRun` / `onFormat`
  * / `onExplain`, selecting the matching item also fires the action.
  */
-export function ShortcutCheatsheet({ onRun, onFormat, onExplain, className }: Props) {
+export function ShortcutCheatsheet({
+  onRun,
+  onFormat,
+  onExplain,
+  className,
+  compact = false,
+}: Props) {
   const isMac = useIsMac();
   const mod = isMac ? "⌘" : "Ctrl";
   const [open, setOpen] = useState(false);
@@ -93,11 +101,12 @@ export function ShortcutCheatsheet({ onRun, onFormat, onExplain, className }: Pr
         aria-label="Keyboard shortcuts"
         onClick={() => setOpen(true)}
         className={cn(
-          "inline-flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground",
+          "inline-flex items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground",
+          compact ? "size-5" : "size-8",
           className,
         )}
       >
-        <Keyboard className="size-4" />
+        <Keyboard className={compact ? "size-3" : "size-4"} />
       </button>
 
       <CommandDialog

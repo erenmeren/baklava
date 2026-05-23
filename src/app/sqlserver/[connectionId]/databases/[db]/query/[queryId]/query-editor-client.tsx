@@ -27,6 +27,8 @@ import {
   useIsMac,
   runHint,
 } from "@/components/sql/keyboard-shortcuts";
+import { DbSelector } from "@/components/sql/db-selector";
+import { SchemaSelector } from "@/components/sql/schema-selector";
 
 interface HistoryItem {
   sql: string;
@@ -72,6 +74,8 @@ const SQL_KEY = (cid: string, db: string, qid: string) =>
   `baklava:mssql-query-sql:${cid}:${db}:${qid}`;
 const HISTORY_KEY = (cid: string, db: string, qid: string) =>
   `baklava:mssql-query-history:${cid}:${db}:${qid}`;
+const QUALIFIER_KEY = (cid: string, db: string, qid: string) =>
+  `baklava:mssql-query-qualifier:${cid}:${db}:${qid}`;
 
 function formatTimestamp(ms: number): string {
   const d = new Date(ms);
@@ -81,7 +85,7 @@ function formatTimestamp(ms: number): string {
 
 export function QueryEditorClient({ connectionId, db, queryId }: Props) {
   const { resolvedTheme } = useTheme();
-  const defaultSql = `-- ${db}\nSELECT @@VERSION AS version;`;
+  const defaultSql = `-- ${db}\nSELECT * FROM `;
   const [sqlText, setSqlText] = useState(defaultSql);
   const [hydrated, setHydrated] = useState(false);
   const [phase, setPhase] = useState<"idle" | "running" | "ok" | "err">("idle");
@@ -96,9 +100,26 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
   const [planLoading, setPlanLoading] = useState(false);
   const [planError, setPlanError] = useState<string | null>(null);
   const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [qualifier, setQualifier] = useState<string | null>(null);
   const cmRef = useRef<ReactCodeMirrorRef>(null);
   const isMac = useIsMac();
   const kbd = runHint(isMac);
+
+  // One-shot guard so the cursor-at-end nudge below doesn't fire again on a
+  // remount that happens to leave the scaffold untouched.
+  const placedCursor = useRef(false);
+
+  // Insert text at the current cursor (used by the schema "insert" button).
+  const insertAtCursor = useCallback((text: string) => {
+    const view = cmRef.current?.view;
+    if (!view) return;
+    const { from } = view.state.selection.main;
+    view.dispatch({
+      changes: { from, insert: text },
+      selection: { anchor: from + text.length },
+    });
+    view.focus();
+  }, []);
 
   // Run the highlighted selection if there is one, else the whole editor.
   const runText = useCallback(() => {
@@ -132,6 +153,8 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
         const parsed = JSON.parse(rawHist);
         if (Array.isArray(parsed)) setHistory(parsed as HistoryItem[]);
       }
+      const q = window.localStorage.getItem(QUALIFIER_KEY(connectionId, db, queryId));
+      setQualifier(q && q.length > 0 ? q : null);
     } catch {
       /* ignore */
     }
@@ -158,6 +181,33 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
       /* ignore */
     }
   }, [history, hydrated, connectionId, db, queryId]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
+      const k = QUALIFIER_KEY(connectionId, db, queryId);
+      if (qualifier) window.localStorage.setItem(k, qualifier);
+      else window.localStorage.removeItem(k);
+    } catch {
+      /* ignore */
+    }
+  }, [qualifier, hydrated, connectionId, db, queryId]);
+
+  // When the editor opens with the unchanged scaffold (`SELECT * FROM `), drop
+  // the cursor at the end of the line so the user types the table immediately.
+  // Skipped if localStorage replaced sqlText with previously-saved SQL.
+  useEffect(() => {
+    if (!hydrated || placedCursor.current) return;
+    placedCursor.current = true;
+    if (sqlText !== defaultSql) return;
+    const view = cmRef.current?.view;
+    if (!view) return;
+    const len = view.state.doc.length;
+    view.dispatch({ selection: { anchor: len, head: len } });
+    view.focus();
+    // sqlText / defaultSql intentionally read at-call; this effect runs once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated]);
 
   const record = useCallback((item: HistoryItem) => {
     setHistory((h) => [item, ...h].slice(0, HISTORY_LIMIT));
@@ -295,10 +345,15 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
       description={`T-SQL · GO splits batches · ${kbd} to run · results capped at 1000 rows`}
       actions={
         <div className="flex items-center gap-2">
-          <ShortcutCheatsheet
-            onRun={execute}
-            onFormat={onFormat}
-            onExplain={explain}
+          <DbSelector tech="sqlserver" connectionId={connectionId} currentDb={db} />
+          <SchemaSelector
+            tech="sqlserver"
+            connectionId={connectionId}
+            db={db}
+            value={qualifier}
+            onChange={setQualifier}
+            mode="qualifier"
+            onInsert={insertAtCursor}
           />
           <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
             <input
@@ -347,14 +402,23 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
           />
         </div>
 
-        <div className="text-[11px] font-mono text-muted-foreground">
-          {phase === "running"
-            ? "running…"
-            : phase === "ok" && result
-              ? `done · ${result.batches.length} batch${result.batches.length === 1 ? "" : "es"} · ${result.totalDurationMs}ms`
-              : phase === "err"
-                ? "completed with errors"
-                : `ready · ${kbd} to run`}
+        <div className="flex items-center gap-2 text-[11px] font-mono text-muted-foreground">
+          <span>
+            {phase === "running"
+              ? "running…"
+              : phase === "ok" && result
+                ? `done · ${result.batches.length} batch${result.batches.length === 1 ? "" : "es"} · ${result.totalDurationMs}ms`
+                : phase === "err"
+                  ? "completed with errors"
+                  : `ready · ${kbd} to run`}
+          </span>
+          <ShortcutCheatsheet
+            compact
+            className="ml-auto"
+            onRun={execute}
+            onFormat={onFormat}
+            onExplain={explain}
+          />
         </div>
 
         {connError ? (

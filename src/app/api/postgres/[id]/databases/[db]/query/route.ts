@@ -14,6 +14,9 @@ interface QueryRequest {
   sql: string;
   /** When true, run as multiple statements and return one result per. */
   multi?: boolean;
+  /** Optional schema to SET search_path TO before running (per-run, scoped to
+   *  the fresh client connection so it doesn't leak). */
+  searchPath?: string;
 }
 
 const MAX_ROWS = 500;
@@ -41,6 +44,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
         record.config as PostgresConfig,
         decodeURIComponent(db),
         body.sql,
+        { searchPath: body.searchPath },
       );
       updateStatus(id, "ok");
       return NextResponse.json({

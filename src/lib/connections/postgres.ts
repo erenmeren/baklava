@@ -2143,8 +2143,17 @@ export async function runQueryMulti(
   config: PostgresConfig,
   database: string,
   sql: string,
+  opts?: { searchPath?: string },
 ): Promise<MultiQueryResult> {
   return withClient(config, database, async (client) => {
+    // Apply per-call search_path on this fresh client (fresh client per
+    // withClient call means SETs are scoped to this run). Whitelisted +
+    // quoted, then runs silently — not reported in `out` so the user's
+    // multi-result panel only shows their own statements.
+    if (opts?.searchPath && opts.searchPath.trim()) {
+      const sp = validateIdentifier(opts.searchPath.trim(), "Schema");
+      await client.query(`SET search_path TO ${quoteIdent(sp)}, public`);
+    }
     const stmts = splitSqlStatements(sql);
     const overall = Date.now();
     const out: MultiQueryResult["results"] = [];
