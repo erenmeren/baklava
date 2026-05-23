@@ -508,6 +508,35 @@ export interface ColumnInfo {
   comment: string | null;
 }
 
+/**
+ * Bulk-list every table/view in a schema with their columns. Used to feed the
+ * SQL editor's autocomplete in one round-trip instead of N per-table calls.
+ * Values are parameterized; schema/table/column names are returned raw and
+ * the caller (lang-sql) treats them as plain strings.
+ */
+export async function listSchemaColumns(
+  config: PostgresConfig,
+  database: string,
+  schema: string,
+): Promise<Array<{ name: string; columns: string[] }>> {
+  return withClient(config, database, async (client) => {
+    const res = await client.query<{ table_name: string; column_name: string }>(
+      `SELECT table_name, column_name
+       FROM information_schema.columns
+       WHERE table_schema = $1
+       ORDER BY table_name, ordinal_position`,
+      [schema],
+    );
+    const map = new Map<string, string[]>();
+    for (const row of res.rows) {
+      const arr = map.get(row.table_name) ?? [];
+      arr.push(row.column_name);
+      map.set(row.table_name, arr);
+    }
+    return [...map.entries()].map(([name, columns]) => ({ name, columns }));
+  });
+}
+
 export async function listColumns(
   config: PostgresConfig,
   database: string,

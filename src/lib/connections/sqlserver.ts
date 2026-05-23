@@ -435,6 +435,48 @@ export async function listSqlServerSchemas(
 }
 
 /**
+ * Bulk-list every table/view in a schema with their columns. Used to feed the
+ * SQL editor's autocomplete in one round-trip instead of N per-table calls.
+ * Schema is parameterized (not spliced) so we don't need the identifier
+ * whitelist here — the value never reaches the SQL text.
+ */
+export async function listSqlServerSchemaColumns(
+  config: SqlServerConfig,
+  database: string,
+  schema: string,
+): Promise<Array<{ name: string; columns: string[] }>> {
+  validateSqlServerIdentifier(database, "database name");
+  return withPool(
+    config,
+    async (pool) => {
+      const res = await pool
+        .request()
+        .input(
+          "schema",
+          (sql as unknown as { NVarChar: unknown }).NVarChar,
+          schema,
+        )
+        .query<{ table_name: string; column_name: string }>(`
+          SELECT o.name AS table_name, c.name AS column_name
+          FROM sys.objects o
+          JOIN sys.columns c ON c.object_id = o.object_id
+          WHERE SCHEMA_NAME(o.schema_id) = @schema
+            AND o.type IN ('U','V')
+          ORDER BY o.name, c.column_id
+        `);
+      const map = new Map<string, string[]>();
+      for (const row of res.recordset) {
+        const arr = map.get(row.table_name) ?? [];
+        arr.push(row.column_name);
+        map.set(row.table_name, arr);
+      }
+      return [...map.entries()].map(([name, columns]) => ({ name, columns }));
+    },
+    { database },
+  );
+}
+
+/**
  * Create a schema in `database`. `CREATE SCHEMA` must be the only statement in
  * its batch, so it runs on its own. Both identifiers are whitelisted before
  * splicing (see {@link createSqlServerDatabase}).

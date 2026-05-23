@@ -25,6 +25,7 @@ import {
 import { pushRecentQuery } from "@/lib/postgres/recent-queries";
 import { formatSql } from "@/lib/sql/format";
 import { editorTheme } from "@/lib/sql/editor-theme";
+import { useSchemaCompletions } from "@/lib/sql/use-schema-completions";
 import { ResultActions } from "@/components/sql/result-actions";
 import {
   ShortcutCheatsheet,
@@ -488,9 +489,27 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
     return () => window.removeEventListener("keydown", onKey);
   }, [execute, onFormat, runExplain]);
 
+  // Live (tables → columns) digest of the current schema so the editor's
+  // autocomplete knows about the user's actual data, not just keywords.
+  const completions = useSchemaCompletions({
+    tech: "postgres",
+    connectionId,
+    db,
+    schema: searchPath,
+  });
   const extensions = useMemo(
-    () => [sql({ dialect: PostgreSQL, upperCaseKeywords: false }), editorTheme],
-    [],
+    () => [
+      sql({
+        dialect: PostgreSQL,
+        upperCaseKeywords: false,
+        schema: completions
+          ? { [completions.schemaName]: completions.tables }
+          : undefined,
+        defaultSchema: completions?.schemaName,
+      }),
+      editorTheme,
+    ],
+    [completions],
   );
 
   const cellPad = "px-3 py-1";

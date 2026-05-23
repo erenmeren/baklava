@@ -21,6 +21,7 @@ import {
 import { PlanViewer, type SqlServerPlan } from "@/components/sqlserver/plan-viewer";
 import { formatSql } from "@/lib/sql/format";
 import { editorTheme } from "@/lib/sql/editor-theme";
+import { useSchemaCompletions } from "@/lib/sql/use-schema-completions";
 import { ResultActions } from "@/components/sql/result-actions";
 import {
   ShortcutCheatsheet,
@@ -309,9 +310,27 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
     return () => window.removeEventListener("keydown", onKey);
   }, [execute, onFormat, explain]);
 
+  // Live (tables → columns) digest of the current schema so the editor's
+  // autocomplete knows about the user's actual data, not just keywords.
+  const completions = useSchemaCompletions({
+    tech: "sqlserver",
+    connectionId,
+    db,
+    schema: qualifier,
+  });
   const extensions = useMemo(
-    () => [sql({ dialect: MSSQL, upperCaseKeywords: false }), editorTheme],
-    [],
+    () => [
+      sql({
+        dialect: MSSQL,
+        upperCaseKeywords: false,
+        schema: completions
+          ? { [completions.schemaName]: completions.tables }
+          : undefined,
+        defaultSchema: completions?.schemaName,
+      }),
+      editorTheme,
+    ],
+    [completions],
   );
 
   const active = result?.batches[activeBatch] ?? null;
