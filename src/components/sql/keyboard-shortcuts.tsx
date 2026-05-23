@@ -1,12 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Keyboard } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { Keyboard, Play, AlignLeft, Sparkles, MessageSquare, Wand2, Undo2, Redo2 } from "lucide-react";
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+  CommandDialog,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+  CommandShortcut,
+} from "@/components/ui/command";
 import { cn } from "@/lib/utils";
 
 /** True on macOS — drives ⌘ vs Ctrl labelling. Resolves on the client only. */
@@ -30,81 +34,150 @@ export function runHint(isMac: boolean): string {
   return isMac ? "⌘↵" : "Ctrl+↵";
 }
 
-function Kbd({ children }: { children: React.ReactNode }) {
-  return (
-    <kbd className="inline-flex min-w-[20px] items-center justify-center rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[11px] leading-none text-foreground/80 shadow-[0_1px_0_var(--border)]">
-      {children}
-    </kbd>
-  );
+/** Decide whether a keystroke is happening inside an editable target. We don't
+ *  want `?` to open the palette while the user is typing it into the editor or
+ *  a filter input. */
+function isTypingTarget(t: EventTarget | null): boolean {
+  if (!(t instanceof HTMLElement)) return false;
+  if (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT") {
+    return true;
+  }
+  if (t.isContentEditable) return true;
+  // CodeMirror renders its editable area as a div[contenteditable] inside .cm-content
+  if (t.closest(".cm-editor")) return true;
+  return false;
 }
 
-interface Shortcut {
-  label: string;
-  keys: string[];
-  note?: string;
+interface Props {
+  /** Optional callbacks — when present, selecting the item runs the action. */
+  onRun?: () => void;
+  onFormat?: () => void;
+  onExplain?: () => void;
+  className?: string;
 }
 
-// Shared across both SQL editors. The first three are wired by the editors
-// themselves; the rest are CodeMirror's built-in keymap (basicSetup).
-function shortcuts(mod: string): Shortcut[] {
-  return [
-    { label: "Run query", keys: [mod, "↵"], note: "runs the selection if any" },
-    { label: "Format SQL", keys: [mod, "⇧", "F"] },
-    { label: "Explain", keys: [mod, "E"] },
-    { label: "Toggle comment", keys: [mod, "/"] },
-    { label: "Autocomplete", keys: ["Ctrl", "Space"] },
-    { label: "Undo", keys: [mod, "Z"] },
-    { label: "Redo", keys: [mod, "⇧", "Z"] },
-  ];
-}
-
-export function ShortcutCheatsheet({ className }: { className?: string }) {
+/**
+ * Shortcut cheatsheet built on shadcn's Command (cmdk). Renders as a keyboard
+ * icon button that opens a searchable palette of shortcuts. Also opens from
+ * anywhere on the page with `?`. When the editor passes `onRun` / `onFormat`
+ * / `onExplain`, selecting the matching item also fires the action.
+ */
+export function ShortcutCheatsheet({ onRun, onFormat, onExplain, className }: Props) {
   const isMac = useIsMac();
   const mod = isMac ? "⌘" : "Ctrl";
+  const [open, setOpen] = useState(false);
+
+  const close = useCallback(() => setOpen(false), []);
+  const wrap = (fn?: () => void) => () => {
+    close();
+    fn?.();
+  };
+
+  // Global `?` to open the cheatsheet (ignored while typing).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "?") return;
+      if (isTypingTarget(e.target)) return;
+      e.preventDefault();
+      setOpen((v) => !v);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   return (
-    <Popover>
-      <PopoverTrigger
-        render={
-          <button
-            type="button"
-            title="Keyboard shortcuts"
-            aria-label="Keyboard shortcuts"
-            className={cn(
-              "inline-flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground",
-              className,
-            )}
-          >
-            <Keyboard className="size-4" />
-          </button>
-        }
-      />
-      <PopoverContent align="end" className="w-72 p-0">
-        <div className="border-b border-border/60 px-3 py-2 text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
-          Keyboard shortcuts
-        </div>
-        <ul className="p-1.5">
-          {shortcuts(mod).map((s) => (
-            <li
-              key={s.label}
-              className="flex items-center justify-between gap-3 rounded px-2 py-1.5 hover:bg-foreground/[0.04]"
+    <>
+      <button
+        type="button"
+        title="Keyboard shortcuts (?)"
+        aria-label="Keyboard shortcuts"
+        onClick={() => setOpen(true)}
+        className={cn(
+          "inline-flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground",
+          className,
+        )}
+      >
+        <Keyboard className="size-4" />
+      </button>
+
+      <CommandDialog
+        open={open}
+        onOpenChange={setOpen}
+        title="Keyboard shortcuts"
+        description="Search and trigger SQL-editor actions"
+      >
+        <CommandInput placeholder="Search shortcuts…" />
+        <CommandList>
+          <CommandEmpty>No matching shortcut.</CommandEmpty>
+
+          <CommandGroup heading="SQL editor">
+            <CommandItem
+              keywords={["run", "execute", "query", "selection"]}
+              onSelect={wrap(onRun)}
             >
-              <span className="min-w-0">
-                <span className="text-[12.5px] text-foreground">{s.label}</span>
-                {s.note ? (
-                  <span className="ml-1.5 text-[10px] text-muted-foreground">
-                    {s.note}
-                  </span>
-                ) : null}
+              <Play className="size-4" />
+              <span>Run query</span>
+              <span className="ml-1 text-muted-foreground">
+                runs selection if any
               </span>
-              <span className="flex shrink-0 items-center gap-1">
-                {s.keys.map((k, i) => (
-                  <Kbd key={i}>{k}</Kbd>
-                ))}
-              </span>
-            </li>
-          ))}
-        </ul>
-      </PopoverContent>
-    </Popover>
+              <CommandShortcut>{mod} ↵</CommandShortcut>
+            </CommandItem>
+            <CommandItem
+              keywords={["format", "prettify", "tidy"]}
+              onSelect={wrap(onFormat)}
+            >
+              <AlignLeft className="size-4" />
+              <span>Format SQL</span>
+              <CommandShortcut>{mod} ⇧ F</CommandShortcut>
+            </CommandItem>
+            <CommandItem
+              keywords={["explain", "plan", "analyze"]}
+              onSelect={wrap(onExplain)}
+            >
+              <Sparkles className="size-4" />
+              <span>Explain</span>
+              <CommandShortcut>{mod} E</CommandShortcut>
+            </CommandItem>
+          </CommandGroup>
+
+          <CommandGroup heading="Editor (CodeMirror)">
+            <CommandItem
+              keywords={["comment", "uncomment", "toggle"]}
+              onSelect={close}
+            >
+              <MessageSquare className="size-4" />
+              <span>Toggle comment</span>
+              <CommandShortcut>{mod} /</CommandShortcut>
+            </CommandItem>
+            <CommandItem
+              keywords={["autocomplete", "completion", "intellisense"]}
+              onSelect={close}
+            >
+              <Wand2 className="size-4" />
+              <span>Autocomplete</span>
+              <CommandShortcut>Ctrl Space</CommandShortcut>
+            </CommandItem>
+            <CommandItem keywords={["undo"]} onSelect={close}>
+              <Undo2 className="size-4" />
+              <span>Undo</span>
+              <CommandShortcut>{mod} Z</CommandShortcut>
+            </CommandItem>
+            <CommandItem keywords={["redo"]} onSelect={close}>
+              <Redo2 className="size-4" />
+              <span>Redo</span>
+              <CommandShortcut>{mod} ⇧ Z</CommandShortcut>
+            </CommandItem>
+          </CommandGroup>
+
+          <CommandGroup heading="Help">
+            <CommandItem keywords={["help", "shortcuts", "cheatsheet"]} onSelect={close}>
+              <Keyboard className="size-4" />
+              <span>Show this cheatsheet</span>
+              <CommandShortcut>?</CommandShortcut>
+            </CommandItem>
+          </CommandGroup>
+        </CommandList>
+      </CommandDialog>
+    </>
   );
 }

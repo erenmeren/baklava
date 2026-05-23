@@ -10,7 +10,6 @@ import { cn } from "@/lib/utils";
 import { useTheme } from "@/components/theme-provider";
 import { toast } from "sonner";
 import {
-  AlignLeft,
   AlertCircle,
   Check,
   History as HistoryIcon,
@@ -296,7 +295,11 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
       description={`T-SQL · GO splits batches · ${kbd} to run · results capped at 1000 rows`}
       actions={
         <div className="flex items-center gap-2">
-          <ShortcutCheatsheet />
+          <ShortcutCheatsheet
+            onRun={execute}
+            onFormat={onFormat}
+            onExplain={explain}
+          />
           <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
             <input
               type="checkbox"
@@ -306,31 +309,6 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
             />
             STATISTICS IO/TIME
           </label>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={onFormat}
-            disabled={!sqlText.trim()}
-            className="gap-1.5"
-            title={`Format SQL · ${isMac ? "⌘⇧F" : "Ctrl+Shift+F"}`}
-          >
-            <AlignLeft className="size-3.5" />
-            Format
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={explain}
-            disabled={planLoading || phase === "running"}
-            className="gap-1.5"
-          >
-            {planLoading ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <Sparkles className="size-3.5" />
-            )}
-            Explain
-          </Button>
           <Button
             size="sm"
             onClick={execute}
