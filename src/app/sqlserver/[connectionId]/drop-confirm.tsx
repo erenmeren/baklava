@@ -45,6 +45,9 @@ const OBJECT_NOUN: Record<string, string> = {
   table_fn: "function",
   trigger: "trigger",
   synonym: "synonym",
+  sequence: "sequence",
+  type: "type",
+  table_type: "table type",
 };
 
 function buildUrl(connectionId: string, t: DropTarget, force: boolean): string {

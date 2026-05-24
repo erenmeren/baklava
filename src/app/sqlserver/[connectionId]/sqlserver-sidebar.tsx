@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Activity,
+  Boxes,
   ChevronRight,
   Database,
   DatabaseBackup,
@@ -12,6 +13,7 @@ import {
   FileCode,
   Folder,
   FunctionSquare,
+  Hash,
   Link2,
   ListOrdered,
   Loader2,
@@ -20,6 +22,7 @@ import {
   Plus,
   RefreshCcw,
   Server,
+  Shapes,
   ShieldCheck,
   Store,
   Table as TableIcon,
@@ -38,7 +41,65 @@ import {
 import { CreateDatabaseDialog } from "./create-database-dialog";
 import { CreateSchemaDialog } from "./create-schema-dialog";
 import { CreateTableDialog } from "./create-table-dialog";
+import { CreateSequenceDialog } from "./create-sequence-dialog";
+import { CreateSynonymDialog } from "./create-synonym-dialog";
+import { CreateTypeDialog } from "./create-type-dialog";
+import { CreateTableTypeDialog } from "./create-table-type-dialog";
+import {
+  CreateModuleDialog,
+  type ModuleKind,
+} from "./create-module-dialog";
 import { DropConfirm, type DropTarget } from "./drop-confirm";
+
+// Consolidated "what dialog should be open right now" state. Each variant
+// carries everything its dialog needs (db + schema + optional sub-kind), so
+// closing always means setCreateTarget(null) regardless of which form was up.
+type CreateTarget =
+  | { kind: "table"; db: string; schema: string }
+  | { kind: "sequence"; db: string; schema: string }
+  | { kind: "synonym"; db: string; schema: string }
+  | { kind: "type"; db: string; schema: string }
+  | { kind: "tableType"; db: string; schema: string }
+  | { kind: "module"; moduleKind: ModuleKind; db: string; schema: string };
+
+const GROUP_CREATE_LABEL: Record<GroupKind, string> = {
+  tables: "New table",
+  views: "New view",
+  procedures: "New stored procedure",
+  functions: "New scalar function",
+  sequences: "New sequence",
+  types: "New user-defined type",
+  tableTypes: "New table type",
+  synonyms: "New synonym",
+  triggers: "New trigger",
+};
+
+function groupToCreateTarget(
+  group: GroupKind,
+  db: string,
+  schema: string,
+): CreateTarget {
+  switch (group) {
+    case "tables":
+      return { kind: "table", db, schema };
+    case "views":
+      return { kind: "module", moduleKind: "view", db, schema };
+    case "procedures":
+      return { kind: "module", moduleKind: "proc", db, schema };
+    case "functions":
+      return { kind: "module", moduleKind: "scalar_fn", db, schema };
+    case "sequences":
+      return { kind: "sequence", db, schema };
+    case "types":
+      return { kind: "type", db, schema };
+    case "tableTypes":
+      return { kind: "tableType", db, schema };
+    case "synonyms":
+      return { kind: "synonym", db, schema };
+    case "triggers":
+      return { kind: "module", moduleKind: "trigger", db, schema };
+  }
+}
 
 interface DatabaseInfo {
   name: string;
@@ -56,12 +117,16 @@ interface SqlObject {
 
 // Tree groups, in display order. SQL Server loads every object for a database
 // in one fetch (/objects), so unlike Postgres we group client-side rather than
-// lazy-loading each group.
+// lazy-loading each group. All groups always render (even when empty) so users
+// see the full SSMS-style category set under each schema.
 type GroupKind =
   | "tables"
   | "views"
   | "procedures"
   | "functions"
+  | "sequences"
+  | "types"
+  | "tableTypes"
   | "synonyms"
   | "triggers";
 
@@ -71,6 +136,9 @@ const KIND_TO_GROUP: Record<string, GroupKind> = {
   proc: "procedures",
   scalar_fn: "functions",
   table_fn: "functions",
+  sequence: "sequences",
+  type: "types",
+  table_type: "tableTypes",
   synonym: "synonyms",
   trigger: "triggers",
 };
@@ -80,6 +148,9 @@ const GROUP_ORDER: GroupKind[] = [
   "views",
   "procedures",
   "functions",
+  "sequences",
+  "types",
+  "tableTypes",
   "synonyms",
   "triggers",
 ];
@@ -89,8 +160,26 @@ const GROUP_LABEL: Record<GroupKind, string> = {
   views: "Views",
   procedures: "Procedures",
   functions: "Functions",
+  sequences: "Sequences",
+  types: "User-Defined Types",
+  tableTypes: "Table Types",
   synonyms: "Synonyms",
   triggers: "Triggers",
+};
+
+// Singular noun used in the context menu (e.g. "Drop {noun}…"). Kept separate
+// from GROUP_LABEL because "Table Types" → "table type" doesn't fall out of a
+// simple `s` strip.
+const GROUP_NOUN: Record<GroupKind, string> = {
+  tables: "table",
+  views: "view",
+  procedures: "procedure",
+  functions: "function",
+  sequences: "sequence",
+  types: "type",
+  tableTypes: "table type",
+  synonyms: "synonym",
+  triggers: "trigger",
 };
 
 function groupIcon(kind: GroupKind) {
@@ -104,6 +193,12 @@ function groupIcon(kind: GroupKind) {
       return <FileCode className={className} />;
     case "functions":
       return <FunctionSquare className={className} />;
+    case "sequences":
+      return <Hash className={className} />;
+    case "types":
+      return <Shapes className={className} />;
+    case "tableTypes":
+      return <Boxes className={className} />;
     case "synonyms":
       return <Link2 className={className} />;
     case "triggers":
@@ -122,6 +217,12 @@ function objectIcon(kind: GroupKind) {
       return <FileCode className={className} />;
     case "functions":
       return <FunctionSquare className={className} />;
+    case "sequences":
+      return <Hash className={className} />;
+    case "types":
+      return <Shapes className={className} />;
+    case "tableTypes":
+      return <Boxes className={className} />;
     case "synonyms":
       return <Link2 className={className} />;
     case "triggers":
@@ -155,10 +256,7 @@ export function SqlServerSidebar({ connectionId, defaultDatabase }: Props) {
   // Create dialogs.
   const [createDbOpen, setCreateDbOpen] = useState(false);
   const [createSchemaDb, setCreateSchemaDb] = useState<string | null>(null);
-  const [createTableTarget, setCreateTableTarget] = useState<{
-    db: string;
-    schema: string;
-  } | null>(null);
+  const [createTarget, setCreateTarget] = useState<CreateTarget | null>(null);
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
 
   const loadDatabases = useCallback(async () => {
@@ -338,8 +436,10 @@ export function SqlServerSidebar({ connectionId, defaultDatabase }: Props) {
                         onToggleGroup={(schema, kind) =>
                           toggleGroup(db.name, schema, kind)
                         }
-                        onCreateTable={(schema) =>
-                          setCreateTableTarget({ db: db.name, schema })
+                        onCreate={(schema, group) =>
+                          setCreateTarget(
+                            groupToCreateTarget(group, db.name, schema),
+                          )
                         }
                         onDrop={setDropTarget}
                         onCopy={copy}
@@ -392,21 +492,21 @@ export function SqlServerSidebar({ connectionId, defaultDatabase }: Props) {
           }}
         />
       ) : null}
-      {createTableTarget ? (
-        <CreateTableDialog
-          open
-          onOpenChange={(v) => {
-            if (!v) setCreateTableTarget(null);
-          }}
+      {createTarget ? (
+        <CreateDialogHost
+          target={createTarget}
           connectionId={connectionId}
-          database={createTableTarget.db}
-          schema={createTableTarget.schema}
-          onCreated={() => {
-            const t = createTableTarget;
-            if (!t) return;
+          onClose={() => setCreateTarget(null)}
+          onCreated={(t) => {
+            // Open the path to the created object so the user sees it
+            // appear without hunting for it.
+            const groupKey = createTargetGroupKey(t);
             setOpenDb((s) => ({ ...s, [t.db]: true }));
             setOpenSchema((s) => ({ ...s, [`${t.db}.${t.schema}`]: true }));
-            setOpenGroup((s) => ({ ...s, [`${t.db}.${t.schema}.tables`]: true }));
+            setOpenGroup((s) => ({
+              ...s,
+              [`${t.db}.${t.schema}.${groupKey}`]: true,
+            }));
             setObjectsByDb((s) => ({ ...s, [t.db]: undefined }));
             setSchemasByDb((s) => ({ ...s, [t.db]: undefined }));
             loadDb(t.db);
@@ -453,7 +553,7 @@ function SchemaList({
   openGroup,
   onToggleSchema,
   onToggleGroup,
-  onCreateTable,
+  onCreate,
   onDrop,
   onCopy,
 }: {
@@ -467,7 +567,8 @@ function SchemaList({
   openGroup: Record<string, boolean>;
   onToggleSchema: (schema: string) => void;
   onToggleGroup: (schema: string, kind: GroupKind) => void;
-  onCreateTable: (schema: string) => void;
+  /** Open the create dialog for any group. The sidebar dispatches by `group`. */
+  onCreate: (schema: string, group: GroupKind) => void;
   onDrop: (target: DropTarget) => void;
   onCopy: (text: string) => void;
 }) {
@@ -509,58 +610,52 @@ function SchemaList({
         const key = `${db}.${schema}`;
         const isOpen = !!openSchema[key];
         const groups = bySchema.get(schema) ?? new Map<GroupKind, SqlObject[]>();
-        const hasObjects = groups.size > 0;
         return (
           <li key={schema}>
             <SchemaRow
               name={schema}
               isOpen={isOpen}
               onToggle={() => onToggleSchema(schema)}
-              onCreateTable={() => onCreateTable(schema)}
+              onCreateTable={() => onCreate(schema, "tables")}
               onDrop={() => onDrop({ kind: "schema", database: db, schema })}
               onCopyName={() => onCopy(schema)}
             />
             {isOpen ? (
               <ul className="ml-4 border-l border-border/50">
-                {!hasObjects ? (
-                  <li className="px-2 py-1 text-[11px] text-muted-foreground/70 italic">
-                    empty
-                  </li>
-                ) : (
-                  GROUP_ORDER.map((kind) => {
-                    const items = groups.get(kind) ?? [];
-                    if (items.length === 0) return null;
-                    return (
-                      <Group
-                        key={kind}
-                        kind={kind}
-                        items={items}
-                        isOpen={!!openGroup[`${key}.${kind}`]}
-                        onToggle={() => onToggleGroup(schema, kind)}
-                        renderItem={(o) => (
-                          <ObjectRow
-                            key={`${kind}:${o.name}`}
-                            connectionId={connectionId}
-                            db={db}
-                            object={o}
-                            group={kind}
-                            pathname={pathname}
-                            onCopy={() => onCopy(`${o.schema}.${o.name}`)}
-                            onDrop={() =>
-                              onDrop({
-                                kind: "object",
-                                database: db,
-                                schema: o.schema,
-                                name: o.name,
-                                objectKind: o.kind,
-                              })
-                            }
-                          />
-                        )}
-                      />
-                    );
-                  })
-                )}
+                {GROUP_ORDER.map((kind) => {
+                  const items = groups.get(kind) ?? [];
+                  return (
+                    <Group
+                      key={kind}
+                      kind={kind}
+                      items={items}
+                      isOpen={!!openGroup[`${key}.${kind}`]}
+                      onToggle={() => onToggleGroup(schema, kind)}
+                      onCreate={() => onCreate(schema, kind)}
+                      createLabel={GROUP_CREATE_LABEL[kind]}
+                      renderItem={(o) => (
+                        <ObjectRow
+                          key={`${kind}:${o.name}`}
+                          connectionId={connectionId}
+                          db={db}
+                          object={o}
+                          group={kind}
+                          pathname={pathname}
+                          onCopy={() => onCopy(`${o.schema}.${o.name}`)}
+                          onDrop={() =>
+                            onDrop({
+                              kind: "object",
+                              database: db,
+                              schema: o.schema,
+                              name: o.name,
+                              objectKind: o.kind,
+                            })
+                          }
+                        />
+                      )}
+                    />
+                  );
+                })}
               </ul>
             ) : null}
           </li>
@@ -717,32 +812,92 @@ function Group({
   items,
   isOpen,
   onToggle,
+  onCreate,
+  createLabel,
   renderItem,
 }: {
   kind: GroupKind;
   items: SqlObject[];
   isOpen: boolean;
   onToggle: () => void;
+  onCreate?: () => void;
+  createLabel?: string;
   renderItem: (item: SqlObject) => React.ReactNode;
 }) {
+  const isEmpty = items.length === 0;
+  const [menuOpen, setMenuOpen] = useState(false);
   return (
     <li>
-      <div className="group/grp flex items-center pr-1 rounded-md hover:bg-foreground/5 transition-colors">
+      <div
+        className={cn(
+          "group/grp flex items-center pr-1 rounded-md transition-colors",
+          isEmpty
+            ? "hover:bg-foreground/[0.025]"
+            : "hover:bg-foreground/5",
+        )}
+        onContextMenu={
+          onCreate
+            ? (e) => {
+                e.preventDefault();
+                setMenuOpen(true);
+              }
+            : undefined
+        }
+      >
         <button
-          onClick={onToggle}
-          className="flex items-center gap-1 flex-1 min-w-0 px-2 py-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors text-left"
+          onClick={isEmpty ? undefined : onToggle}
+          disabled={isEmpty}
+          className={cn(
+            "flex items-center gap-1 flex-1 min-w-0 px-2 py-1 text-[11px] font-medium uppercase tracking-wider transition-colors text-left",
+            isEmpty
+              ? "text-muted-foreground/40 cursor-default"
+              : "text-muted-foreground hover:text-foreground",
+          )}
         >
           <ChevronRight
-            className={cn("size-3 transition-transform", isOpen && "rotate-90")}
+            className={cn(
+              "size-3 transition-transform",
+              isOpen && !isEmpty && "rotate-90",
+              isEmpty && "opacity-50",
+            )}
           />
-          {groupIcon(kind)}
-          <span>{GROUP_LABEL[kind]}</span>
-          <span className="ml-auto font-mono normal-case tracking-normal text-[10px] text-muted-foreground/70">
+          <span className={cn(isEmpty && "opacity-60")}>{groupIcon(kind)}</span>
+          <span className="truncate">{GROUP_LABEL[kind]}</span>
+          <span
+            className={cn(
+              "ml-auto font-mono normal-case tracking-normal text-[10px] tabular-nums",
+              isEmpty ? "text-muted-foreground/40" : "text-muted-foreground/70",
+            )}
+          >
             {items.length}
           </span>
         </button>
+        {onCreate ? (
+          <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+            <DropdownMenuTrigger
+              onClick={(e) => {
+                // Left-click fires create directly (matching the Postgres
+                // "+ as primary action" UX). Right-click on the row opens the
+                // menu via the wrapping onContextMenu handler.
+                e.stopPropagation();
+                e.preventDefault();
+                onCreate();
+              }}
+              className="opacity-0 group-hover/grp:opacity-100 data-[popup-open]:opacity-100 size-5 inline-flex items-center justify-center rounded hover:bg-foreground/10 hover:text-foreground text-muted-foreground transition-opacity outline-none"
+              title={createLabel ?? "New"}
+            >
+              <Plus className="size-3" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={onCreate}>
+                <Plus className="size-3.5" />
+                {createLabel ?? "New"}…
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : null}
       </div>
-      {isOpen ? (
+      {isOpen && !isEmpty ? (
         <ul className="ml-4 border-l border-border/40">
           {items.map((item) => renderItem(item))}
         </ul>
@@ -769,16 +924,19 @@ function ObjectRow({
   onDrop: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
-  const dropNoun = group.replace(/s$/, ""); // tables → table, views → view, …
+  const dropNoun = GROUP_NOUN[group];
 
   // Tables & views → table-detail page; procs / functions / triggers →
-  // module-detail page. Synonyms have no detail view, so they render as a
-  // muted, non-navigable leaf.
+  // module-detail page. Synonyms, sequences, and types have no detail view,
+  // so they render as muted, non-navigable leaves.
   const base = `/sqlserver/${connectionId}/databases/${encodeURIComponent(db)}`;
   const href =
     group === "tables" || group === "views"
       ? `${base}/tables/${encodeURIComponent(object.schema)}/${encodeURIComponent(object.name)}`
-      : group === "synonyms"
+      : group === "synonyms" ||
+          group === "sequences" ||
+          group === "types" ||
+          group === "tableTypes"
         ? null
         : `${base}/modules/${encodeURIComponent(object.schema)}/${encodeURIComponent(object.name)}`;
 
@@ -810,7 +968,7 @@ function ObjectRow({
         ) : (
           <span
             className="flex items-center gap-1.5 flex-1 min-w-0 px-2 py-1 text-xs font-mono text-muted-foreground/70"
-            title={`synonym · ${object.schema}.${object.name}`}
+            title={`${dropNoun} · ${object.schema}.${object.name}`}
           >
             {objectIcon(group)}
             <span className="truncate">{object.name}</span>
@@ -840,4 +998,79 @@ function ObjectRow({
       </div>
     </li>
   );
+}
+
+// ===== Create-dialog host =================================================
+//
+// All 8 create dialogs are mounted through this single switch. The sidebar's
+// SchemaList computes a `CreateTarget` from (schema, GroupKind) — the host
+// renders the matching dialog and forwards onCreated with the target intact,
+// so the sidebar can expand the right path after creation succeeds.
+
+/** Which GroupKind a freshly-created CreateTarget belongs to in the tree. */
+function createTargetGroupKey(t: CreateTarget): GroupKind {
+  switch (t.kind) {
+    case "table":
+      return "tables";
+    case "sequence":
+      return "sequences";
+    case "synonym":
+      return "synonyms";
+    case "type":
+      return "types";
+    case "tableType":
+      return "tableTypes";
+    case "module":
+      switch (t.moduleKind) {
+        case "view":
+          return "views";
+        case "proc":
+          return "procedures";
+        case "scalar_fn":
+        case "table_fn":
+          return "functions";
+        case "trigger":
+          return "triggers";
+      }
+  }
+}
+
+function CreateDialogHost({
+  target,
+  connectionId,
+  onClose,
+  onCreated,
+}: {
+  target: CreateTarget;
+  connectionId: string;
+  onClose: () => void;
+  onCreated: (t: CreateTarget) => void;
+}) {
+  const handleOpenChange = (v: boolean) => {
+    if (!v) onClose();
+  };
+  const handleCreated = () => onCreated(target);
+  const common = {
+    open: true,
+    onOpenChange: handleOpenChange,
+    connectionId,
+    database: target.db,
+    schema: target.schema,
+    onCreated: handleCreated,
+  } as const;
+
+  switch (target.kind) {
+    case "table":
+      return <CreateTableDialog {...common} />;
+    case "sequence":
+      return <CreateSequenceDialog {...common} />;
+    case "synonym":
+      return <CreateSynonymDialog {...common} />;
+    case "type":
+      return <CreateTypeDialog {...common} />;
+    case "tableType":
+      return <CreateTableTypeDialog {...common} />;
+    case "module":
+      return <CreateModuleDialog {...common} kind={target.moduleKind} />;
+  }
 }

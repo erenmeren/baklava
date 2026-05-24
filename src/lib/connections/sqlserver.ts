@@ -382,6 +382,9 @@ const DROP_KEYWORD: Record<string, string> = {
   table_fn: "FUNCTION",
   trigger: "TRIGGER",
   synonym: "SYNONYM",
+  sequence: "SEQUENCE",
+  type: "TYPE",
+  table_type: "TYPE",
 };
 
 /** Drop a schema-scoped object (table / view / proc / function / trigger / synonym). */
@@ -401,6 +404,232 @@ export async function dropSqlServerObject(
       await pool.request().batch(`DROP ${keyword} [${schema}].[${name}]`);
     },
     { database }
+  );
+}
+
+// ─── Create: sequence / synonym / type / table-type / arbitrary DDL ──────
+//
+// Each helper whitelists identifiers (schema, name, column names) and rejects
+// `;` from free-form fragments (data types, default expressions, synonym
+// targets) — mirroring the createSqlServerTable pattern. The exception is
+// `executeSqlServerDdl`, which runs an arbitrary user-authored CREATE batch
+// (the "Script CREATE To" pattern from SSMS) and is intentionally
+// unrestricted — same trust model as the SQL query editor.
+
+const SEQUENCE_TYPE_RE = /^(bigint|int|smallint|tinyint|decimal\([\s\d,]+\)|numeric\([\s\d,]+\))$/i;
+const INTEGER_RE = /^-?\d+$/;
+
+export interface CreateSqlServerSequenceInput {
+  schema: string;
+  name: string;
+  /** bigint (default) | int | smallint | tinyint | decimal(p,0) | numeric(p,0) */
+  dataType?: string;
+  startWith?: string;
+  incrementBy?: string;
+  /** null → NO MINVALUE; undefined → omit (server default) */
+  minValue?: string | null;
+  /** null → NO MAXVALUE; undefined → omit (server default) */
+  maxValue?: string | null;
+  /** true → CYCLE; false → NO CYCLE; undefined → omit */
+  cycle?: boolean;
+  /** number → CACHE n; null → NO CACHE; undefined → omit */
+  cache?: number | null;
+}
+
+export async function createSqlServerSequence(
+  config: SqlServerConfig,
+  database: string,
+  input: CreateSqlServerSequenceInput,
+): Promise<void> {
+  validateSqlServerIdentifier(database, "database name");
+  const schema = validateSqlServerIdentifier(input.schema, "schema name");
+  if (!input.name.trim()) throw new Error("Sequence name is required");
+  const name = validateSqlServerIdentifier(input.name.trim(), "sequence name");
+
+  const parts: string[] = [`CREATE SEQUENCE [${schema}].[${name}]`];
+  if (input.dataType && input.dataType.trim()) {
+    const t = input.dataType.trim();
+    if (!SEQUENCE_TYPE_RE.test(t)) throw new Error(`Invalid sequence data type "${t}"`);
+    parts.push(`AS ${t}`);
+  }
+  if (input.startWith && input.startWith.trim()) {
+    if (!INTEGER_RE.test(input.startWith.trim())) throw new Error("START WITH must be an integer");
+    parts.push(`START WITH ${input.startWith.trim()}`);
+  }
+  if (input.incrementBy && input.incrementBy.trim()) {
+    if (!INTEGER_RE.test(input.incrementBy.trim())) throw new Error("INCREMENT BY must be an integer");
+    parts.push(`INCREMENT BY ${input.incrementBy.trim()}`);
+  }
+  if (input.minValue !== undefined) {
+    if (input.minValue === null) parts.push("NO MINVALUE");
+    else {
+      if (!INTEGER_RE.test(input.minValue.trim())) throw new Error("MINVALUE must be an integer");
+      parts.push(`MINVALUE ${input.minValue.trim()}`);
+    }
+  }
+  if (input.maxValue !== undefined) {
+    if (input.maxValue === null) parts.push("NO MAXVALUE");
+    else {
+      if (!INTEGER_RE.test(input.maxValue.trim())) throw new Error("MAXVALUE must be an integer");
+      parts.push(`MAXVALUE ${input.maxValue.trim()}`);
+    }
+  }
+  if (input.cycle === true) parts.push("CYCLE");
+  else if (input.cycle === false) parts.push("NO CYCLE");
+  if (input.cache !== undefined) {
+    if (input.cache === null) parts.push("NO CACHE");
+    else {
+      if (!Number.isInteger(input.cache) || input.cache < 0) {
+        throw new Error("CACHE must be a non-negative integer");
+      }
+      parts.push(`CACHE ${input.cache}`);
+    }
+  }
+
+  await withPool(
+    config,
+    async (pool) => {
+      await pool.request().batch(parts.join(" "));
+    },
+    { database },
+  );
+}
+
+export interface CreateSqlServerSynonymInput {
+  schema: string;
+  name: string;
+  /** Target object reference, e.g. `[db].[schema].[obj]` or `db.schema.obj`. */
+  target: string;
+}
+
+export async function createSqlServerSynonym(
+  config: SqlServerConfig,
+  database: string,
+  input: CreateSqlServerSynonymInput,
+): Promise<void> {
+  validateSqlServerIdentifier(database, "database name");
+  const schema = validateSqlServerIdentifier(input.schema, "schema name");
+  if (!input.name.trim()) throw new Error("Synonym name is required");
+  const name = validateSqlServerIdentifier(input.name.trim(), "synonym name");
+  if (!input.target.trim()) throw new Error("Target object is required");
+  // Targets are 1- to 4-part references with brackets/dots; `;` is the only
+  // character that lets a second statement piggyback, so block it.
+  const target = requireNoStatementTerminator(input.target.trim(), "Target");
+
+  await withPool(
+    config,
+    async (pool) => {
+      await pool
+        .request()
+        .batch(`CREATE SYNONYM [${schema}].[${name}] FOR ${target}`);
+    },
+    { database },
+  );
+}
+
+export interface CreateSqlServerTypeInput {
+  schema: string;
+  name: string;
+  /** Base type, e.g. `nvarchar(50)`, `decimal(18,2)`, `int`. */
+  baseType: string;
+  nullable: boolean;
+}
+
+export async function createSqlServerType(
+  config: SqlServerConfig,
+  database: string,
+  input: CreateSqlServerTypeInput,
+): Promise<void> {
+  validateSqlServerIdentifier(database, "database name");
+  const schema = validateSqlServerIdentifier(input.schema, "schema name");
+  if (!input.name.trim()) throw new Error("Type name is required");
+  const name = validateSqlServerIdentifier(input.name.trim(), "type name");
+  if (!input.baseType.trim()) throw new Error("Base type is required");
+  const baseType = requireNoStatementTerminator(input.baseType.trim(), "Base type");
+  const nullability = input.nullable ? "NULL" : "NOT NULL";
+
+  await withPool(
+    config,
+    async (pool) => {
+      await pool
+        .request()
+        .batch(`CREATE TYPE [${schema}].[${name}] FROM ${baseType} ${nullability}`);
+    },
+    { database },
+  );
+}
+
+export interface CreateSqlServerTableTypeInput {
+  schema: string;
+  name: string;
+  columns: CreateSqlServerColumnInput[];
+}
+
+export async function createSqlServerTableType(
+  config: SqlServerConfig,
+  database: string,
+  input: CreateSqlServerTableTypeInput,
+): Promise<void> {
+  validateSqlServerIdentifier(database, "database name");
+  const schema = validateSqlServerIdentifier(input.schema, "schema name");
+  if (!input.name.trim()) throw new Error("Type name is required");
+  const name = validateSqlServerIdentifier(input.name.trim(), "type name");
+  if (!input.columns.length) throw new Error("At least one column is required");
+
+  const seen = new Set<string>();
+  const colDefs = input.columns.map((c) => {
+    const cname = validateSqlServerIdentifier(c.name.trim(), "column name");
+    const key = cname.toLowerCase();
+    if (seen.has(key)) throw new Error(`Duplicate column name "${cname}"`);
+    seen.add(key);
+    if (!c.dataType.trim()) throw new Error(`Column "${cname}" needs a data type`);
+    const parts = [`[${cname}]`, requireNoStatementTerminator(c.dataType.trim(), "Column type")];
+    parts.push(c.nullable ? "NULL" : "NOT NULL");
+    if (c.default && c.default.trim()) {
+      parts.push(
+        `DEFAULT (${requireNoStatementTerminator(c.default.trim(), "Default expression")})`,
+      );
+    }
+    return parts.join(" ");
+  });
+
+  const pkCols = input.columns.filter((c) => c.isPrimaryKey);
+  if (pkCols.length) {
+    const cols = pkCols
+      .map((c) => `[${validateSqlServerIdentifier(c.name.trim(), "column name")}]`)
+      .join(", ");
+    colDefs.push(`PRIMARY KEY (${cols})`);
+  }
+
+  const sql = `CREATE TYPE [${schema}].[${name}] AS TABLE (\n  ${colDefs.join(",\n  ")}\n)`;
+  await withPool(
+    config,
+    async (pool) => {
+      await pool.request().batch(sql);
+    },
+    { database },
+  );
+}
+
+/**
+ * Run an arbitrary single-batch DDL statement against a database. Used by the
+ * "Create View / Procedure / Function / Trigger" dialogs, which let the user
+ * edit a CREATE template directly — same trust model as the SQL query editor
+ * (the user is intentionally authoring T-SQL).
+ */
+export async function executeSqlServerDdl(
+  config: SqlServerConfig,
+  database: string,
+  sql: string,
+): Promise<void> {
+  validateSqlServerIdentifier(database, "database name");
+  if (!sql.trim()) throw new Error("Script is empty");
+  await withPool(
+    config,
+    async (pool) => {
+      await pool.request().batch(sql);
+    },
+    { database },
   );
 }
 
@@ -898,7 +1127,7 @@ export function validateSqlServerIdentifier(name: string, kind = "identifier"): 
 export interface SqlServerObject {
   schema: string;
   name: string;
-  /** table | view | proc | scalar_fn | table_fn | trigger | synonym */
+  /** table | view | proc | scalar_fn | table_fn | trigger | synonym | sequence | type | table_type */
   kind: string;
   type: string; // raw sys.objects type code, trimmed
 }
@@ -920,11 +1149,16 @@ export async function listSqlServerObjects(
         FROM sys.objects o
         JOIN sys.schemas s ON s.schema_id = o.schema_id
         WHERE o.is_ms_shipped = 0
-          AND o.type IN ('U','V','P','FN','IF','TF','TR','SN')
+          AND o.type IN ('U','V','P','FN','IF','TF','TR','SN','SO','TT')
         UNION ALL
         SELECT s.name AS schema_name, sy.name AS name, 'SN' AS type
         FROM sys.synonyms sy
         JOIN sys.schemas s ON s.schema_id = sy.schema_id
+        UNION ALL
+        SELECT s.name AS schema_name, t.name AS name, 'UDT' AS type
+        FROM sys.types t
+        JOIN sys.schemas s ON s.schema_id = t.schema_id
+        WHERE t.is_user_defined = 1 AND t.is_table_type = 0
         ORDER BY schema_name, name
       `);
       const kindOf = (t: string): string => {
@@ -937,6 +1171,9 @@ export async function listSqlServerObjects(
           case "TF": return "table_fn";
           case "TR": return "trigger";
           case "SN": return "synonym";
+          case "SO": return "sequence";
+          case "TT": return "table_type";
+          case "UDT": return "type";
           default: return t;
         }
       };
