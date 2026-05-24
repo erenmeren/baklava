@@ -1,21 +1,40 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { WorkspacePage } from "@/components/workspace/workspace-page";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Activity,
+  Database,
+  Flame,
+  Gauge,
+  HardDrive,
+  HourglassIcon,
+  Plug,
+  Plus,
+  RefreshCcw,
+  ShieldAlert,
+  Skull,
+  SquareTerminal,
+  Table as TableIcon,
+  Timer,
+  Waves,
+} from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import {
-  Database,
-  HardDrive,
-  RefreshCcw,
-  Server,
-  Table as TableIcon,
-  User,
-} from "lucide-react";
+import { CreateDatabaseDialog } from "./create-database-dialog";
+
+// ─── Types (mirror the driver) ───────────────────────────────────────────
 
 interface DatabaseSummary {
   name: string;
@@ -33,325 +52,1080 @@ interface Overview {
   currentUser: string | null;
   collation: string | null;
   startTime: string | null;
+  uptimeSeconds: number;
   databaseCount: number;
+  totalDatabasesSize: number;
   topDatabases: DatabaseSummary[];
+  maxConnections: number;
+  activeConnections: number;
+  idleConnections: number;
+  cacheHitRatio: number | null;
+}
+
+interface BlockerChain {
+  blockedSpid: number;
+  blockedFor: number;
+  blockedQuery: string | null;
+  blockedBy: number[];
+}
+
+interface WaitBucket {
+  bucket: string;
+  waitSeconds: number;
+}
+
+interface OverviewExtras {
+  blockerCount: number;
+  blockerChains: BlockerChain[];
+  oldestIdleInTxnSec: number | null;
+  longestActiveQuerySec: number | null;
+  topWaits: WaitBucket[];
+}
+
+interface ExpensiveQuery {
+  text: string;
+  executionCount: number;
+  totalWorkerTimeMs: number;
+  avgWorkerTimeMs: number;
+  totalLogicalReads: number;
+  avgLogicalReads: number;
+  lastExecution: string | null;
+}
+
+interface ActivityRow {
+  sessionId: number;
+  loginName: string | null;
+  hostName: string | null;
+  programName: string | null;
+  databaseName: string | null;
+  status: string | null;
+  command: string | null;
+  waitType: string | null;
+  waitClass: string;
+  blockingSessionId: number | null;
+  cpuTime: number;
+  reads: number;
+  writes: number;
+  openTransactions: number;
+  elapsedMs: number | null;
+  text: string | null;
+  isUserProcess: boolean;
 }
 
 interface Props {
   connectionId: string;
+  connectionName: string;
+  defaultDatabase: string;
+  hostPort: string;
 }
 
-const fmt = new Intl.NumberFormat("en-US");
+// ─── Format helpers ──────────────────────────────────────────────────────
 
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(n < 10 * 1024 ? 1 : 0)} K`;
-  if (n < 1024 * 1024 * 1024)
-    return `${(n / (1024 * 1024)).toFixed(n < 10 * 1024 * 1024 ? 1 : 0)} M`;
-  if (n < 1024 * 1024 * 1024 * 1024)
-    return `${(n / (1024 * 1024 * 1024)).toFixed(1)} G`;
-  return `${(n / (1024 * 1024 * 1024 * 1024)).toFixed(1)} T`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let value = n / 1024;
+  for (const u of units) {
+    if (value < 1024) {
+      return `${
+        value < 10 ? value.toFixed(2) : value < 100 ? value.toFixed(1) : Math.round(value)
+      } ${u}`;
+    }
+    value /= 1024;
+  }
+  return `${Math.round(value)} PB`;
 }
 
-function formatUptime(start: string | null): string {
-  if (!start) return "—";
-  const ms = Date.now() - new Date(start).getTime();
-  if (ms < 0 || !Number.isFinite(ms)) return "—";
-  const seconds = ms / 1000;
-  if (seconds < 60) return `${Math.floor(seconds)}s`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
-  const d = Math.floor(seconds / 86400);
-  const h = Math.floor((seconds % 86400) / 3600);
-  return h > 0 ? `${d}d ${h}h` : `${d}d`;
+function formatNumber(n: number): string {
+  return n.toLocaleString();
 }
 
-export function OverviewClient({ connectionId }: Props) {
+function formatDuration(s: number | null): string {
+  if (s == null) return "—";
+  if (s < 1) return `${Math.round(s * 1000)}ms`;
+  if (s < 60) return `${Math.round(s)}s`;
+  if (s < 3600) return `${Math.round(s / 60)}m`;
+  if (s < 86_400) return `${(s / 3600).toFixed(1)}h`;
+  return `${(s / 86_400).toFixed(1)}d`;
+}
+
+function formatUptime(seconds: number): string {
+  if (seconds <= 0) return "—";
+  if (seconds < 60) return `${seconds}s`;
+  const m = Math.floor(seconds / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ${m % 60}m`;
+  const d = Math.floor(h / 24);
+  return `${d}d ${h % 24}h`;
+}
+
+function shortVersion(productVersion: string | null, edition: string | null): string {
+  const parts: string[] = [];
+  if (edition) parts.push(edition.replace(/Edition$/i, "").trim());
+  if (productVersion) parts.push(productVersion);
+  return parts.join(" · ") || "SQL Server";
+}
+
+// ─── Refresh control ─────────────────────────────────────────────────────
+
+const REFRESH_OPTIONS: { label: string; value: string; ms: number | null }[] = [
+  { label: "Off", value: "off", ms: null },
+  { label: "5s", value: "5", ms: 5_000 },
+  { label: "15s", value: "15", ms: 15_000 },
+  { label: "30s", value: "30", ms: 30_000 },
+  { label: "1m", value: "60", ms: 60_000 },
+  { label: "5m", value: "300", ms: 300_000 },
+];
+
+// ─── Main component ──────────────────────────────────────────────────────
+
+export function OverviewClient({
+  connectionId,
+  connectionName,
+  defaultDatabase,
+  hostPort,
+}: Props) {
   const [overview, setOverview] = useState<Overview | null>(null);
+  const [extras, setExtras] = useState<OverviewExtras | null>(null);
+  const [topQueries, setTopQueries] = useState<ExpensiveQuery[] | null>(null);
+  const [activity, setActivity] = useState<ActivityRow[] | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [refresh, setRefresh] = useState<string>("off");
+  const [createOpen, setCreateOpen] = useState(false);
+  const [killingPid, setKillingPid] = useState<number | null>(null);
 
-  const load = useCallback(async () => {
+  const loadAll = useCallback(async () => {
     setLoading(true);
-    setError(null);
     try {
-      const res = await fetch(`/api/sqlserver/${connectionId}/overview`, {
-        cache: "no-store",
-      });
-      const data = await res.json();
-      if (res.ok) setOverview(data as Overview);
-      else {
-        setError(data.error || "Could not load overview");
-        toast.error("Could not load", { description: data.error });
+      const [oRes, eRes, qRes, aRes] = await Promise.all([
+        fetch(`/api/sqlserver/${connectionId}/overview`, { cache: "no-store" }),
+        fetch(`/api/sqlserver/${connectionId}/overview-extras`, {
+          cache: "no-store",
+        }),
+        fetch(`/api/sqlserver/${connectionId}/expensive-queries`, {
+          cache: "no-store",
+        }),
+        fetch(`/api/sqlserver/${connectionId}/activity`, { cache: "no-store" }),
+      ]);
+      if (oRes.ok) setOverview((await oRes.json()) as Overview);
+      if (eRes.ok) setExtras((await eRes.json()) as OverviewExtras);
+      if (qRes.ok) {
+        const body = (await qRes.json()) as { queries: ExpensiveQuery[] };
+        setTopQueries(body.queries ?? []);
       }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setError(msg);
+      if (aRes.ok) {
+        const body = (await aRes.json()) as { sessions: ActivityRow[] };
+        setActivity((body.sessions ?? []).filter((r) => r.isUserProcess));
+      }
     } finally {
       setLoading(false);
     }
   }, [connectionId]);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    void loadAll();
+  }, [loadAll]);
 
   useEffect(() => {
-    const id = setInterval(load, 15_000);
+    const opt = REFRESH_OPTIONS.find((o) => o.value === refresh);
+    if (!opt?.ms) return;
+    const id = setInterval(loadAll, opt.ms);
     return () => clearInterval(id);
-  }, [load]);
+  }, [loadAll, refresh]);
+
+  // ─── Derived metrics ──────────────────────────────────────────────────
+  const connTotal = overview
+    ? overview.activeConnections + overview.idleConnections
+    : 0;
+  const connPct = overview
+    ? (connTotal / Math.max(1, overview.maxConnections)) * 100
+    : 0;
+
+  // ─── Health badges (only if non-green) ────────────────────────────────
+  const healthBadges: Array<{ kind: "alert" | "warn"; label: string }> = [];
+  if (extras) {
+    if (extras.blockerCount > 0) {
+      healthBadges.push({
+        kind: "alert",
+        label: `${extras.blockerCount} blocked session${extras.blockerCount === 1 ? "" : "s"}`,
+      });
+    }
+    if (extras.oldestIdleInTxnSec != null && extras.oldestIdleInTxnSec > 300) {
+      healthBadges.push({
+        kind: "alert",
+        label: `idle-in-txn ${formatDuration(extras.oldestIdleInTxnSec)} old`,
+      });
+    } else if (
+      extras.oldestIdleInTxnSec != null &&
+      extras.oldestIdleInTxnSec > 30
+    ) {
+      healthBadges.push({
+        kind: "warn",
+        label: `idle-in-txn ${formatDuration(extras.oldestIdleInTxnSec)}`,
+      });
+    }
+    if (
+      extras.longestActiveQuerySec != null &&
+      extras.longestActiveQuerySec > 60
+    ) {
+      healthBadges.push({
+        kind: "warn",
+        label: `query running ${formatDuration(extras.longestActiveQuerySec)}`,
+      });
+    }
+  }
+  if (overview) {
+    if (overview.cacheHitRatio != null && overview.cacheHitRatio < 0.95) {
+      healthBadges.push({
+        kind: "alert",
+        label: `cache hit ${(overview.cacheHitRatio * 100).toFixed(1)}%`,
+      });
+    } else if (
+      overview.cacheHitRatio != null &&
+      overview.cacheHitRatio < 0.99
+    ) {
+      healthBadges.push({
+        kind: "warn",
+        label: `cache hit ${(overview.cacheHitRatio * 100).toFixed(2)}%`,
+      });
+    }
+    if (connPct >= 85) {
+      healthBadges.push({
+        kind: "alert",
+        label: `connections ${connPct.toFixed(0)}% of cap`,
+      });
+    } else if (connPct >= 70) {
+      healthBadges.push({
+        kind: "warn",
+        label: `connections ${connPct.toFixed(0)}% of cap`,
+      });
+    }
+  }
+
+  const handleKill = useCallback(
+    async (spid: number) => {
+      setKillingPid(spid);
+      try {
+        const res = await fetch(
+          `/api/sqlserver/${connectionId}/activity/${spid}`,
+          { method: "POST" },
+        );
+        const data = await res.json();
+        if (res.ok) {
+          toast.success(`Session ${spid} killed`);
+          await loadAll();
+        } else {
+          toast.error(data.error || "Could not KILL session");
+        }
+      } finally {
+        setKillingPid(null);
+      }
+    },
+    [connectionId, loadAll],
+  );
 
   return (
     <WorkspacePage
-      title="Instance"
+      title={connectionName}
       description={
-        overview
-          ? `${overview.edition ?? "SQL Server"}${
-              overview.productVersion ? ` · ${overview.productVersion}` : ""
-            } · ${overview.databaseCount} database${overview.databaseCount === 1 ? "" : "s"}`
-          : undefined
+        overview ? (
+          <span className="inline-flex items-center gap-2 text-xs font-mono">
+            <span>{shortVersion(overview.productVersion, overview.edition)}</span>
+            <span className="text-border" aria-hidden>·</span>
+            <span>{hostPort}</span>
+            <span className="text-border" aria-hidden>·</span>
+            <span>up {formatUptime(overview.uptimeSeconds)}</span>
+          </span>
+        ) : (
+          <span className="text-xs font-mono text-muted-foreground">
+            {hostPort} · loading…
+          </span>
+        )
       }
       actions={
         <>
-          <span className="inline-flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
-            <span className="size-1.5 rounded-full bg-emerald-500 status-pulse" />
-            auto · 15s
-          </span>
-          <Button size="sm" variant="outline" onClick={load} disabled={loading}>
-            <RefreshCcw
-              className={cn("size-3.5", loading && "animate-spin")}
-            />
+          <div className="inline-flex items-center gap-1.5">
+            <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+              Auto
+            </span>
+            <Select value={refresh} onValueChange={(v) => v && setRefresh(v)}>
+              <SelectTrigger
+                size="sm"
+                className="h-7 w-[78px] font-mono text-xs"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {REFRESH_OPTIONS.map((o) => (
+                  <SelectItem
+                    key={o.value}
+                    value={o.value}
+                    className="font-mono text-xs"
+                  >
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {refresh !== "off" ? (
+              <span
+                className="size-1.5 rounded-full bg-emerald-500 status-pulse"
+                title="auto-refresh on"
+              />
+            ) : null}
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={loadAll}
+            disabled={loading}
+          >
+            <RefreshCcw className={cn("size-3.5", loading && "animate-spin")} />
             Refresh
+          </Button>
+          <Button size="sm" onClick={() => setCreateOpen(true)}>
+            <Plus className="size-3.5" />
+            New database
           </Button>
         </>
       }
     >
-      {overview === null ? (
-        <div className="space-y-4">
-          <Skeleton className="h-20" />
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-24" />
-            ))}
-          </div>
-          <Skeleton className="h-48" />
-        </div>
-      ) : (
-        <div className="space-y-6">
-          {error ? (
-            <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-              {error}
-            </div>
-          ) : null}
+      <div className="space-y-5">
+        <KpiStrip overview={overview} extras={extras} connPct={connPct} />
 
-          <InstanceStrip overview={overview} />
+        {healthBadges.length > 0 ? (
+          <HealthBadgeRow badges={healthBadges} />
+        ) : null}
 
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <StatTile
-              icon={<Database className="size-3.5" />}
-              label="Databases"
-              value={overview.databaseCount}
-              href={`/sqlserver/${connectionId}/databases`}
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
+          <div className="lg:col-span-3 space-y-5">
+            <ExpensiveQueriesPanel
+              queries={topQueries}
+              connectionId={connectionId}
+              defaultDatabase={defaultDatabase}
             />
-            <StatTile
-              icon={<HardDrive className="size-3.5" />}
-              label="Total size"
-              valueText={formatBytes(
-                overview.topDatabases.reduce((s, d) => s + d.sizeBytes, 0)
-              )}
-              sub="top 5 shown"
-            />
-            <StatTile
-              icon={<User className="size-3.5" />}
-              label="Connected as"
-              valueText={overview.currentUser ?? "—"}
-              mono
-            />
-            <StatTile
-              icon={<Server className="size-3.5" />}
-              label="Uptime"
-              valueText={formatUptime(overview.startTime)}
+            {extras && extras.blockerCount > 0 ? (
+              <BlockersPanel
+                chains={extras.blockerChains}
+                onKill={handleKill}
+                killingPid={killingPid}
+              />
+            ) : null}
+            <ActiveSessionsPanel
+              rows={activity}
+              currentDatabase={defaultDatabase}
+              onKill={handleKill}
+              killingPid={killingPid}
             />
           </div>
 
-          <TopDatabasesCard
-            databases={overview.topDatabases}
-            connectionId={connectionId}
-          />
+          <div className="lg:col-span-2 space-y-5">
+            <DatabasesPanel
+              overview={overview}
+              connectionId={connectionId}
+              currentDatabase={defaultDatabase}
+            />
+            <TopWaitsPanel waits={extras?.topWaits ?? null} />
+          </div>
         </div>
-      )}
+      </div>
+
+      <CreateDatabaseDialog
+        connectionId={connectionId}
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        onCreated={loadAll}
+      />
     </WorkspacePage>
   );
 }
 
-function InstanceStrip({ overview }: { overview: Overview }) {
+// ─── KPI strip ───────────────────────────────────────────────────────────
+
+function KpiStrip({
+  overview,
+  extras,
+  connPct,
+}: {
+  overview: Overview | null;
+  extras: OverviewExtras | null;
+  connPct: number;
+}) {
+  const connTone: Tone =
+    connPct >= 85 ? "alert" : connPct >= 70 ? "warn" : "neutral";
+  const blockerTone: Tone =
+    extras == null ? "neutral" : extras.blockerCount > 0 ? "alert" : "ok";
+  const idleTone: Tone =
+    extras?.oldestIdleInTxnSec == null
+      ? "neutral"
+      : extras.oldestIdleInTxnSec > 300
+        ? "alert"
+        : extras.oldestIdleInTxnSec > 30
+          ? "warn"
+          : "ok";
+  const longTone: Tone =
+    extras?.longestActiveQuerySec == null
+      ? "neutral"
+      : extras.longestActiveQuerySec > 60
+        ? "warn"
+        : "neutral";
+  const hitTone: Tone =
+    overview?.cacheHitRatio == null
+      ? "neutral"
+      : overview.cacheHitRatio < 0.95
+        ? "alert"
+        : overview.cacheHitRatio < 0.99
+          ? "warn"
+          : "ok";
+
   return (
-    <div className="rounded-lg border border-border/60 bg-gradient-to-r from-red-500/5 via-transparent to-transparent p-4">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div className="flex items-center gap-3">
-          <div className="size-9 rounded-md border border-border/60 grid place-items-center bg-background/50">
-            <Server className="size-4 text-rose-500" />
-          </div>
-          <div>
-            <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
-              Instance
-            </p>
-            <p className="text-sm font-semibold">
-              {overview.serverName ?? "SQL Server"}
-              {overview.productVersion ? (
-                <span className="text-muted-foreground font-normal">
-                  {" · "}
-                  <span className="font-mono">{overview.productVersion}</span>
-                </span>
-              ) : null}
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-1.5 text-[10px] font-mono">
-          {overview.edition ? (
-            <span className="inline-flex items-center gap-1.5 rounded-full px-2 py-1 border border-border/60 bg-background/40">
-              <span className="text-muted-foreground">edition</span>
-              <span>{overview.edition}</span>
-            </span>
-          ) : null}
-          {overview.collation ? (
-            <span className="inline-flex items-center gap-1.5 rounded-full px-2 py-1 border border-border/60 bg-background/40">
-              <span className="text-muted-foreground">collation</span>
-              <span>{overview.collation}</span>
-            </span>
-          ) : null}
-        </div>
-      </div>
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+      <KpiTile
+        icon={Plug}
+        label="Connections"
+        value={
+          overview
+            ? `${overview.activeConnections + overview.idleConnections}/${overview.maxConnections}`
+            : "—"
+        }
+        sub={
+          overview
+            ? `${overview.activeConnections} active · ${overview.idleConnections} idle`
+            : "loading…"
+        }
+        bar={connPct}
+        tone={connTone}
+      />
+      <KpiTile
+        icon={extras && extras.blockerCount > 0 ? ShieldAlert : Activity}
+        label="Blockers"
+        value={extras ? String(extras.blockerCount) : "—"}
+        sub={
+          extras
+            ? extras.blockerCount === 0
+              ? "no lock contention"
+              : "sessions waiting on locks"
+            : ""
+        }
+        tone={blockerTone}
+      />
+      <KpiTile
+        icon={HourglassIcon}
+        label="Idle in txn"
+        value={formatDuration(extras?.oldestIdleInTxnSec ?? null)}
+        sub={
+          extras?.oldestIdleInTxnSec == null
+            ? "none"
+            : extras.oldestIdleInTxnSec > 300
+              ? "holding txn open"
+              : extras.oldestIdleInTxnSec > 30
+                ? "watch this"
+                : "fine"
+        }
+        tone={idleTone}
+      />
+      <KpiTile
+        icon={Timer}
+        label="Longest query"
+        value={formatDuration(extras?.longestActiveQuerySec ?? null)}
+        sub={
+          extras?.longestActiveQuerySec == null
+            ? "nothing running"
+            : extras.longestActiveQuerySec > 60
+              ? "running >1m"
+              : "fast"
+        }
+        tone={longTone}
+      />
+      <KpiTile
+        icon={Gauge}
+        label="Cache hit"
+        value={
+          overview?.cacheHitRatio != null
+            ? `${(overview.cacheHitRatio * 100).toFixed(2)}%`
+            : "—"
+        }
+        sub="buffer manager"
+        tone={hitTone}
+      />
+      <KpiTile
+        icon={HardDrive}
+        label="Total size"
+        value={overview ? formatBytes(overview.totalDatabasesSize) : "—"}
+        sub={
+          overview
+            ? `${overview.databaseCount} database${overview.databaseCount === 1 ? "" : "s"}`
+            : ""
+        }
+        tone="neutral"
+      />
     </div>
   );
 }
 
-function StatTile({
-  icon,
+type Tone = "alert" | "warn" | "ok" | "neutral";
+
+function KpiTile({
+  icon: Icon,
   label,
   value,
-  valueText,
   sub,
-  mono,
-  href,
+  bar,
+  tone,
 }: {
-  icon: React.ReactNode;
+  icon: typeof Activity;
   label: string;
-  value?: number;
-  valueText?: string;
-  sub?: string;
-  mono?: boolean;
-  href?: string;
+  value: string;
+  sub: string;
+  bar?: number;
+  tone: Tone;
 }) {
-  const inner = (
-    <>
-      <div className="flex items-center justify-between text-muted-foreground">
-        <span className="text-[10px] font-mono uppercase tracking-[0.18em] flex items-center gap-1.5">
-          {icon}
+  const ring =
+    tone === "alert"
+      ? "border-red-500/50 bg-red-500/[0.05]"
+      : tone === "warn"
+        ? "border-amber-500/50 bg-amber-500/[0.04]"
+        : tone === "ok"
+          ? "border-emerald-500/30 bg-emerald-500/[0.03]"
+          : "border-border/60 bg-card/40";
+  const accent =
+    tone === "alert"
+      ? "text-red-500"
+      : tone === "warn"
+        ? "text-amber-500"
+        : tone === "ok"
+          ? "text-emerald-500"
+          : "text-rose-500";
+  const barColor =
+    tone === "alert"
+      ? "bg-red-500"
+      : tone === "warn"
+        ? "bg-amber-500"
+        : "bg-rose-500";
+
+  return (
+    <div
+      className={cn(
+        "rounded-lg border px-3 py-2.5 transition-colors relative overflow-hidden",
+        ring,
+      )}
+    >
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground inline-flex items-center gap-1.5">
+          <Icon className={cn("size-3", accent)} />
           {label}
         </span>
       </div>
-      <div className="mt-2 flex items-baseline gap-2">
-        <span
-          className={cn(
-            "text-3xl font-semibold tabular-nums tracking-tight truncate",
-            mono && "font-mono text-xl"
-          )}
-        >
-          {valueText ?? (value != null ? fmt.format(value) : "—")}
+      <div className="mt-1 flex items-baseline gap-2">
+        <span className="text-xl font-semibold tabular-nums tracking-tight truncate">
+          {value}
         </span>
       </div>
-      {sub ? (
-        <p className="mt-1 text-xs text-muted-foreground">{sub}</p>
+      <p className="mt-0.5 text-[10.5px] text-muted-foreground truncate">{sub}</p>
+      {bar != null ? (
+        <div className="mt-1.5 h-1 rounded-full bg-muted overflow-hidden">
+          <div
+            className={cn("h-full transition-all", barColor)}
+            style={{ width: `${Math.min(100, Math.max(0, bar))}%` }}
+          />
+        </div>
       ) : null}
-    </>
-  );
-  const base = cn(
-    "rounded-lg border p-4 bg-card transition-colors",
-    "border-border/60 hover:bg-muted/30",
-    href && "cursor-pointer hover:border-foreground/30"
-  );
-  return href ? (
-    <Link href={href} className={base}>
-      {inner}
-    </Link>
-  ) : (
-    <div className={base}>{inner}</div>
-  );
-}
-
-function TopDatabasesCard({
-  databases,
-  connectionId,
-}: {
-  databases: DatabaseSummary[];
-  connectionId: string;
-}) {
-  const max = databases[0]?.sizeBytes ?? 0;
-  const total = databases.reduce((s, d) => s + d.sizeBytes, 0);
-  return (
-    <div className="rounded-lg border border-border/60 bg-card overflow-hidden">
-      <div className="px-4 py-3 border-b border-border/60 flex items-center justify-between">
-        <h3 className="text-sm font-semibold flex items-center gap-2">
-          <HardDrive className="size-4 text-rose-500" />
-          Top databases by size
-        </h3>
-        <Link
-          href={`/sqlserver/${connectionId}/databases`}
-          className="text-xs text-muted-foreground hover:text-foreground"
-        >
-          All databases ›
-        </Link>
-      </div>
-      {databases.length === 0 ? (
-        <div className="p-6 text-center text-sm text-muted-foreground">
-          No databases on this instance.
-        </div>
-      ) : (
-        <div className="p-4 space-y-2">
-          {databases.map((d) => {
-            const pct = max > 0 ? Math.max(2, (d.sizeBytes / max) * 100) : 0;
-            const share = total > 0 ? (d.sizeBytes / total) * 100 : 0;
-            return (
-              <div key={d.name} className="block group">
-                <div className="flex items-center justify-between text-xs mb-1 gap-2">
-                  <span className="flex items-center gap-2 min-w-0">
-                    <span className="font-mono truncate text-foreground/90">
-                      {d.name}
-                    </span>
-                    {d.isSystem ? (
-                      <Badge
-                        variant="outline"
-                        className="text-[9px] font-mono uppercase tracking-wider border-border/60 text-muted-foreground"
-                      >
-                        system
-                      </Badge>
-                    ) : null}
-                    <span className="text-[10px] font-mono text-muted-foreground inline-flex items-center gap-1">
-                      <TableIcon className="size-3" />
-                      {d.tableCount}
-                    </span>
-                  </span>
-                  <span className="tabular-nums font-mono text-muted-foreground shrink-0">
-                    {formatBytes(d.sizeBytes)}
-                    {share >= 1 ? (
-                      <span className="ml-1 text-[10px]">
-                        · {share.toFixed(0)}%
-                      </span>
-                    ) : null}
-                  </span>
-                </div>
-                <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-                  <div
-                    className="h-full rounded-full bg-gradient-to-r from-red-500 to-rose-600 transition-all"
-                    style={{ width: `${pct}%` }}
-                  />
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
     </div>
   );
 }
+
+// ─── Health badges ───────────────────────────────────────────────────────
+
+function HealthBadgeRow({
+  badges,
+}: {
+  badges: Array<{ kind: "alert" | "warn"; label: string }>;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-border/60 bg-card/40 px-3 py-2">
+      <Flame className="size-3.5 text-amber-500 shrink-0" />
+      <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground mr-1">
+        Signals
+      </span>
+      {badges.map((b, i) => (
+        <Badge
+          key={i}
+          variant="outline"
+          className={cn(
+            "text-[10.5px] font-mono tracking-tight",
+            b.kind === "alert"
+              ? "border-red-500/50 bg-red-500/[0.06] text-red-500"
+              : "border-amber-500/50 bg-amber-500/[0.05] text-amber-600 dark:text-amber-400",
+          )}
+        >
+          {b.label}
+        </Badge>
+      ))}
+    </div>
+  );
+}
+
+// ─── Expensive queries panel ─────────────────────────────────────────────
+
+function ExpensiveQueriesPanel({
+  queries,
+  connectionId,
+  defaultDatabase,
+}: {
+  queries: ExpensiveQuery[] | null;
+  connectionId: string;
+  defaultDatabase: string;
+}) {
+  return (
+    <PanelCard
+      title="Top queries · plan cache"
+      icon={<Flame className="size-3.5 text-rose-500" />}
+      action={
+        <Link
+          href={`/sqlserver/${connectionId}/queries`}
+          className="text-[11px] text-muted-foreground hover:text-foreground"
+        >
+          All queries ›
+        </Link>
+      }
+    >
+      {queries === null ? (
+        <Skeleton className="h-24" />
+      ) : queries.length === 0 ? (
+        <EmptyRow>No queries in the plan cache yet.</EmptyRow>
+      ) : (
+        <ul className="divide-y divide-border/40">
+          {queries.slice(0, 6).map((q, i) => (
+            <li key={i} className="py-2.5 first:pt-0 last:pb-0 group">
+              <div className="flex items-baseline gap-2 text-[11px] font-mono text-muted-foreground mb-1">
+                <span className="tabular-nums text-foreground">
+                  {formatDuration(q.totalWorkerTimeMs / 1000)}
+                </span>
+                <span aria-hidden>·</span>
+                <span>
+                  {formatNumber(q.executionCount)} runs
+                </span>
+                <span aria-hidden>·</span>
+                <span>
+                  avg {formatDuration(q.avgWorkerTimeMs / 1000)}
+                </span>
+                <span aria-hidden>·</span>
+                <span>
+                  {formatNumber(q.totalLogicalReads)} reads
+                </span>
+              </div>
+              <Link
+                href={`/sqlserver/${connectionId}/databases/${encodeURIComponent(defaultDatabase)}/query`}
+                className="block"
+              >
+                <pre className="text-[11.5px] font-mono leading-snug text-foreground/85 line-clamp-2 whitespace-pre-wrap break-all group-hover:text-foreground">
+                  {q.text || "(no text — handle expired)"}
+                </pre>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </PanelCard>
+  );
+}
+
+// ─── Blockers panel (only when there are any) ────────────────────────────
+
+function BlockersPanel({
+  chains,
+  onKill,
+  killingPid,
+}: {
+  chains: BlockerChain[];
+  onKill: (spid: number) => void;
+  killingPid: number | null;
+}) {
+  return (
+    <PanelCard
+      title="Blocked sessions"
+      icon={<ShieldAlert className="size-3.5 text-red-500" />}
+      tone="alert"
+    >
+      <ul className="divide-y divide-border/40">
+        {chains.map((c) => (
+          <li
+            key={c.blockedSpid}
+            className="py-2.5 first:pt-0 last:pb-0 flex items-start gap-3"
+          >
+            <div className="flex-1 min-w-0">
+              <div className="flex items-baseline gap-2 text-[11px] font-mono mb-1">
+                <span className="tabular-nums text-red-500 font-semibold">
+                  spid {c.blockedSpid}
+                </span>
+                <span className="text-muted-foreground">blocked for</span>
+                <span className="tabular-nums text-foreground">
+                  {formatDuration(c.blockedFor)}
+                </span>
+                {c.blockedBy.length > 0 ? (
+                  <>
+                    <span className="text-muted-foreground">by</span>
+                    <span className="tabular-nums text-foreground">
+                      {c.blockedBy.map((id) => `spid ${id}`).join(", ")}
+                    </span>
+                  </>
+                ) : null}
+              </div>
+              <pre className="text-[11px] font-mono leading-snug text-foreground/75 line-clamp-2 whitespace-pre-wrap break-all">
+                {c.blockedQuery ?? "(no SQL text)"}
+              </pre>
+            </div>
+            <Button
+              size="xs"
+              variant="ghost"
+              onClick={() => onKill(c.blockedSpid)}
+              disabled={killingPid === c.blockedSpid}
+              className="text-red-500 hover:text-red-500 hover:bg-red-500/10"
+              title="KILL session"
+            >
+              <Skull className="size-3" />
+              KILL
+            </Button>
+          </li>
+        ))}
+      </ul>
+    </PanelCard>
+  );
+}
+
+// ─── Active sessions panel ───────────────────────────────────────────────
+
+function ActiveSessionsPanel({
+  rows,
+  currentDatabase,
+  onKill,
+  killingPid,
+}: {
+  rows: ActivityRow[] | null;
+  currentDatabase: string;
+  onKill: (spid: number) => void;
+  killingPid: number | null;
+}) {
+  // Surface running sessions first, then sleeping with open txns, then rest.
+  const sorted = useMemo(() => {
+    if (!rows) return null;
+    return [...rows].sort((a, b) => {
+      const pa = sessionPriority(a);
+      const pb = sessionPriority(b);
+      if (pa !== pb) return pa - pb;
+      return (b.elapsedMs ?? 0) - (a.elapsedMs ?? 0);
+    });
+  }, [rows]);
+  return (
+    <PanelCard
+      title="Active sessions"
+      icon={<Activity className="size-3.5 text-rose-500" />}
+      sub={sorted ? `${sorted.length} user session${sorted.length === 1 ? "" : "s"}` : ""}
+    >
+      {sorted === null ? (
+        <Skeleton className="h-24" />
+      ) : sorted.length === 0 ? (
+        <EmptyRow>No active user sessions.</EmptyRow>
+      ) : (
+        <ul className="divide-y divide-border/40">
+          {sorted.slice(0, 10).map((r) => {
+            const isCurrentDb = r.databaseName === currentDatabase;
+            const tone = waitClassTone(r.waitClass);
+            return (
+              <li
+                key={r.sessionId}
+                className="py-2 first:pt-0 last:pb-0 grid grid-cols-[68px_1fr_auto] items-center gap-2"
+              >
+                <div className="flex items-center gap-1.5 text-[11px] font-mono">
+                  <span className="tabular-nums">{r.sessionId}</span>
+                  <span
+                    className={cn(
+                      "inline-flex items-center rounded-sm px-1 py-px text-[9px] uppercase tracking-wider",
+                      tone,
+                    )}
+                  >
+                    {r.waitClass}
+                  </span>
+                </div>
+                <div className="min-w-0">
+                  <div className="text-[11px] font-mono text-muted-foreground truncate">
+                    <span
+                      className={cn(
+                        isCurrentDb
+                          ? "text-foreground"
+                          : "text-muted-foreground/70",
+                      )}
+                    >
+                      {r.databaseName ?? "—"}
+                    </span>
+                    {r.loginName ? (
+                      <>
+                        {" · "}
+                        <span>{r.loginName}</span>
+                      </>
+                    ) : null}
+                    {r.programName ? (
+                      <>
+                        {" · "}
+                        <span className="truncate">{r.programName}</span>
+                      </>
+                    ) : null}
+                    {r.elapsedMs != null && r.elapsedMs > 0 ? (
+                      <>
+                        {" · "}
+                        <span className="tabular-nums">
+                          {formatDuration(r.elapsedMs / 1000)}
+                        </span>
+                      </>
+                    ) : null}
+                  </div>
+                  <pre className="text-[11px] font-mono leading-snug text-foreground/85 line-clamp-1 whitespace-pre-wrap break-all">
+                    {r.text?.trim() || `(${r.status ?? "no status"})`}
+                  </pre>
+                </div>
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  onClick={() => onKill(r.sessionId)}
+                  disabled={killingPid === r.sessionId}
+                  title="KILL session"
+                  className="text-muted-foreground hover:text-red-500 hover:bg-red-500/10"
+                >
+                  <Skull className="size-3" />
+                </Button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </PanelCard>
+  );
+}
+
+function sessionPriority(r: ActivityRow): number {
+  if (r.blockingSessionId != null || r.status === "running") return 0;
+  if (r.openTransactions > 0) return 1;
+  return 2;
+}
+
+function waitClassTone(cls: string): string {
+  switch (cls) {
+    case "Lock":
+      return "bg-red-500/10 text-red-500";
+    case "IO":
+      return "bg-amber-500/10 text-amber-500";
+    case "CPU":
+      return "bg-rose-500/10 text-rose-500";
+    case "Latch":
+    case "Memory":
+    case "Parallelism":
+      return "bg-blue-500/10 text-blue-500";
+    case "Network":
+      return "bg-indigo-500/10 text-indigo-500";
+    case "Running":
+      return "bg-emerald-500/10 text-emerald-500";
+    case "Idle":
+      return "bg-muted text-muted-foreground";
+    default:
+      return "bg-muted text-muted-foreground";
+  }
+}
+
+// ─── Databases panel ─────────────────────────────────────────────────────
+
+function DatabasesPanel({
+  overview,
+  connectionId,
+  currentDatabase,
+}: {
+  overview: Overview | null;
+  connectionId: string;
+  currentDatabase: string;
+}) {
+  const max = overview?.topDatabases[0]?.sizeBytes ?? 0;
+  return (
+    <PanelCard
+      title={
+        overview
+          ? `Databases · ${overview.databaseCount}`
+          : "Databases"
+      }
+      icon={<Database className="size-3.5 text-rose-500" />}
+      sub={overview ? `top ${overview.topDatabases.length} by size` : ""}
+      action={
+        <Link
+          href={`/sqlserver/${connectionId}/databases`}
+          className="text-[11px] text-muted-foreground hover:text-foreground"
+        >
+          All ›
+        </Link>
+      }
+    >
+      {overview === null ? (
+        <Skeleton className="h-32" />
+      ) : overview.topDatabases.length === 0 ? (
+        <EmptyRow>No databases on this instance.</EmptyRow>
+      ) : (
+        <ul className="space-y-2">
+          {overview.topDatabases.map((d) => {
+            const pct = max > 0 ? Math.max(2, (d.sizeBytes / max) * 100) : 0;
+            const offline = d.state !== "ONLINE";
+            const isCurrent = d.name === currentDatabase;
+            return (
+              <li key={d.name}>
+                <Link
+                  href={`/sqlserver/${connectionId}/databases/${encodeURIComponent(d.name)}/tables`}
+                  className="block group"
+                >
+                  <div className="flex items-center justify-between text-[11.5px] mb-1 gap-2">
+                    <span className="flex items-center gap-1.5 min-w-0">
+                      <span
+                        className={cn(
+                          "font-mono truncate",
+                          isCurrent
+                            ? "text-foreground font-medium"
+                            : "text-foreground/85 group-hover:text-foreground",
+                        )}
+                      >
+                        {d.name}
+                      </span>
+                      {d.isSystem ? (
+                        <Badge
+                          variant="outline"
+                          className="text-[9px] font-mono uppercase tracking-wider border-border/60 text-muted-foreground py-0"
+                        >
+                          system
+                        </Badge>
+                      ) : null}
+                      {offline ? (
+                        <Badge
+                          variant="outline"
+                          className="text-[9px] font-mono uppercase tracking-wider border-amber-500/40 text-amber-500 py-0"
+                        >
+                          {d.state}
+                        </Badge>
+                      ) : null}
+                      <span className="text-[10px] font-mono text-muted-foreground inline-flex items-center gap-1">
+                        <TableIcon className="size-3" />
+                        {d.tableCount}
+                      </span>
+                    </span>
+                    <span className="tabular-nums font-mono text-muted-foreground shrink-0">
+                      {formatBytes(d.sizeBytes)}
+                    </span>
+                  </div>
+                  <div className="h-1 rounded-full bg-muted overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-red-500 to-rose-600 transition-all"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </PanelCard>
+  );
+}
+
+// ─── Top waits panel ─────────────────────────────────────────────────────
+
+function TopWaitsPanel({ waits }: { waits: WaitBucket[] | null }) {
+  const total = waits?.reduce((s, w) => s + w.waitSeconds, 0) ?? 0;
+  return (
+    <PanelCard
+      title="Top waits"
+      icon={<Waves className="size-3.5 text-rose-500" />}
+      sub="cumulative · since last clear"
+    >
+      {waits === null ? (
+        <Skeleton className="h-24" />
+      ) : waits.length === 0 ? (
+        <EmptyRow>No notable waits.</EmptyRow>
+      ) : (
+        <ul className="space-y-2">
+          {waits.map((w) => {
+            const pct = total > 0 ? (w.waitSeconds / total) * 100 : 0;
+            return (
+              <li key={w.bucket}>
+                <div className="flex items-center justify-between text-[11.5px] mb-1">
+                  <span className="font-mono">{w.bucket}</span>
+                  <span className="tabular-nums font-mono text-muted-foreground">
+                    {formatDuration(w.waitSeconds)}
+                    <span className="ml-1 text-[10px]">
+                      · {pct >= 1 ? pct.toFixed(0) : "<1"}%
+                    </span>
+                  </span>
+                </div>
+                <div className="h-1 rounded-full bg-muted overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-rose-500 to-red-600 transition-all"
+                    style={{ width: `${Math.max(2, pct)}%` }}
+                  />
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </PanelCard>
+  );
+}
+
+// ─── Shared panel chrome ─────────────────────────────────────────────────
+
+function PanelCard({
+  title,
+  icon,
+  sub,
+  action,
+  tone,
+  children,
+}: {
+  title: string;
+  icon?: React.ReactNode;
+  sub?: string;
+  action?: React.ReactNode;
+  tone?: "alert";
+  children: React.ReactNode;
+}) {
+  return (
+    <section
+      className={cn(
+        "rounded-lg border bg-card overflow-hidden",
+        tone === "alert"
+          ? "border-red-500/40 shadow-[0_0_0_1px_rgba(239,68,68,0.08)]"
+          : "border-border/60",
+      )}
+    >
+      <div className="px-4 py-2.5 border-b border-border/60 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 min-w-0">
+          {icon}
+          <h3 className="text-[13px] font-semibold tracking-tight truncate">
+            {title}
+          </h3>
+          {sub ? (
+            <span className="text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground truncate">
+              · {sub}
+            </span>
+          ) : null}
+        </div>
+        {action}
+      </div>
+      <div className="p-3.5">{children}</div>
+    </section>
+  );
+}
+
+function EmptyRow({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="py-3 text-center text-[12px] text-muted-foreground inline-flex w-full items-center justify-center gap-1.5">
+      <SquareTerminal className="size-3.5" />
+      {children}
+    </div>
+  );
+}
+
