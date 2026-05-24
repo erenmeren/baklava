@@ -1,23 +1,6 @@
-export type TechCategory =
-  | "Runtime"
-  | "Database"
-  | "Vector"
-  | "Streaming"
-  | "Cache"
-  | "Search"
-  | "Platform"
-  | "Other";
+export type TechCategory = "Runtime" | "Database" | "Streaming";
 
-export const TECH_CATEGORIES = [
-  "All",
-  "Runtime",
-  "Database",
-  "Vector",
-  "Streaming",
-  "Cache",
-  "Search",
-  "Platform",
-] as const;
+export const TECH_CATEGORIES = ["All", "Runtime", "Database", "Streaming"] as const;
 
 export type TechCategoryFilter = (typeof TECH_CATEGORIES)[number];
 
@@ -61,156 +44,12 @@ export const TECH_CATALOG: TechMeta[] = [
     status: "available",
   },
   {
-    id: "redis",
-    name: "Redis",
-    tagline: "Key-value cache",
-    description: "Keys, streams, pub/sub.",
-    category: "Cache",
-    color: "from-rose-400 to-red-600",
-    status: "available",
-  },
-  {
-    id: "mysql",
-    name: "MySQL",
-    tagline: "Relational database",
-    description: "Tables, queries, replication.",
-    category: "Database",
-    color: "from-cyan-400 to-blue-600",
-    status: "available",
-  },
-  {
     id: "sqlserver",
     name: "SQL Server",
     tagline: "Microsoft relational database",
     description: "Databases, tables, queries.",
     category: "Database",
     color: "from-red-400 to-rose-600",
-    status: "available",
-  },
-  {
-    id: "mongo",
-    name: "MongoDB",
-    tagline: "Document database",
-    description: "Collections, documents, aggregations.",
-    category: "Database",
-    color: "from-emerald-400 to-green-600",
-    status: "available",
-  },
-  {
-    id: "rabbit",
-    name: "RabbitMQ",
-    tagline: "Message broker",
-    description: "Queues, exchanges, bindings.",
-    category: "Streaming",
-    color: "from-amber-400 to-orange-600",
-    status: "available",
-  },
-  {
-    id: "elastic",
-    name: "Elasticsearch",
-    tagline: "Search engine",
-    description: "Indices, search, mappings.",
-    category: "Search",
-    color: "from-teal-400 to-cyan-600",
-    status: "available",
-  },
-  {
-    id: "clickhouse",
-    name: "ClickHouse",
-    tagline: "OLAP database",
-    description: "Tables, parts, columnar queries.",
-    category: "Database",
-    color: "from-yellow-400 to-orange-500",
-    status: "available",
-  },
-  {
-    id: "nats",
-    name: "NATS",
-    tagline: "Messaging system",
-    description: "Subjects, JetStream, KV.",
-    category: "Streaming",
-    color: "from-sky-400 to-indigo-600",
-    status: "available",
-  },
-  {
-    id: "sqlite",
-    name: "SQLite",
-    tagline: "Embedded database",
-    description: "File-backed databases.",
-    category: "Database",
-    color: "from-blue-400 to-indigo-600",
-    status: "available",
-  },
-  {
-    id: "etcd",
-    name: "etcd",
-    tagline: "Key-value store",
-    description: "Leases, watches, distributed config.",
-    category: "Other",
-    color: "from-lime-400 to-green-600",
-    status: "available",
-  },
-  {
-    id: "kubernetes",
-    name: "Kubernetes",
-    tagline: "Container orchestrator",
-    description: "Pods, deployments, services, nodes.",
-    category: "Runtime",
-    color: "from-blue-500 to-indigo-700",
-    status: "available",
-  },
-  {
-    id: "supabase",
-    name: "Supabase",
-    tagline: "Postgres + auth + storage + functions",
-    description: "Auth users, storage buckets, edge functions.",
-    category: "Platform",
-    color: "from-emerald-400 to-green-600",
-    status: "available",
-  },
-  {
-    id: "neo4j",
-    name: "Neo4j",
-    tagline: "Graph database",
-    description: "Cypher queries, labels, relationships.",
-    category: "Database",
-    color: "from-cyan-500 to-blue-700",
-    status: "available",
-  },
-  {
-    id: "qdrant",
-    name: "Qdrant",
-    tagline: "Vector search engine",
-    description: "Collections, vectors, payloads.",
-    category: "Vector",
-    color: "from-red-500 to-pink-600",
-    status: "available",
-  },
-  {
-    id: "weaviate",
-    name: "Weaviate",
-    tagline: "Vector database",
-    description: "Classes, objects, hybrid search.",
-    category: "Vector",
-    color: "from-green-500 to-teal-600",
-    status: "available",
-  },
-  {
-    id: "milvus",
-    name: "Milvus",
-    tagline: "Vector database",
-    description: "Collections, partitions, indexes.",
-    category: "Vector",
-    color: "from-indigo-500 to-purple-700",
-    status: "available",
-  },
-  {
-    id: "chroma",
-    name: "Chroma",
-    tagline: "Embedding database",
-    description: "Collections, documents, embeddings.",
-    category: "Vector",
-    color: "from-pink-500 to-rose-600",
     status: "available",
   },
 ];

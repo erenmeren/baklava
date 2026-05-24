@@ -211,44 +211,6 @@ describe("POST /api/docker/test (socket-style config)", () => {
   });
 });
 
-describe("POST /api/qdrant/test (URL + apiKey shape)", () => {
-  let dataDir: string;
-  beforeEach(() => {
-    dataDir = mkdtempSync(join(tmpdir(), "baklava-qd-test-"));
-    process.env.BAKLAVA_DATA_DIR = dataDir;
-    resetStore();
-    vi.resetModules();
-  });
-  afterEach(() => {
-    rmSync(dataDir, { recursive: true, force: true });
-    vi.restoreAllMocks();
-  });
-
-  it("rejects request missing url", async () => {
-    const route = await import("./qdrant/test/route");
-    const res = await route.POST(postJson({ config: {} }));
-    expect(res.status).toBe(400);
-  });
-
-  it("redacts apiKey when save:true (the redaction fix from Phase 2)", async () => {
-    vi.doMock("@/lib/connections/qdrant", () => ({
-      probeQdrant: vi.fn(async () => ({ collections: 0 })),
-    }));
-    const route = await import("./qdrant/test/route");
-    const res = await route.POST(
-      postJson({
-        name: "Q",
-        save: true,
-        config: { url: "http://localhost:6333", apiKey: "secret-qd-leak" },
-      }),
-    );
-    const body = await res.json();
-    expect(body.ok).toBe(true);
-    expect(body.connection.config.apiKey).not.toBe("secret-qd-leak");
-    expect(body.connection.config.apiKey).toMatch(/^•+$/);
-  });
-});
-
 describe("POST /api/kafka/test (nested SASL secret)", () => {
   let dataDir: string;
   beforeEach(() => {
@@ -297,28 +259,7 @@ describe("POST /api/kafka/test (nested SASL secret)", () => {
 // shared error envelope convention. If anyone adds a new tech and forgets
 // the JSON guard, this fails immediately.
 // ─────────────────────────────────────────────────────────────────────────────
-const ALL_TECHS = [
-  "chroma",
-  "clickhouse",
-  "docker",
-  "elastic",
-  "etcd",
-  "kafka",
-  "kubernetes",
-  "milvus",
-  "mongo",
-  "mysql",
-  "nats",
-  "neo4j",
-  "postgres",
-  "qdrant",
-  "rabbit",
-  "redis",
-  "sqlite",
-  "sqlserver",
-  "supabase",
-  "weaviate",
-];
+const ALL_TECHS = ["docker", "kafka", "postgres", "sqlserver"];
 
 describe("every /api/<tech>/test rejects malformed JSON", () => {
   it.each(ALL_TECHS)("%s returns 400 for invalid JSON body", async (tech) => {

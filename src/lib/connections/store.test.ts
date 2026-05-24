@@ -35,28 +35,6 @@ const POSTGRES_SAMPLE = {
   ssl: false,
 };
 
-const QDRANT_SAMPLE = {
-  url: "http://localhost:6333",
-  apiKey: "qdrant-secret-key",
-};
-
-const SUPABASE_SAMPLE = {
-  url: "https://demo.supabase.co",
-  serviceRoleKey: "sb-secret-service-role",
-  databaseUrl: "postgresql://...",
-};
-
-const NATS_SAMPLE = {
-  servers: ["nats://localhost:4222"],
-  user: "nats",
-  token: "nats-secret-token",
-};
-
-const CHROMA_SAMPLE = {
-  url: "http://localhost:8000",
-  authToken: "chroma-secret-auth",
-};
-
 describe("connection store", () => {
   let dataDir: string;
 
@@ -104,9 +82,17 @@ describe("connection store", () => {
       const nested = join(dataDir, "nested", "deep");
       const store = await freshStore(nested);
       store.saveConnection({
-        tech: "redis",
-        name: "r",
-        config: { host: "localhost", port: 6379, tls: false, database: 0 },
+        tech: "sqlserver",
+        name: "s",
+        config: {
+          host: "localhost",
+          port: 1433,
+          database: "master",
+          user: "sa",
+          password: "x",
+          encrypt: false,
+          trustServerCertificate: true,
+        },
         status: "ok",
       });
       const dirMode = statSync(nested).mode & 0o777;
@@ -358,52 +344,6 @@ describe("connection store", () => {
       ).toBe("kafka-secret-pw");
     });
 
-    it.each([
-      ["apiKey", { url: "http://q", apiKey: "" }, QDRANT_SAMPLE, "apiKey"],
-      [
-        "serviceRoleKey",
-        { url: "https://s", serviceRoleKey: "" },
-        SUPABASE_SAMPLE,
-        "serviceRoleKey",
-      ],
-      [
-        "token",
-        { servers: ["nats://x"], token: "" },
-        NATS_SAMPLE,
-        "token",
-      ],
-      [
-        "authToken",
-        { url: "http://c", authToken: "" },
-        CHROMA_SAMPLE,
-        "authToken",
-      ],
-    ])(
-      "keeps existing %s when patch sends ''",
-      async (_, patch, original, key) => {
-        const store = await freshStore(dataDir);
-        // Resolve tech name from the sample shape — only used as a label.
-        const tech =
-          key === "apiKey"
-            ? "qdrant"
-            : key === "serviceRoleKey"
-              ? "supabase"
-              : key === "token"
-                ? "nats"
-                : "chroma";
-        const c = store.saveConnection({
-          tech,
-          name: tech,
-          config: original,
-          status: "ok",
-        });
-        const updated = store.updateConnection(c.id, { config: patch });
-        expect((updated?.config as Record<string, unknown>)[key]).toBe(
-          (original as Record<string, unknown>)[key],
-        );
-      },
-    );
-
     it("trims the new name and falls back to existing on empty/whitespace", async () => {
       const store = await freshStore(dataDir);
       const c = store.saveConnection({
@@ -577,59 +517,6 @@ describe("redactConfig + publicView", () => {
   // Every secret key listed in SECRET_KEYS must be masked through publicView.
   // ────────────────────────────────────────────────────────────────────
   describe("redacts every secret key, not just password", () => {
-    it("masks Qdrant apiKey", async () => {
-      const { saveConnection, publicView } = await freshStore(dataDir);
-      const saved = saveConnection({
-        tech: "qdrant",
-        name: "q",
-        config: QDRANT_SAMPLE,
-        status: "ok",
-      });
-      const apiKey = (publicView(saved).config as { apiKey: string }).apiKey;
-      expect(apiKey).not.toBe("qdrant-secret-key");
-      expect(apiKey).toMatch(/^•+$/);
-    });
-
-    it("masks Supabase serviceRoleKey", async () => {
-      const { saveConnection, publicView } = await freshStore(dataDir);
-      const saved = saveConnection({
-        tech: "supabase",
-        name: "s",
-        config: SUPABASE_SAMPLE,
-        status: "ok",
-      });
-      const k = (publicView(saved).config as { serviceRoleKey: string })
-        .serviceRoleKey;
-      expect(k).not.toBe("sb-secret-service-role");
-      expect(k).toMatch(/^•+$/);
-    });
-
-    it("masks NATS token", async () => {
-      const { saveConnection, publicView } = await freshStore(dataDir);
-      const saved = saveConnection({
-        tech: "nats",
-        name: "n",
-        config: NATS_SAMPLE,
-        status: "ok",
-      });
-      const t = (publicView(saved).config as { token: string }).token;
-      expect(t).not.toBe("nats-secret-token");
-      expect(t).toMatch(/^•+$/);
-    });
-
-    it("masks Chroma authToken", async () => {
-      const { saveConnection, publicView } = await freshStore(dataDir);
-      const saved = saveConnection({
-        tech: "chroma",
-        name: "c",
-        config: CHROMA_SAMPLE,
-        status: "ok",
-      });
-      const t = (publicView(saved).config as { authToken: string }).authToken;
-      expect(t).not.toBe("chroma-secret-auth");
-      expect(t).toMatch(/^•+$/);
-    });
-
     it("leaves non-secret keys untouched (no over-redaction)", async () => {
       const { redactConfig } = await freshStore(dataDir);
       const out = redactConfig({

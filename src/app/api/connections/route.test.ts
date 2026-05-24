@@ -42,9 +42,17 @@ describe("GET /api/connections", () => {
       status: "ok",
     });
     store.saveConnection({
-      tech: "qdrant",
-      name: "Q",
-      config: { url: "http://q", apiKey: "secret-qd-key" },
+      tech: "sqlserver",
+      name: "S",
+      config: {
+        host: "localhost",
+        port: 1433,
+        database: "master",
+        user: "sa",
+        password: "secret-ms",
+        encrypt: false,
+        trustServerCertificate: true,
+      },
       status: "ok",
     });
 
@@ -54,11 +62,11 @@ describe("GET /api/connections", () => {
     const body = await res.json();
     expect(body.connections).toHaveLength(2);
     const pg = body.connections.find((c: { tech: string }) => c.tech === "postgres");
-    const qd = body.connections.find((c: { tech: string }) => c.tech === "qdrant");
+    const ms = body.connections.find((c: { tech: string }) => c.tech === "sqlserver");
     expect(pg.config.password).not.toBe("secret-pg");
     expect(pg.config.password).toMatch(/^•+$/);
-    expect(qd.config.apiKey).not.toBe("secret-qd-key");
-    expect(qd.config.apiKey).toMatch(/^•+$/);
+    expect(ms.config.password).not.toBe("secret-ms");
+    expect(ms.config.password).toMatch(/^•+$/);
   });
 
   it("filters by ?tech=... when provided", async () => {
@@ -70,9 +78,9 @@ describe("GET /api/connections", () => {
       status: "ok",
     });
     store.saveConnection({
-      tech: "redis",
-      name: "r",
-      config: { host: "x", port: 6379, tls: false, database: 0 },
+      tech: "kafka",
+      name: "k",
+      config: { clientId: "baklava", brokers: ["x:9092"], ssl: false },
       status: "ok",
     });
     const res = await listRoute.GET(

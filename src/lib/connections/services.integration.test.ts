@@ -18,8 +18,6 @@ import { reachable } from "@/test/integration-helpers";
 const PW = process.env.BAKLAVA_TEST_PW ?? "Baklava123!";
 const PG_USER = process.env.BAKLAVA_PG_USER ?? "postgres";
 const PG_PW = process.env.BAKLAVA_PG_PW ?? PW;
-const MYSQL_USER = process.env.BAKLAVA_MYSQL_USER ?? "root";
-const MYSQL_PW = process.env.BAKLAVA_MYSQL_PW ?? PW;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Postgres — including end-to-end verification that the `;`-injection
@@ -92,45 +90,6 @@ describe("postgres", async () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Redis — basic ping + set/get round-trip
-// ─────────────────────────────────────────────────────────────────────────────
-describe("redis", async () => {
-  const up = await reachable("localhost", 6379);
-  beforeAll(() => {
-    if (!up) console.warn("[skip] redis not reachable on localhost:6379");
-  });
-
-  it.skipIf(!up)("probeRedis returns ok", async () => {
-    const { probeRedis } = await import("./redis");
-    const result = await probeRedis({
-      host: "localhost",
-      port: 6379,
-      tls: false,
-      database: 0,
-    });
-    expect(typeof result.version).toBe("string");
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// MongoDB
-// ─────────────────────────────────────────────────────────────────────────────
-describe("mongodb", async () => {
-  const up = await reachable("localhost", 27017);
-  beforeAll(() => {
-    if (!up) console.warn("[skip] mongo not reachable on localhost:27017");
-  });
-
-  it.skipIf(!up)("probeMongo returns ok", async () => {
-    const { probeMongo } = await import("./mongo");
-    const result = await probeMongo({
-      uri: "mongodb://localhost:27017",
-    });
-    expect(result).toBeTruthy();
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Kafka — must clean up ephemeral consumer groups (the project-driver-gotchas
 // rule). After fetchMessages returns, the temp group must not linger.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -180,70 +139,6 @@ describe("docker", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Qdrant
-// ─────────────────────────────────────────────────────────────────────────────
-describe("qdrant", async () => {
-  const up = await reachable("localhost", 6333);
-  beforeAll(() => {
-    if (!up) console.warn("[skip] qdrant not reachable on localhost:6333");
-  });
-
-  it.skipIf(!up)("probeQdrant returns collection info", async () => {
-    const { probeQdrant } = await import("./qdrant");
-    const result = await probeQdrant({
-      url: "http://localhost:6333",
-    });
-    expect(result).toBeTruthy();
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Neo4j — verifies the Integer wrapper unwrap (project_driver_gotchas)
-// ─────────────────────────────────────────────────────────────────────────────
-describe("neo4j", async () => {
-  const up = await reachable("localhost", 7687);
-  beforeAll(() => {
-    if (!up) console.warn("[skip] neo4j not reachable on localhost:7687");
-  });
-
-  it.skipIf(!up)("probeNeo4j returns server info with plain numbers (no Integer wrappers)", async () => {
-    const { probeNeo4j } = await import("./neo4j");
-    const result = await probeNeo4j({
-      uri: "bolt://localhost:7687",
-      user: "neo4j",
-      password: PW,
-    });
-    expect(result).toBeTruthy();
-    // The probe result should be JSON-serializable — if Integer wrappers
-    // leaked through, JSON.stringify would emit {low,high} pairs.
-    const json = JSON.stringify(result);
-    expect(json).not.toContain('"low":');
-    expect(json).not.toContain('"high":');
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// ClickHouse
-// ─────────────────────────────────────────────────────────────────────────────
-describe("clickhouse", async () => {
-  const up = await reachable("localhost", 8123);
-  beforeAll(() => {
-    if (!up) console.warn("[skip] clickhouse not reachable on localhost:8123");
-  });
-
-  it.skipIf(!up)("probeClickhouse returns a version", async () => {
-    const { probeClickhouse } = await import("./clickhouse");
-    const result = await probeClickhouse({
-      url: "http://localhost:8123",
-      user: "default",
-      password: "",
-      database: "default",
-    });
-    expect(result.version).toBeTruthy();
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
 // SQL Server — verifies the May-16 current_user fix (T-SQL reserved word)
 // ─────────────────────────────────────────────────────────────────────────────
 describe("sqlserver", async () => {
@@ -262,106 +157,6 @@ describe("sqlserver", async () => {
       password: PW,
       encrypt: false,
       trustServerCertificate: true,
-    });
-    expect(result).toBeTruthy();
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// MySQL
-// ─────────────────────────────────────────────────────────────────────────────
-describe("mysql", async () => {
-  const up = await reachable("localhost", 3306);
-  beforeAll(() => {
-    if (!up) console.warn("[skip] mysql not reachable on localhost:3306");
-  });
-
-  it.skipIf(!up)("probeMysql returns a version", async () => {
-    const { probeMysql } = await import("./mysql");
-    const result = await probeMysql({
-      host: "localhost",
-      port: 3306,
-      database: "demo",
-      user: MYSQL_USER,
-      password: MYSQL_PW,
-      ssl: false,
-    });
-    expect(typeof result.version).toBe("string");
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Etcd
-// ─────────────────────────────────────────────────────────────────────────────
-describe("etcd", async () => {
-  const up = await reachable("localhost", 2379);
-  beforeAll(() => {
-    if (!up) console.warn("[skip] etcd not reachable on localhost:2379");
-  });
-
-  it.skipIf(!up)("probeEtcd returns ok", async () => {
-    const { probeEtcd } = await import("./etcd");
-    const result = await probeEtcd({
-      hosts: ["http://localhost:2379"],
-    });
-    expect(result).toBeTruthy();
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// RabbitMQ
-// ─────────────────────────────────────────────────────────────────────────────
-describe("rabbitmq", async () => {
-  const up = await reachable("localhost", 5672);
-  beforeAll(() => {
-    if (!up) console.warn("[skip] rabbit not reachable on localhost:5672");
-  });
-
-  it.skipIf(!up)("probeRabbit returns ok", async () => {
-    const { probeRabbit } = await import("./rabbit");
-    const result = await probeRabbit({
-      host: "localhost",
-      port: 5672,
-      vhost: "/",
-      user: "guest",
-      password: "guest",
-      tls: false,
-    });
-    expect(result).toBeTruthy();
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// NATS
-// ─────────────────────────────────────────────────────────────────────────────
-describe("nats", async () => {
-  const up = await reachable("localhost", 4222);
-  beforeAll(() => {
-    if (!up) console.warn("[skip] nats not reachable on localhost:4222");
-  });
-
-  it.skipIf(!up)("probeNats returns server info", async () => {
-    const { probeNats } = await import("./nats");
-    const result = await probeNats({
-      servers: ["nats://localhost:4222"],
-    });
-    expect(result).toBeTruthy();
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Elastic
-// ─────────────────────────────────────────────────────────────────────────────
-describe("elastic", async () => {
-  const up = await reachable("localhost", 9200);
-  beforeAll(() => {
-    if (!up) console.warn("[skip] elastic not reachable on localhost:9200");
-  });
-
-  it.skipIf(!up)("probeElastic returns cluster info", async () => {
-    const { probeElastic } = await import("./elastic");
-    const result = await probeElastic({
-      nodes: ["http://localhost:9200"],
     });
     expect(result).toBeTruthy();
   });

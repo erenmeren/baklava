@@ -1,6 +1,6 @@
 # Baklava
 
-Open-source unified ops console. One UI for Docker, Kubernetes, Postgres, MySQL, SQL Server, MongoDB, SQLite, Redis, etcd, Kafka, RabbitMQ, NATS, Elasticsearch, ClickHouse, Supabase, Neo4j, and four vector DBs (Qdrant, Weaviate, Milvus, Chroma) — modeled on the dedicated tools you already know (Docker Desktop, kafka-ui, pgAdmin) so you can stop juggling tabs.
+Open-source unified ops console for **Docker, Postgres, Kafka, and SQL Server** — modeled on the dedicated tools you already know (Docker Desktop, pgAdmin, kafka-ui, SSMS) so you can stop juggling tabs.
 
 ## What it does
 
@@ -26,51 +26,39 @@ Sidebar: Containers · Images · Volumes · Networks · Stacks · Registries · 
 
 ### PostgreSQL (pgAdmin-style)
 
-Tree sidebar: connection → databases → schemas → tables / views.
+Tree sidebar: connection → databases → schemas → tables / views / functions / sequences.
 
+- **Overview dashboard**: signal-driven KPI strip (connections with bar, blockers, idle-in-txn, TPS sparkline + rollback ratio, cache hit, total size), conditional health-badge row when anything trips a threshold, two-column body — Top slow queries (`pg_stat_statements`), blocker chains, active sessions with KILL/cancel, bloat hotspots, databases panel, top tables.
 - Click any table for tabs: **Data** (paginated 100/page with total count), **Structure** (columns, types, nullability, defaults, PK badges), **Indexes** (with definitions), **Constraints** (PK / FK / UNIQUE / CHECK / EXCLUDE), **Foreign keys** (with on-update / on-delete actions).
-- Each database has its own **SQL editor** (Cmd/Ctrl+Enter to run, results capped at 500 rows, history of recent queries).
+- Each database has its own **SQL editor** (Cmd/Ctrl+Enter to run, results capped at 500 rows, schema-aware autocomplete, dialect-specific keywords, history of recent queries).
 
 ### Kafka (kafka-ui-style)
 
 Sidebar: Overview · Topics · Consumer groups · Brokers.
 
 - **Overview** (mission-control dashboard): broker pulse strip, big stats (topics / partitions / messages / consumer groups), under-replicated-topic call-outs, top-volume leaderboard. Auto-refreshes every 15s.
-- **Topics**: dense list with message-count bars, partition-skew sparklines, ISR health pill. Click into a topic for tabs: Partitions, Messages (with key/value text filter + live tail + click-row-for-detail-drawer with JSON-pretty value + headers table), Produce, Configs.
-- **Consumer groups**: lag column with severity bar (green/amber/red), member count, topics-assigned. Click into one for member detail, per-partition offset/lag, and reset-offsets (with pre-flight state check).
+- **Topics**: dense list with message-count bars, partition-skew sparklines, ISR health pill. Click into a topic for tabs: Partitions, Messages (with key/value text filter + live tail + click-row-for-detail-drawer with JSON-pretty value + headers table), Produce, Configs. Schema Registry support (Avro / JSON Schema / Protobuf — sniffs the Confluent magic byte on consume).
+- **Consumer groups**: lag column with severity bar (green/amber/red), member count, topics-assigned, **consumption + ETA-to-drain** columns. Click into one for member detail, per-partition offset/lag, partition heatmap, and reset-offsets (with pre-flight state check).
 - **Brokers**: list with controller badge.
 
-### The other workspaces (MVP)
+### SQL Server (SSMS-style)
 
-Each ships a connection form, a mission-control overview (auto-refresh 15s), a primary browse list, and a per-object detail page:
+Tree sidebar: connection → databases → schemas → tables / views / procedures / functions / sequences / user-defined types / table types / synonyms / triggers (all 9 SSMS-style categories, with `+` to create on every group).
 
-| Tech | Primary browse | Detail |
-|---|---|---|
-| **Kubernetes** | pods (namespace-filtered) | overview / containers / logs / events / YAML |
-| **MySQL** | databases | tables (engine, rows, size bar, collation) |
-| **SQL Server** | databases | tables (`schema.name`, rows, reserved size, state pill) |
-| **MongoDB** | databases | collections (type pill, docs, storage bar, indexes) |
-| **SQLite** | tables | columns / data spreadsheet / DDL / indexes |
-| **Redis** | keys (SCAN paginated) | type-specific value viewer (string/list/hash/set/zset/stream) + TTL + memory + delete |
-| **etcd** | keys (prefix-filtered) | value + create/mod/version metadata + delete |
-| **RabbitMQ** | queues (severity bar) | overview / bindings / consumers / peek messages (with requeue toggle) |
-| **NATS** | streams (JetStream) | overview / subjects (live counts) / consumers / messages (walk back from `last_seq`) |
-| **Elasticsearch** | indices (health pill) | overview / mappings / settings / search (Lucene `q`) / shards |
-| **ClickHouse** | tables (engine pill) | columns / sample / partitions / DDL + truncate + drop |
-| **Supabase** | overview lands first | 4-section workspace: Auth users (paginated) / Storage buckets → file browser / Edge functions (with friendly Management-API explainer) |
-| **Neo4j** | databases | labels / relationship types / indexes / constraints / **Cypher editor** with Read/Write mode toggle and typed-result drawer |
-| **Qdrant** | collections | schema / sample (deterministic scroll) / config; vector vs point distinction |
-| **Weaviate** | collections | properties / sample / schema; graceful gRPC-unavailable fallback |
-| **Milvus** | collections | schema / sample / indexes / stats; pre-flight `getLoadState` check, never auto-loads |
-| **Chroma** | collections | schema / sample / config; vector head/tail/dim summary, on-demand full vector fetch |
+- **Overview dashboard**: matches the Postgres layout — 6 tone-coded KPI tiles (connections w/ bar, blockers, idle-in-txn, longest query, buffer cache hit, total size across all DBs), conditional Signals row only when something trips a threshold (red/amber). Two-column body: top queries from the plan cache, blocked sessions, active sessions with KILL, databases panel, top wait classes from `sys.dm_os_wait_stats` (with the Paul-Randal benign-waits filter). Refresh control: select dropdown (Off / 5s / 15s / 30s / 1m / 5m), defaults to **Off** so an idle tab doesn't generate traffic.
+- **Create dialogs** on every schema group: structured forms for Tables / Sequences / Synonyms / User-Defined Types / Table Types, plus a CodeMirror-backed T-SQL editor with per-kind scaffolds for Views / Procedures / Functions / Triggers (SSMS "Script CREATE To" pattern). Identifier whitelist + `;`-in-fragment guard on all server-built SQL.
+- **Tables**: tabs for Data / Structure / Indexes / Foreign keys / Triggers. Drop dialog with FORCE (single-user + rollback immediate) for databases.
+- **Activity / Locks / Top queries / Query Store / Index maintenance / Security / Backup** as dedicated server-level pages off the sidebar.
+- Each database has its own **SQL editor** with MSSQL dialect, curated keywords + types, schema-aware autocomplete, `GO` batch splits, and `STATISTICS IO/TIME` toggle.
 
 ## Stack
 
 - Next.js 16 (App Router) + React 19
 - TypeScript
 - Tailwind CSS v4
-- shadcn/ui (Radix / Base UI) + Lucide icons + Sonner toasts
-- Drivers: `dockerode`, `@kubernetes/client-node`, `kafkajs`, `pg`, `mysql2`, `mssql`, `mongodb`, `better-sqlite3`, `ioredis`, `etcd3`, `amqplib`, `nats`, `@elastic/elasticsearch`, `@clickhouse/client`, `@supabase/supabase-js`, `neo4j-driver`, `@qdrant/js-client-rest`, `weaviate-client`, `@zilliz/milvus2-sdk-node`, `chromadb`
+- shadcn/ui (Base UI primitives) + Lucide icons + Sonner toasts
+- CodeMirror (`@uiw/react-codemirror` + `@codemirror/lang-sql`) for SQL editors; xterm.js for the Docker terminal
+- Drivers: `dockerode`, `kafkajs`, `pg`, `mssql`
 
 ## Run
 
@@ -81,30 +69,15 @@ npm run dev
 
 Open <http://localhost:3000>. Docker is reachable out of the box at `unix:///var/run/docker.sock` on macOS / Linux.
 
-### Test stack (every supported tech)
+### Test stack
 
-A `compose.yaml` at the project root spins up one local instance of every tech Baklava integrates with:
+A `compose.yaml` at the project root spins up local instances of Postgres, Kafka, and SQL Server:
 
 ```bash
 docker compose up -d           # everything
-docker compose up -d redis     # just one service
+docker compose up -d postgres  # just one service
 docker compose down -v         # stop + wipe data
 ```
-
-SQLite is file-backed (no daemon). Generate a seeded demo database with:
-
-```bash
-bash seed/sqlite.sh            # writes /tmp/baklava-data/demo.sqlite
-```
-
-To put real content into the vector DBs and Neo4j (random vectors + a small movies graph):
-
-```bash
-npm install                                  # if you haven't yet
-node seed/vector-and-graph.cjs               # seeds qdrant, weaviate, chroma, milvus, neo4j
-```
-
-Both seeders are idempotent. See [`seed/README.md`](seed/README.md) for full details — schemas, row counts, and sample Cypher queries for the Neo4j graph.
 
 #### Connection details
 
@@ -113,29 +86,11 @@ All credentials are throwaway and for local dev only. Plug these into the connec
 | Tech | Host | Port | User | Password | Notes |
 |---|---|---:|---|---|---|
 | **Docker** | — | — | — | — | uses `unix:///var/run/docker.sock` automatically |
-| **Kubernetes** | — | — | — | — | paste your kubeconfig YAML (works with kind / minikube / EKS / GKE / AKS) |
 | **PostgreSQL** | localhost | 5432 | `postgres` | `Baklava123!` | database `demo` |
-| **MySQL** | localhost | 3306 | `root` | `Baklava123!` | database `demo` |
-| **SQL Server** | localhost | 1433 | `sa` | `Baklava123!` | encrypt: on, trustServerCertificate: on |
-| **SQLite** | — | — | — | — | file `/tmp/baklava-data/demo.sqlite` (run `seed/sqlite.sh` first) |
-| **MongoDB** | localhost | 27017 | — | — | no auth |
-| **Redis** | localhost | 6379 | — | — | TLS off, db 0 |
-| **etcd** | — | — | — | — | host `http://localhost:2379` |
 | **Kafka** | — | — | — | — | broker `localhost:9092` |
-| **RabbitMQ** | localhost | 5672 | `guest` | `guest` | vhost `/`, mgmt port `15672` |
-| **NATS** | — | — | — | — | server `nats://localhost:4222` (JetStream enabled) |
-| **Elasticsearch** | — | — | — | — | node `http://localhost:9200` (security off) |
-| **ClickHouse** | — | — | `default` | *(blank)* | url `http://localhost:8123`, database `default` |
-| **Supabase** | — | — | — | — | use `supabase start` CLI; URL `http://localhost:54321` + service_role key from CLI output |
-| **Neo4j** | localhost | 7687 | `neo4j` | `Baklava123!` | URI `bolt://localhost:7687`; HTTP browser at `7474` |
-| **Qdrant** | — | — | — | — | url `http://localhost:6333` (REST) |
-| **Weaviate** | — | — | — | — | url `http://localhost:8080` (REST) + gRPC `50051`; anonymous access on |
-| **Milvus** | — | — | — | — | address `localhost:19530` (gRPC); no auth |
-| **Chroma** | — | — | — | — | url `http://localhost:8000`; tenant `default_tenant`, database `default_database` |
+| **SQL Server** | localhost | 1433 | `sa` | `Baklava123!` | encrypt: on, trustServerCertificate: on |
 
-SQL Server runs under `linux/amd64` (Rosetta on Apple Silicon) — startup is ~30s and uses ~2GB RAM. Elasticsearch is heap-capped at 512MB. Milvus is a multi-container standalone deployment (~60s cold start) — its internal etcd and minio bind to no host ports so they don't collide with the standalone etcd service.
-
-**Supabase** is a 10-service stack — instead of inlining it in `compose.yaml`, install the official CLI (`brew install supabase/tap/supabase`) and run `supabase start` in any directory. The CLI prints the API URL and service_role key to paste into Baklava's Supabase form.
+SQL Server runs under `linux/amd64` (Rosetta on Apple Silicon) — startup is ~30s and uses ~2GB RAM.
 
 ## Project layout
 
@@ -152,6 +107,15 @@ src/
         images/page.tsx
         volumes/page.tsx
         networks/page.tsx
+        stacks/page.tsx
+    postgres/
+      page.tsx
+      [connectionId]/
+        layout.tsx                        # tree sidebar (db > schema > table)
+        overview-client.tsx               # signal-driven dashboard
+        databases/[db]/
+          query/page.tsx                  # SQL editor
+          schemas/[schema]/tables/[table]/page.tsx
     kafka/
       page.tsx
       [connectionId]/
@@ -161,35 +125,44 @@ src/
         consumer-groups/page.tsx
         consumer-groups/[group]/page.tsx
         brokers/page.tsx
-    postgres/
+    sqlserver/
       page.tsx
       [connectionId]/
-        layout.tsx                        # tree sidebar (db > schema > table)
+        layout.tsx                        # tree sidebar (db > schema > 9 group kinds)
+        overview-client.tsx               # signal-driven dashboard
+        create-*-dialog.tsx               # 9 create dialogs
         databases/[db]/
-          query/page.tsx                  # SQL editor
-          schemas/[schema]/tables/[table]/page.tsx   # tabs: Data/Structure/Indexes/Constraints/FKs
+          query/[queryId]/page.tsx        # T-SQL editor (CodeMirror + MSSQL)
+          tables/[schema]/[name]/page.tsx
     api/                                  # all server routes
   components/
     workspace/                            # shared workspace shell, sidebar links, page chrome
+    sql/                                  # shared SQL editor toolkit (Postgres + SQL Server)
     ui/                                   # shadcn components
   lib/
     tech-catalog.ts                       # registry of integrated technologies
+    sql/                                  # format, completions, themes, dialect keywords
     connections/
       types.ts
-      store.ts                            # in-memory store on globalThis
+      store.ts                            # in-memory store on globalThis, persisted to disk
       server.ts                           # requireConnection() for server pages
       docker.ts                           # dockerode helpers
       kafka.ts                            # kafkajs helpers
       postgres.ts                         # pg helpers
+      sqlserver.ts                        # mssql helpers
 ```
 
 ## Adding another technology
 
-1. Add an entry to `src/lib/tech-catalog.ts` and a corresponding `TechId` in `src/lib/connections/types.ts`.
-2. Drop a driver helper in `src/lib/connections/<tech>.ts`.
-3. Add API routes under `src/app/api/<tech>/`.
-4. Add the connection landing page at `src/app/<tech>/page.tsx`.
-5. Add a workspace at `src/app/<tech>/[connectionId]/` with a `layout.tsx` (uses `WorkspaceShell` + your sidebar) and one page per object kind.
+1. Add an entry to `src/lib/tech-catalog.ts` and a corresponding `TechId` + config interface in `src/lib/connections/types.ts`.
+2. Drop a driver helper in `src/lib/connections/<tech>.ts` (probe + per-object operations).
+3. If the driver is a native package, add it to `serverExternalPackages` in `next.config.ts`.
+4. Add API routes under `src/app/api/<tech>/`.
+5. Add the connection form at `src/app/<tech>/<tech>-form.tsx` (reused by `ConnectionSheet` and the standalone `/<tech>` page).
+6. Add a workspace at `src/app/<tech>/[connectionId]/` with a `layout.tsx` (uses `WorkspaceShell` + your sidebar) and one page per object kind.
+7. Add the tech to `FIRST_PAGE` in `src/components/connection-tabs.tsx` and the `FORMS` map in `src/components/connection-sheet.tsx`.
+
+See [`AGENTS.md`](AGENTS.md) for the full conventions guide (server pages, SSE patterns, driver lifecycle, base-ui notes).
 
 ## License
 

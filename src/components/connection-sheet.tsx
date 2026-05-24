@@ -17,23 +17,7 @@ import { techIconUrl, type TechMeta } from "@/lib/tech-catalog";
 import { DockerForm } from "@/app/docker/docker-form";
 import { PostgresForm } from "@/app/postgres/postgres-form";
 import { KafkaForm } from "@/app/kafka/kafka-form";
-import { RedisForm } from "@/app/redis/redis-form";
-import { MysqlForm } from "@/app/mysql/mysql-form";
 import { SqlServerForm } from "@/app/sqlserver/sqlserver-form";
-import { MongoForm } from "@/app/mongo/mongo-form";
-import { RabbitForm } from "@/app/rabbit/rabbit-form";
-import { ElasticForm } from "@/app/elastic/elastic-form";
-import { ClickhouseForm } from "@/app/clickhouse/clickhouse-form";
-import { NatsForm } from "@/app/nats/nats-form";
-import { SqliteForm } from "@/app/sqlite/sqlite-form";
-import { EtcdForm } from "@/app/etcd/etcd-form";
-import { KubernetesForm } from "@/app/kubernetes/kubernetes-form";
-import { SupabaseForm } from "@/app/supabase/supabase-form";
-import { Neo4jForm } from "@/app/neo4j/neo4j-form";
-import { QdrantForm } from "@/app/qdrant/qdrant-form";
-import { WeaviateForm } from "@/app/weaviate/weaviate-form";
-import { MilvusForm } from "@/app/milvus/milvus-form";
-import { ChromaForm } from "@/app/chroma/chroma-form";
 
 interface Props {
   tech: TechMeta | null;
@@ -54,23 +38,7 @@ const FORMS: Record<TechId, React.ComponentType<ConnectionFormProps>> = {
   docker: DockerForm,
   postgres: PostgresForm,
   kafka: KafkaForm,
-  redis: RedisForm,
-  mysql: MysqlForm,
   sqlserver: SqlServerForm,
-  mongo: MongoForm,
-  rabbit: RabbitForm,
-  elastic: ElasticForm,
-  clickhouse: ClickhouseForm,
-  nats: NatsForm,
-  sqlite: SqliteForm,
-  etcd: EtcdForm,
-  kubernetes: KubernetesForm,
-  supabase: SupabaseForm,
-  neo4j: Neo4jForm,
-  qdrant: QdrantForm,
-  weaviate: WeaviateForm,
-  milvus: MilvusForm,
-  chroma: ChromaForm,
 };
 
 export function ConnectionSheet({ tech, onOpenChange }: Props) {
