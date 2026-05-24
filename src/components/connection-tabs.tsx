@@ -17,23 +17,7 @@ const FIRST_PAGE: Record<TechId, string> = {
   docker: "containers",
   postgres: "",
   kafka: "",
-  redis: "keys",
-  mysql: "databases",
   sqlserver: "",
-  mongo: "databases",
-  rabbit: "queues",
-  elastic: "indices",
-  clickhouse: "tables",
-  nats: "streams",
-  sqlite: "tables",
-  etcd: "keys",
-  kubernetes: "pods",
-  supabase: "",
-  neo4j: "databases",
-  qdrant: "collections",
-  weaviate: "collections",
-  milvus: "collections",
-  chroma: "collections",
 };
 
 const STORAGE_KEY = "baklava:open-tabs";

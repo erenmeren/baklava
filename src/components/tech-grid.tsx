@@ -16,20 +16,6 @@ interface ConnectionsResponse {
   connections: ConnectionRecord[];
 }
 
-/**
- * Technologies enabled in this build. Everything else is hidden from the grid
- * entirely (cards + their category tabs). Add an id here to switch a tech back
- * on — the workspace + driver code is unchanged.
- */
-const ENABLED_TECH_IDS = new Set(["docker", "postgres", "kafka", "sqlserver"]);
-
-// The grid only ever shows enabled techs, so derive the catalog + the set of
-// categories that actually have something in them once, up front.
-const ENABLED_CATALOG = TECH_CATALOG.filter((t) => ENABLED_TECH_IDS.has(t.id));
-const ENABLED_CATEGORIES = TECH_CATEGORIES.filter(
-  (c) => c === "All" || ENABLED_CATALOG.some((t) => t.category === c),
-);
-
 export function TechGrid() {
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [filter, setFilter] = useState<TechCategoryFilter>("All");
@@ -61,16 +47,16 @@ export function TechGrid() {
   }, []);
 
   const categoryCounts = useMemo(() => {
-    const c: Record<string, number> = { All: ENABLED_CATALOG.length };
-    for (const t of ENABLED_CATALOG) c[t.category] = (c[t.category] ?? 0) + 1;
+    const c: Record<string, number> = { All: TECH_CATALOG.length };
+    for (const t of TECH_CATALOG) c[t.category] = (c[t.category] ?? 0) + 1;
     return c;
   }, []);
 
   const visible = useMemo(
     () =>
       filter === "All"
-        ? ENABLED_CATALOG
-        : ENABLED_CATALOG.filter((t) => t.category === filter),
+        ? TECH_CATALOG
+        : TECH_CATALOG.filter((t) => t.category === filter),
     [filter],
   );
 
@@ -80,7 +66,7 @@ export function TechGrid() {
         role="tablist"
         className="flex flex-wrap items-center gap-x-7 gap-y-1 border-b border-border/60"
       >
-        {ENABLED_CATEGORIES.map((c) => {
+        {TECH_CATEGORIES.map((c) => {
           const active = filter === c;
           return (
             <button
@@ -118,8 +104,7 @@ export function TechGrid() {
       <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
         {visible.map((tech) => {
           const count = counts[tech.id] ?? 0;
-          const isAvailable =
-            tech.status === "available" && ENABLED_TECH_IDS.has(tech.id);
+          const isAvailable = tech.status === "available";
           // Genuinely-unbuilt techs get a "soon" badge; ones that are built
           // but switched off in this build just appear dimmed.
           const isComingSoon = tech.status === "coming-soon";

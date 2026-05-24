@@ -5,11 +5,6 @@ import {
   requireNoStatementTerminator as pgRejectTerm,
 } from "./postgres";
 import {
-  quoteIdent as sqliteQuoteIdent,
-  validateIdentifier as sqliteValidateIdentifier,
-} from "./sqlite";
-import { requireSafeIdentifier as chRequireSafe } from "./clickhouse";
-import {
   SQLSERVER_DB_NAME_RE,
   validateSqlServerDatabaseName,
 } from "./sqlserver";
@@ -197,101 +192,6 @@ describe("postgres SQL safety", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SQLite
-// ─────────────────────────────────────────────────────────────────────────────
-describe("sqlite SQL safety", () => {
-  describe("quoteIdent", () => {
-    it("wraps a plain identifier in double quotes (same convention as postgres)", () => {
-      expect(sqliteQuoteIdent("users")).toBe('"users"');
-    });
-
-    it("doubles embedded double quotes", () => {
-      expect(sqliteQuoteIdent('weird"name')).toBe('"weird""name"');
-    });
-
-    it("produces an identical result to postgres quoteIdent for all inputs", () => {
-      const samples = [
-        "plain",
-        '"',
-        '""',
-        "with space",
-        "with;semi",
-        "用户",
-        "a\\b",
-      ];
-      for (const s of samples) {
-        expect(sqliteQuoteIdent(s)).toBe(pgQuoteIdent(s));
-      }
-    });
-  });
-
-  describe("validateIdentifier", () => {
-    it.each(HAPPY_IDENTIFIERS)("accepts %j", (id) => {
-      expect(sqliteValidateIdentifier(id)).toBe(id);
-    });
-
-    it("rejects identifiers starting with a digit", () => {
-      expect(() => sqliteValidateIdentifier("1users")).toThrow();
-    });
-
-    it.each(UNIVERSAL_HOSTILE)("rejects $description", ({ input }) => {
-      expect(() => sqliteValidateIdentifier(input)).toThrow();
-    });
-
-    it("trims surrounding whitespace", () => {
-      expect(sqliteValidateIdentifier("  users  ")).toBe("users");
-    });
-
-    it("normalizes trailing newlines via .trim()", () => {
-      expect(sqliteValidateIdentifier("users\n")).toBe("users");
-    });
-
-    it("error message references 'Table name'", () => {
-      expect(() => sqliteValidateIdentifier("")).toThrow(/Table name/);
-      expect(() => sqliteValidateIdentifier("1bad")).toThrow(/Table name/);
-    });
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// ClickHouse
-// ─────────────────────────────────────────────────────────────────────────────
-describe("clickhouse SQL safety", () => {
-  describe("requireSafeIdentifier", () => {
-    it.each(HAPPY_IDENTIFIERS)("accepts %j", (id) => {
-      expect(chRequireSafe(id, "table")).toBe(id);
-    });
-
-    it("rejects identifiers starting with a digit", () => {
-      expect(() => chRequireSafe("1users", "table")).toThrow();
-    });
-
-    it.each(UNIVERSAL_HOSTILE)("rejects $description", ({ input }) => {
-      expect(() => chRequireSafe(input, "table")).toThrow();
-    });
-
-    it("does NOT trim whitespace — surrounding spaces fail", () => {
-      expect(() => chRequireSafe(" users", "table")).toThrow();
-      expect(() => chRequireSafe("users ", "table")).toThrow();
-    });
-
-    it("rejects trailing newlines (no normalization)", () => {
-      expect(() => chRequireSafe("users\n", "table")).toThrow();
-      expect(() => chRequireSafe("users\r", "table")).toThrow();
-    });
-
-    it("includes the kind in the error message", () => {
-      expect(() => chRequireSafe("1bad", "column")).toThrow(/column/);
-      expect(() => chRequireSafe("bad;name", "schema")).toThrow(/schema/);
-    });
-
-    it("includes the offending input in the error message (for ops debugging)", () => {
-      expect(() => chRequireSafe("bad;input", "table")).toThrow(/bad;input/);
-    });
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
 // SQL Server
 // ─────────────────────────────────────────────────────────────────────────────
 describe("sqlserver SQL safety", () => {
@@ -364,14 +264,6 @@ describe("cross-dialect SQLi resistance matrix", () => {
     {
       name: "postgres.validateIdentifier",
       fn: (s: string) => pgValidateIdentifier(s, "Test"),
-    },
-    {
-      name: "sqlite.validateIdentifier",
-      fn: (s: string) => sqliteValidateIdentifier(s),
-    },
-    {
-      name: "clickhouse.requireSafeIdentifier",
-      fn: (s: string) => chRequireSafe(s, "Test"),
     },
     {
       name: "sqlserver.validateSqlServerDatabaseName",
