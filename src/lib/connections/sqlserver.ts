@@ -19,8 +19,18 @@ export interface SqlServerOverview {
   currentUser: string | null;
   collation: string | null;
   startTime: string | null;
+  /** Computed from startTime; 0 if startTime is unavailable. */
+  uptimeSeconds: number;
   databaseCount: number;
+  /** Sum of allocated size across ALL databases (not just topDatabases). */
+  totalDatabasesSize: number;
   topDatabases: SqlServerDatabaseSummary[];
+  // Connections (@@MAX_CONNECTIONS + sys.dm_exec_sessions).
+  maxConnections: number;
+  activeConnections: number;
+  idleConnections: number;
+  /** Buffer cache hit ratio 0..1, or null if perfmon counters aren't reachable. */
+  cacheHitRatio: number | null;
 }
 
 export interface SqlServerProbeResult {
@@ -113,7 +123,64 @@ export async function getSqlServerOverview(
       // Permissions / Azure restrictions — ignore.
     }
 
+    // Connections: @@MAX_CONNECTIONS for the cap; sessions bucketed by status.
+    // Excludes internal background sessions (is_user_process = 0).
+    let maxConnections = 0;
+    let activeConnections = 0;
+    let idleConnections = 0;
+    try {
+      const connRes = await pool.request().query<{
+        max_conn: number;
+        active: number;
+        idle: number;
+      }>(`
+        SELECT
+          @@MAX_CONNECTIONS AS max_conn,
+          SUM(CASE WHEN s.status = 'running' THEN 1 ELSE 0 END) AS active,
+          SUM(CASE WHEN s.status = 'sleeping' THEN 1 ELSE 0 END) AS idle
+        FROM sys.dm_exec_sessions s
+        WHERE s.is_user_process = 1
+      `);
+      const row = connRes.recordset[0];
+      if (row) {
+        maxConnections = Number(row.max_conn ?? 0);
+        activeConnections = Number(row.active ?? 0);
+        idleConnections = Number(row.idle ?? 0);
+      }
+    } catch {
+      // Some Azure SQL DB tiers restrict @@MAX_CONNECTIONS — leave zeros.
+    }
+
+    // Buffer cache hit ratio from perfmon. Modern SQL Server reports two
+    // counters and the ratio is hit/base, not the raw "ratio" counter (which
+    // is a moving int). Returning a 0..1 fraction so the UI formats it.
+    let cacheHitRatio: number | null = null;
+    try {
+      const cacheRes = await pool.request().query<{
+        ratio: number;
+        base: number;
+      }>(`
+        SELECT
+          (SELECT cntr_value FROM sys.dm_os_performance_counters
+            WHERE counter_name = 'Buffer cache hit ratio'
+              AND object_name LIKE '%Buffer Manager%') AS ratio,
+          (SELECT cntr_value FROM sys.dm_os_performance_counters
+            WHERE counter_name = 'Buffer cache hit ratio base'
+              AND object_name LIKE '%Buffer Manager%') AS base
+      `);
+      const row = cacheRes.recordset[0];
+      if (row && Number(row.base) > 0) {
+        cacheHitRatio = Number(row.ratio) / Number(row.base);
+      }
+    } catch {
+      // VIEW SERVER STATE permission missing — leave null.
+    }
+
     const databases = await fetchDatabaseStats(pool);
+    const totalDatabasesSize = databases.reduce((s, d) => s + d.sizeBytes, 0);
+    const uptimeSeconds = startTime
+      ? Math.max(0, Math.floor((Date.now() - new Date(startTime).getTime()) / 1000))
+      : 0;
 
     return {
       version: String(head.version).split("\n")[0]?.trim() || "unknown",
@@ -123,8 +190,14 @@ export async function getSqlServerOverview(
       currentUser: head.login_name ?? null,
       collation: head.collation ?? null,
       startTime,
+      uptimeSeconds,
       databaseCount: databases.length,
+      totalDatabasesSize,
       topDatabases: databases.slice(0, 5),
+      maxConnections,
+      activeConnections,
+      idleConnections,
+      cacheHitRatio,
     };
   });
 }
@@ -1881,6 +1954,171 @@ export async function listSqlServerBlocking(
       blockingSessionId:
         row.blocking_session_id != null ? Number(row.blocking_session_id) : null,
     }));
+  });
+}
+
+// ─── Overview extras (signals for the home dashboard) ────────────────────
+
+export interface SqlServerBlockerChain {
+  blockedSpid: number;
+  blockedFor: number; // seconds
+  blockedQuery: string | null;
+  blockedBy: number[];
+}
+
+export interface SqlServerWaitBucket {
+  /** Coarse classification (see classifyWait). */
+  bucket: string;
+  /** Aggregate wait time in seconds since last clear of sys.dm_os_wait_stats. */
+  waitSeconds: number;
+}
+
+export interface SqlServerOverviewExtras {
+  blockerCount: number;
+  blockerChains: SqlServerBlockerChain[];
+  /** Seconds since the longest-running idle-in-txn session opened its txn. */
+  oldestIdleInTxnSec: number | null;
+  /** Seconds the longest currently-running query has been executing. */
+  longestActiveQuerySec: number | null;
+  /** Top wait classes by cumulative wait time since boot/last clear. */
+  topWaits: SqlServerWaitBucket[];
+}
+
+/**
+ * Cheap dashboard signals — single round-trip per source DMV, no per-database
+ * fan-out. Pairs with getSqlServerOverview to feed the home page KPI strip,
+ * health badges, and (conditionally) the blockers panel. Failures from any
+ * one section are caught so a missing permission doesn't blank the page.
+ */
+export async function getSqlServerOverviewExtras(
+  config: SqlServerConfig,
+): Promise<SqlServerOverviewExtras> {
+  return withPool(config, async (pool) => {
+    // 1) Blockers — collapsed to one row per blocked session.
+    let blockerCount = 0;
+    const blockerChains: SqlServerBlockerChain[] = [];
+    try {
+      const res = await pool.request().query<{
+        session_id: number;
+        wait_time_ms: number | null;
+        wait_type: string | null;
+        sql_text: string | null;
+        blocking_session_id: number | null;
+      }>(`
+        SELECT
+          r.session_id,
+          r.wait_time AS wait_time_ms,
+          r.wait_type,
+          SUBSTRING(t.text, (r.statement_start_offset/2)+1,
+            ((CASE r.statement_end_offset WHEN -1 THEN DATALENGTH(t.text)
+              ELSE r.statement_end_offset END - r.statement_start_offset)/2)+1) AS sql_text,
+          r.blocking_session_id
+        FROM sys.dm_exec_requests r
+        OUTER APPLY sys.dm_exec_sql_text(r.sql_handle) t
+        WHERE r.blocking_session_id <> 0
+      `);
+      blockerCount = res.recordset.length;
+      for (const r of res.recordset) {
+        blockerChains.push({
+          blockedSpid: Number(r.session_id),
+          blockedFor: Number(r.wait_time_ms ?? 0) / 1000,
+          blockedQuery: (r.sql_text ?? "").trim() || null,
+          blockedBy: r.blocking_session_id != null ? [Number(r.blocking_session_id)] : [],
+        });
+      }
+    } catch {
+      // Permissions / DMV unavailable — skip the section.
+    }
+
+    // 2) Oldest idle-in-txn — sleeping sessions with an open transaction
+    //    that haven't issued a request in a while.
+    let oldestIdleInTxnSec: number | null = null;
+    try {
+      const res = await pool.request().query<{ secs: number | null }>(`
+        SELECT TOP 1
+          DATEDIFF(SECOND, s.last_request_end_time, GETDATE()) AS secs
+        FROM sys.dm_exec_sessions s
+        WHERE s.is_user_process = 1
+          AND s.status = 'sleeping'
+          AND s.open_transaction_count > 0
+        ORDER BY s.last_request_end_time ASC
+      `);
+      const v = res.recordset[0]?.secs;
+      oldestIdleInTxnSec = v != null ? Number(v) : null;
+    } catch {
+      // ignore
+    }
+
+    // 3) Longest currently-running query.
+    let longestActiveQuerySec: number | null = null;
+    try {
+      const res = await pool.request().query<{ secs: number | null }>(`
+        SELECT TOP 1 r.total_elapsed_time / 1000 AS secs
+        FROM sys.dm_exec_requests r
+        JOIN sys.dm_exec_sessions s ON s.session_id = r.session_id
+        WHERE s.is_user_process = 1
+          AND r.session_id <> @@SPID
+        ORDER BY r.total_elapsed_time DESC
+      `);
+      const v = res.recordset[0]?.secs;
+      longestActiveQuerySec = v != null ? Number(v) : null;
+    } catch {
+      // ignore
+    }
+
+    // 4) Top wait classes since last DBCC SQLPERF clear. Bucketed by
+    //    classifyWait so the UI shows "IO 42m, Lock 18m, Latch 9m, ..."
+    //    instead of cryptic raw wait_type names.
+    const topWaits: SqlServerWaitBucket[] = [];
+    try {
+      const res = await pool.request().query<{
+        wait_type: string;
+        wait_ms: number | string;
+      }>(`
+        SELECT wait_type, wait_time_ms AS wait_ms
+        FROM sys.dm_os_wait_stats
+        WHERE wait_type NOT IN (
+          -- Common idle/benign waits filtered per Paul Randal's guidance.
+          'BROKER_EVENTHANDLER','BROKER_RECEIVE_WAITFOR','BROKER_TASK_STOP',
+          'BROKER_TO_FLUSH','BROKER_TRANSMITTER','CHECKPOINT_QUEUE',
+          'CLR_AUTO_EVENT','CLR_MANUAL_EVENT','CLR_SEMAPHORE','DBMIRROR_DBM_EVENT',
+          'DBMIRROR_EVENTS_QUEUE','DBMIRROR_WORKER_QUEUE','DIRTY_PAGE_POLL',
+          'DISPATCHER_QUEUE_SEMAPHORE','FT_IFTS_SCHEDULER_IDLE_WAIT',
+          'FT_IFTSHC_MUTEX','HADR_CLUSAPI_CALL','HADR_FILESTREAM_IOMGR_IOCOMPLETION',
+          'HADR_LOGCAPTURE_WAIT','HADR_NOTIFICATION_DEQUEUE','HADR_TIMER_TASK',
+          'HADR_WORK_QUEUE','KSOURCE_WAKEUP','LAZYWRITER_SLEEP','LOGMGR_QUEUE',
+          'ONDEMAND_TASK_QUEUE','PWAIT_ALL_COMPONENTS_INITIALIZED','QDS_PERSIST_TASK_MAIN_LOOP_SLEEP',
+          'QDS_CLEANUP_STALE_QUERIES_TASK_MAIN_LOOP_SLEEP','REQUEST_FOR_DEADLOCK_SEARCH',
+          'SLEEP_BPOOL_FLUSH','SLEEP_DBSTARTUP','SLEEP_DCOMSTARTUP','SLEEP_MASTERDBREADY',
+          'SLEEP_MASTERMDREADY','SLEEP_MASTERUPGRADED','SLEEP_MSDBSTARTUP','SLEEP_SYSTEMTASK',
+          'SLEEP_TASK','SLEEP_TEMPDBSTARTUP','SNI_HTTP_ACCEPT','SP_SERVER_DIAGNOSTICS_SLEEP',
+          'SQLTRACE_BUFFER_FLUSH','SQLTRACE_INCREMENTAL_FLUSH_SLEEP','SQLTRACE_WAIT_ENTRIES',
+          'WAIT_FOR_RESULTS','WAITFOR','WAITFOR_TASKSHUTDOWN','WAIT_XTP_RECOVERY',
+          'WAIT_XTP_HOST_WAIT','WAIT_XTP_OFFLINE_CKPT_NEW_LOG','WAIT_XTP_CKPT_CLOSE',
+          'XE_DISPATCHER_JOIN','XE_DISPATCHER_WAIT','XE_TIMER_EVENT'
+        )
+        AND wait_time_ms > 0
+      `);
+      const bucketed = new Map<string, number>();
+      for (const r of res.recordset) {
+        const bucket = classifyWait(r.wait_type);
+        bucketed.set(bucket, (bucketed.get(bucket) ?? 0) + Number(r.wait_ms ?? 0));
+      }
+      for (const [bucket, ms] of bucketed) {
+        topWaits.push({ bucket, waitSeconds: ms / 1000 });
+      }
+      topWaits.sort((a, b) => b.waitSeconds - a.waitSeconds);
+    } catch {
+      // ignore
+    }
+
+    return {
+      blockerCount,
+      blockerChains,
+      oldestIdleInTxnSec,
+      longestActiveQuerySec,
+      topWaits: topWaits.slice(0, 6),
+    };
   });
 }
 
