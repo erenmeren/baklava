@@ -7,12 +7,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { WorkspacePage } from "@/components/workspace/workspace-page";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  AutoRefresh,
+  DEFAULT_REFRESH_INTERVALS,
+} from "@/components/workspace/auto-refresh";
 import {
   Activity,
   Database,
@@ -22,7 +19,6 @@ import {
   HourglassIcon,
   Plug,
   Plus,
-  RefreshCcw,
   ShieldAlert,
   Skull,
   SquareTerminal,
@@ -167,18 +163,12 @@ function shortVersion(productVersion: string | null, edition: string | null): st
   return parts.join(" · ") || "SQL Server";
 }
 
-// ─── Refresh control ─────────────────────────────────────────────────────
-
-const REFRESH_OPTIONS: { label: string; value: string; ms: number | null }[] = [
-  { label: "Off", value: "off", ms: null },
-  { label: "5s", value: "5", ms: 5_000 },
-  { label: "15s", value: "15", ms: 15_000 },
-  { label: "30s", value: "30", ms: 30_000 },
-  { label: "1m", value: "60", ms: 60_000 },
-  { label: "5m", value: "300", ms: 300_000 },
-];
-
 // ─── Main component ──────────────────────────────────────────────────────
+//
+// The AutoRefresh pill below defaults to paused (`defaultPlaying={false}`).
+// SQL Server is the tech most likely to be a real managed instance whose
+// queries cost money, so an idle overview tab generates zero background
+// traffic until the user explicitly hits play (or the manual Refresh).
 
 export function OverviewClient({
   connectionId,
@@ -191,7 +181,6 @@ export function OverviewClient({
   const [topQueries, setTopQueries] = useState<ExpensiveQuery[] | null>(null);
   const [activity, setActivity] = useState<ActivityRow[] | null>(null);
   const [loading, setLoading] = useState(false);
-  const [refresh, setRefresh] = useState<string>("off");
   const [createOpen, setCreateOpen] = useState(false);
   const [killingPid, setKillingPid] = useState<number | null>(null);
 
@@ -226,13 +215,6 @@ export function OverviewClient({
   useEffect(() => {
     void loadAll();
   }, [loadAll]);
-
-  useEffect(() => {
-    const opt = REFRESH_OPTIONS.find((o) => o.value === refresh);
-    if (!opt?.ms) return;
-    const id = setInterval(loadAll, opt.ms);
-    return () => clearInterval(id);
-  }, [loadAll, refresh]);
 
   // ─── Derived metrics ──────────────────────────────────────────────────
   const connTotal = overview
@@ -345,45 +327,13 @@ export function OverviewClient({
       }
       actions={
         <>
-          <div className="inline-flex items-center gap-1.5">
-            <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
-              Auto
-            </span>
-            <Select value={refresh} onValueChange={(v) => v && setRefresh(v)}>
-              <SelectTrigger
-                size="sm"
-                className="h-7 w-[78px] font-mono text-xs"
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {REFRESH_OPTIONS.map((o) => (
-                  <SelectItem
-                    key={o.value}
-                    value={o.value}
-                    className="font-mono text-xs"
-                  >
-                    {o.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {refresh !== "off" ? (
-              <span
-                className="size-1.5 rounded-full bg-emerald-500 status-pulse"
-                title="auto-refresh on"
-              />
-            ) : null}
-          </div>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={loadAll}
-            disabled={loading}
-          >
-            <RefreshCcw className={cn("size-3.5", loading && "animate-spin")} />
-            Refresh
-          </Button>
+          <AutoRefresh
+            intervalMs={15_000}
+            intervals={DEFAULT_REFRESH_INTERVALS}
+            defaultPlaying={false}
+            onTick={loadAll}
+            loading={loading}
+          />
           <Button size="sm" onClick={() => setCreateOpen(true)}>
             <Plus className="size-3.5" />
             New database

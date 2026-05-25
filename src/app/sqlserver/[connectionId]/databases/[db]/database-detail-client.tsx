@@ -2,14 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { WorkspacePage } from "@/components/workspace/workspace-page";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { ArrowDownUp, ArrowLeft, RefreshCcw, Search } from "lucide-react";
+import { ArrowDownUp, ArrowLeft, Search } from "lucide-react";
+import { RefreshButton } from "@/components/workspace/auto-refresh";
 
 interface DatabaseDetail {
   name: string;
@@ -173,15 +173,7 @@ export function DatabaseDetailClient({ connectionId, database }: Props) {
               {data.database.state.toLowerCase()}
             </span>
           ) : null}
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={load}
-            disabled={loading}
-          >
-            <RefreshCcw className={cn("size-3.5", loading && "animate-spin")} />
-            Refresh
-          </Button>
+          <RefreshButton onClick={load} loading={loading} />
         </>
       }
     >

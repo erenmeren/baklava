@@ -34,7 +34,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { WorkspacePage } from "@/components/workspace/workspace-page";
 import { toast } from "sonner";
-import { Loader2, Plus, RefreshCcw, Trash2 } from "lucide-react";
+import { Loader2, Plus, Trash2 } from "lucide-react";
+import { RefreshButton } from "@/components/workspace/auto-refresh";
 
 interface NetworkSummary {
   id: string;
@@ -136,10 +137,7 @@ export function NetworksClient({ connectionId }: Props) {
       }
       actions={
         <>
-          <Button size="sm" variant="outline" onClick={load}>
-            <RefreshCcw className="size-3.5" />
-            Refresh
-          </Button>
+          <RefreshButton onClick={load} />
           <Button size="sm" onClick={() => setCreateOpen(true)}>
             <Plus className="size-3.5" />
             Create

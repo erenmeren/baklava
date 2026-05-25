@@ -19,10 +19,10 @@ import {
   ChevronRight,
   Loader2,
   Lock,
-  RefreshCcw,
   Skull,
   Zap,
 } from "lucide-react";
+import { RefreshButton } from "@/components/workspace/auto-refresh";
 
 interface LockEdge {
   blockedPid: number;
@@ -226,16 +226,7 @@ export function LocksClient({ connectionId }: { connectionId: string }) {
             ? "No blocking sessions"
             : `${forest.length} root blocker${forest.length === 1 ? "" : "s"} · ${totalVictims} session${totalVictims === 1 ? "" : "s"} waiting`
       }
-      actions={
-        <Button size="sm" variant="outline" onClick={load} disabled={loading}>
-          {loading ? (
-            <Loader2 className="size-3.5 animate-spin" />
-          ) : (
-            <RefreshCcw className="size-3.5" />
-          )}
-          Refresh
-        </Button>
-      }
+      actions={<RefreshButton onClick={load} loading={loading} />}
     >
       {edges && edges.length === 0 ? (
         <div className="mx-6 rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-8 text-center">

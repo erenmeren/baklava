@@ -5,7 +5,10 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { WorkspacePage } from "@/components/workspace/workspace-page";
-import { AutoRefresh } from "@/components/workspace/auto-refresh";
+import {
+  AutoRefresh,
+  DEFAULT_REFRESH_INTERVALS,
+} from "@/components/workspace/auto-refresh";
 import { Sparkline } from "@/components/workspace/sparkline";
 import {
   Activity,
@@ -373,6 +376,7 @@ export function OverviewClient({
         <>
           <AutoRefresh
             intervalMs={REFRESH_MS}
+            intervals={DEFAULT_REFRESH_INTERVALS}
             onTick={loadAll}
             loading={loading}
           />

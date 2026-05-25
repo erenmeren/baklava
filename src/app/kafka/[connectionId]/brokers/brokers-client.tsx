@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Sparkline } from "@/components/workspace/sparkline";
 import {
@@ -14,6 +13,10 @@ import {
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { WorkspacePage } from "@/components/workspace/workspace-page";
+import {
+  AutoRefresh,
+  DEFAULT_REFRESH_INTERVALS,
+} from "@/components/workspace/auto-refresh";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import {
@@ -21,7 +24,6 @@ import {
   CheckCircle2,
   HardDrive,
   Loader2,
-  RefreshCcw,
   Shuffle,
 } from "lucide-react";
 
@@ -136,10 +138,10 @@ export function BrokersClient({ connectionId }: Props) {
   useEffect(() => {
     void load();
     void loadHealth();
-    // Keep the activity ring buffer ticking so the per-broker sparklines
-    // grow even when the user just sits on the page.
-    const id = setInterval(load, ACTIVITY_POLL_MS);
-    return () => clearInterval(id);
+  }, [load, loadHealth]);
+
+  const tick = useCallback(async () => {
+    await Promise.all([load(), loadHealth()]);
   }, [load, loadHealth]);
 
   const maxLog =
@@ -154,17 +156,12 @@ export function BrokersClient({ connectionId }: Props) {
           : undefined
       }
       actions={
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => {
-            void load();
-            void loadHealth();
-          }}
-        >
-          <RefreshCcw className="size-3.5" />
-          Refresh
-        </Button>
+        <AutoRefresh
+          intervalMs={ACTIVITY_POLL_MS}
+          intervals={DEFAULT_REFRESH_INTERVALS}
+          onTick={tick}
+          loading={brokers === null}
+        />
       }
     >
       <div className="space-y-6">

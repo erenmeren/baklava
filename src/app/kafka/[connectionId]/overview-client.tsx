@@ -2,15 +2,17 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { WorkspacePage } from "@/components/workspace/workspace-page";
+import {
+  AutoRefresh,
+  DEFAULT_REFRESH_INTERVALS,
+} from "@/components/workspace/auto-refresh";
 import { ClusterPulse } from "./cluster-pulse";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
-  RefreshCcw,
   Activity,
   AlertTriangle,
   Database,
@@ -86,11 +88,6 @@ export function OverviewClient({ connectionId }: Props) {
     load();
   }, [load]);
 
-  // Auto-refresh every 15s so the page feels alive
-  useEffect(() => {
-    const id = setInterval(load, 15_000);
-    return () => clearInterval(id);
-  }, [load]);
 
   return (
     <WorkspacePage
@@ -102,16 +99,12 @@ export function OverviewClient({ connectionId }: Props) {
       }
       actions={
         <>
-          <span className="inline-flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
-            <span className="size-1.5 rounded-full bg-emerald-500 status-pulse" />
-            auto · 15s
-          </span>
-          <Button size="sm" variant="outline" onClick={load} disabled={loading}>
-            <RefreshCcw
-              className={cn("size-3.5", loading && "animate-spin")}
-            />
-            Refresh
-          </Button>
+          <AutoRefresh
+            intervalMs={15_000}
+            intervals={DEFAULT_REFRESH_INTERVALS}
+            onTick={load}
+            loading={loading}
+          />
         </>
       }
     >
