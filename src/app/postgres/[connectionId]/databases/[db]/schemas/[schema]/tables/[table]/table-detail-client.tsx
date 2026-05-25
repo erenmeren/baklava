@@ -26,11 +26,11 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { WorkspacePage } from "@/components/workspace/workspace-page";
+import { RefreshButton } from "@/components/workspace/auto-refresh";
 import {
   Loader2,
   ChevronLeft,
   ChevronRight,
-  RefreshCcw,
   Pencil,
   Plus,
   Trash2,
@@ -450,19 +450,10 @@ export function TableDetailClient({
                 <Plus className="size-3.5" />
                 Insert row
               </Button>
-              <Button
-                size="sm"
-                variant="outline"
+              <RefreshButton
                 onClick={() => loadData(pageOffset)}
-                disabled={loadingData}
-              >
-                {loadingData ? (
-                  <Loader2 className="size-3.5 animate-spin" />
-                ) : (
-                  <RefreshCcw className="size-3.5" />
-                )}
-                Refresh
-              </Button>
+                loading={loadingData}
+              />
               <Button
                 size="icon"
                 variant="outline"

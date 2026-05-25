@@ -26,13 +26,13 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { WorkspacePage } from "@/components/workspace/workspace-page";
+import { RefreshButton } from "@/components/workspace/auto-refresh";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
   ArrowDownUp,
   Loader2,
   Plus,
-  RefreshCcw,
   Search,
   Trash2,
 } from "lucide-react";
@@ -189,17 +189,7 @@ export function TopicsClient({ connectionId }: Props) {
       }
       actions={
         <>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={load}
-            disabled={loading}
-          >
-            <RefreshCcw
-              className={cn("size-3.5", loading && "animate-spin")}
-            />
-            Refresh
-          </Button>
+          <RefreshButton onClick={load} loading={loading} />
           <Button size="sm" onClick={() => setCreateOpen(true)}>
             <Plus className="size-3.5" />
             New topic

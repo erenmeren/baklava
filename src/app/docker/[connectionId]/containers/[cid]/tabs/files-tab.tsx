@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { formatBytes } from "@/components/workspace/format";
 import { RelativeTime } from "@/components/workspace/relative-time";
+import { RefreshButton } from "@/components/workspace/auto-refresh";
 import { toast } from "sonner";
 import {
   ArrowUp,
@@ -20,8 +21,6 @@ import {
   FileText,
   FolderOpen,
   Link2,
-  Loader2,
-  RefreshCcw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -183,19 +182,7 @@ export function FilesTab({ connectionId, cid, running }: Props) {
           className="font-mono text-xs"
           placeholder="/"
         />
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => list(path)}
-          disabled={loading}
-        >
-          {loading ? (
-            <Loader2 className="size-3.5 animate-spin" />
-          ) : (
-            <RefreshCcw className="size-3.5" />
-          )}
-          Refresh
-        </Button>
+        <RefreshButton onClick={() => list(path)} loading={loading} />
       </div>
 
       {/* Breadcrumb */}

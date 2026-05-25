@@ -16,7 +16,6 @@ import {
   Hash,
   Link2,
   ListOrdered,
-  Loader2,
   Lock,
   MoreHorizontal,
   Plus,
@@ -31,6 +30,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { RefreshButton } from "@/components/workspace/auto-refresh";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -384,13 +384,13 @@ export function SqlServerSidebar({ connectionId, defaultDatabase }: Props) {
           >
             <Plus className="size-3" />
           </Button>
-          <Button size="icon-xs" variant="ghost" onClick={refreshAll} title="Refresh">
-            {loadingDbs ? (
-              <Loader2 className="size-3 animate-spin" />
-            ) : (
-              <RefreshCcw className="size-3" />
-            )}
-          </Button>
+          <RefreshButton
+            onClick={refreshAll}
+            loading={loadingDbs}
+            iconOnly
+            size="icon-xs"
+            variant="ghost"
+          />
         </div>
       </div>
 

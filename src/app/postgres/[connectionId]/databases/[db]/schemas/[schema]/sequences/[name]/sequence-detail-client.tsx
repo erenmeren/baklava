@@ -15,7 +15,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Loader2, Pencil, RefreshCcw, Trash } from "lucide-react";
+import { Loader2, Pencil, Trash } from "lucide-react";
+import { RefreshButton } from "@/components/workspace/auto-refresh";
 import { toast } from "sonner";
 import {
   SequenceFormDialog,
@@ -121,19 +122,7 @@ export function SequenceDetailClient({
       }
       actions={
         <>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => load()}
-            disabled={loading}
-          >
-            {loading ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <RefreshCcw className="size-3.5" />
-            )}
-            Refresh
-          </Button>
+          <RefreshButton onClick={load} loading={loading} />
           <Button
             size="sm"
             variant="outline"
