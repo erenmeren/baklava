@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -21,13 +21,16 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { WorkspacePage } from "@/components/workspace/workspace-page";
+import {
+  AutoRefresh,
+  DEFAULT_REFRESH_INTERVALS,
+} from "@/components/workspace/auto-refresh";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import {
   Activity,
   Ban,
   Loader2,
-  RefreshCcw,
   Skull,
 } from "lucide-react";
 
@@ -54,7 +57,6 @@ interface ActivitySnapshot {
   rows: ActivityRow[];
 }
 
-type RefreshInterval = "off" | "2" | "5" | "15";
 
 const STATE_TONES: Record<string, string> = {
   active: "bg-emerald-500/10 text-emerald-600 border-emerald-500/30",
@@ -122,11 +124,9 @@ export function ActivityClient({ connectionId }: { connectionId: string }) {
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState("");
   const [stateFilter, setStateFilter] = useState<"all" | "active" | "idle" | "idle-in-tx">("all");
-  const [refresh, setRefresh] = useState<RefreshInterval>("off");
   const [waitFilter, setWaitFilter] = useState<WaitClass | null>(null);
   const [confirm, setConfirm] = useState<{ pid: number; action: "cancel" | "terminate" } | null>(null);
   const [busy, setBusy] = useState(false);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -144,19 +144,6 @@ export function ActivityClient({ connectionId }: { connectionId: string }) {
     load();
   }, [load]);
 
-  useEffect(() => {
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-    if (refresh !== "off") {
-      const ms = Number(refresh) * 1000;
-      timerRef.current = setInterval(() => load(), ms);
-    }
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, [refresh, load]);
 
   const rows = useMemo(() => {
     if (!snapshot) return [] as ActivityRow[];
@@ -248,40 +235,13 @@ export function ActivityClient({ connectionId }: { connectionId: string }) {
           : "Loading sessions…"
       }
       actions={
-        <>
-          <label className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-            Refresh
-            <select
-              value={refresh}
-              onChange={(e) => setRefresh(e.target.value as RefreshInterval)}
-              className="h-8 rounded-md border border-input bg-transparent px-2 text-xs font-mono"
-            >
-              <option value="off">off</option>
-              <option value="2">2s</option>
-              <option value="5">5s</option>
-              <option value="15">15s</option>
-            </select>
-          </label>
-          {refresh !== "off" ? (
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-mono uppercase tracking-wider text-emerald-600">
-              <span className="size-1.5 rounded-full bg-emerald-500 status-pulse" />
-              live
-            </span>
-          ) : null}
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={load}
-            disabled={loading}
-          >
-            {loading ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <RefreshCcw className="size-3.5" />
-            )}
-            Refresh now
-          </Button>
-        </>
+        <AutoRefresh
+          intervalMs={5_000}
+          intervals={DEFAULT_REFRESH_INTERVALS}
+          defaultPlaying={false}
+          onTick={load}
+          loading={loading}
+        />
       }
     >
       <div className="flex flex-col gap-3">

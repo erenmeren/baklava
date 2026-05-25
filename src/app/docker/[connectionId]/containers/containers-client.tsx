@@ -26,6 +26,10 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { RelativeTime } from "@/components/workspace/relative-time";
+import {
+  AutoRefresh,
+  DEFAULT_REFRESH_INTERVALS,
+} from "@/components/workspace/auto-refresh";
 import { CreateContainerDialog } from "./create-container-dialog";
 import { ContainerLogsDock } from "./container-logs-dock";
 import { cn } from "@/lib/utils";
@@ -38,7 +42,6 @@ import {
   Square,
   RotateCcw,
   Trash2,
-  RefreshCcw,
 } from "lucide-react";
 
 interface ContainerSummary {
@@ -86,8 +89,6 @@ export function ContainersClient({ connectionId }: Props) {
 
   useEffect(() => {
     load();
-    const i = setInterval(load, 5000);
-    return () => clearInterval(i);
   }, [load]);
 
   // Keep the docked logs panel's header in sync with poll updates.
@@ -198,10 +199,12 @@ export function ContainersClient({ connectionId }: Props) {
               Include stopped
             </Label>
           </div>
-          <Button size="sm" variant="outline" onClick={load}>
-            <RefreshCcw className="size-3.5" />
-            Refresh
-          </Button>
+          <AutoRefresh
+            intervalMs={5_000}
+            intervals={DEFAULT_REFRESH_INTERVALS}
+            onTick={load}
+            loading={containers === null}
+          />
           <Button size="sm" onClick={() => setCreateOpen(true)}>
             <Plus className="size-3.5" />
             Create

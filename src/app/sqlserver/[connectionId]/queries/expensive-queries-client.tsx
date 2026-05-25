@@ -1,11 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { WorkspacePage } from "@/components/workspace/workspace-page";
+import { RefreshButton } from "@/components/workspace/auto-refresh";
 import { toast } from "sonner";
-import { RefreshCcw } from "lucide-react";
 
 interface Query {
   text: string;
@@ -50,10 +49,7 @@ export function ExpensiveQueriesClient({ connectionId }: { connectionId: string 
       title="Top queries"
       description="Plan-cache queries ranked by total CPU — the parameterized SQL your apps and ORMs actually ran (sys.dm_exec_query_stats)."
       actions={
-        <Button size="sm" variant="outline" onClick={load} disabled={loading}>
-          <RefreshCcw className={loading ? "size-3.5 animate-spin" : "size-3.5"} />
-          Refresh
-        </Button>
+        <RefreshButton onClick={load} loading={loading} />
       }
     >
       {!queries ? (

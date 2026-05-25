@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -21,7 +20,8 @@ import {
 } from "@/components/ui/table";
 import { WorkspacePage } from "@/components/workspace/workspace-page";
 import { toast } from "sonner";
-import { AlertTriangle, RefreshCcw, Server, Users } from "lucide-react";
+import { AlertTriangle, Server, Users } from "lucide-react";
+import { RefreshButton } from "@/components/workspace/auto-refresh";
 
 interface Login {
   name: string;
@@ -104,10 +104,7 @@ export function SecurityClient({
               ))}
             </SelectContent>
           </Select>
-          <Button size="sm" variant="outline" onClick={load} disabled={loading}>
-            <RefreshCcw className={loading ? "size-3.5 animate-spin" : "size-3.5"} />
-            Refresh
-          </Button>
+          <RefreshButton onClick={load} loading={loading} />
         </div>
       }
     >

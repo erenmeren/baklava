@@ -35,7 +35,8 @@ import {
 import { WorkspacePage } from "@/components/workspace/workspace-page";
 import { RelativeTime } from "@/components/workspace/relative-time";
 import { toast } from "sonner";
-import { Loader2, Plus, RefreshCcw, Trash2, KeyRound } from "lucide-react";
+import { Loader2, Plus, Trash2, KeyRound } from "lucide-react";
+import { RefreshButton } from "@/components/workspace/auto-refresh";
 
 interface Registry {
   id: string;
@@ -151,10 +152,7 @@ export function RegistriesClient({ connectionId }: Props) {
       }
       actions={
         <>
-          <Button size="sm" variant="outline" onClick={load}>
-            <RefreshCcw className="size-3.5" />
-            Refresh
-          </Button>
+          <RefreshButton onClick={load} />
           <Button size="sm" onClick={() => setOpen(true)}>
             <Plus className="size-3.5" />
             Add credential

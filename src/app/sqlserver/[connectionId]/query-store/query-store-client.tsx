@@ -12,7 +12,8 @@ import {
 } from "@/components/ui/select";
 import { WorkspacePage } from "@/components/workspace/workspace-page";
 import { toast } from "sonner";
-import { Pin, PinOff, RefreshCcw } from "lucide-react";
+import { Pin, PinOff } from "lucide-react";
+import { RefreshButton } from "@/components/workspace/auto-refresh";
 
 interface QSQuery {
   queryId: number;
@@ -116,10 +117,7 @@ export function QueryStoreClient({
               ))}
             </SelectContent>
           </Select>
-          <Button size="sm" variant="outline" onClick={load} disabled={loading}>
-            <RefreshCcw className={loading ? "size-3.5 animate-spin" : "size-3.5"} />
-            Refresh
-          </Button>
+          <RefreshButton onClick={load} loading={loading} />
         </div>
       }
     >

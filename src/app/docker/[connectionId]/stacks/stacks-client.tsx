@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -15,8 +14,12 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { WorkspacePage } from "@/components/workspace/workspace-page";
 import { RelativeTime } from "@/components/workspace/relative-time";
+import {
+  AutoRefresh,
+  DEFAULT_REFRESH_INTERVALS,
+} from "@/components/workspace/auto-refresh";
 import { toast } from "sonner";
-import { Plus, RefreshCcw, Layers } from "lucide-react";
+import { Plus, Layers } from "lucide-react";
 
 interface StackSummary {
   name: string;
@@ -44,8 +47,6 @@ export function StacksClient({ connectionId }: Props) {
 
   useEffect(() => {
     load();
-    const i = setInterval(load, 5000);
-    return () => clearInterval(i);
   }, [load]);
 
   return (
@@ -58,10 +59,12 @@ export function StacksClient({ connectionId }: Props) {
       }
       actions={
         <>
-          <Button size="sm" variant="outline" onClick={load}>
-            <RefreshCcw className="size-3.5" />
-            Refresh
-          </Button>
+          <AutoRefresh
+            intervalMs={5_000}
+            intervals={DEFAULT_REFRESH_INTERVALS}
+            onTick={load}
+            loading={stacks === null}
+          />
           <Link
             href={`/docker/${connectionId}/stacks/new`}
             className="inline-flex items-center gap-1 text-sm rounded-md px-3 py-1.5 bg-primary text-primary-foreground hover:opacity-90"

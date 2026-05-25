@@ -23,7 +23,8 @@ import {
 import { WorkspacePage } from "@/components/workspace/workspace-page";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { Activity, Loader2, RefreshCcw, Skull } from "lucide-react";
+import { Activity, Loader2, Skull } from "lucide-react";
+import { RefreshButton } from "@/components/workspace/auto-refresh";
 
 interface Session {
   sessionId: number;
@@ -160,16 +161,7 @@ export function ActivityClient({ connectionId }: { connectionId: string }) {
           ? `${rows.length} session${rows.length === 1 ? "" : "s"}${blocked > 0 ? ` · ${blocked} blocked` : ""}`
           : "Loading sessions…"
       }
-      actions={
-        <Button size="sm" variant="outline" onClick={load} disabled={loading}>
-          {loading ? (
-            <Loader2 className="size-3.5 animate-spin" />
-          ) : (
-            <RefreshCcw className="size-3.5" />
-          )}
-          Refresh
-        </Button>
-      }
+      actions={<RefreshButton onClick={load} loading={loading} />}
     >
       <div className="flex flex-col gap-3">
         <div className="flex items-center gap-2 flex-wrap">

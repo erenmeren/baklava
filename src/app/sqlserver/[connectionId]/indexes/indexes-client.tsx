@@ -21,7 +21,8 @@ import {
 import { WorkspacePage } from "@/components/workspace/workspace-page";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { AlertTriangle, Copy, Loader2, RefreshCcw, Wrench } from "lucide-react";
+import { AlertTriangle, Copy, Loader2, Wrench } from "lucide-react";
+import { RefreshButton } from "@/components/workspace/auto-refresh";
 
 interface Fragmentation {
   schema: string;
@@ -133,10 +134,7 @@ export function IndexesClient({
               ))}
             </SelectContent>
           </Select>
-          <Button size="sm" variant="outline" onClick={load} disabled={loading}>
-            <RefreshCcw className={loading ? "size-3.5 animate-spin" : "size-3.5"} />
-            Refresh
-          </Button>
+          <RefreshButton onClick={load} loading={loading} />
         </div>
       }
     >

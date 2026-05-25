@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
@@ -11,7 +10,8 @@ import { Switch } from "@/components/ui/switch";
 import { WorkspacePage } from "@/components/workspace/workspace-page";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { ArrowDownUp, RefreshCcw, Search } from "lucide-react";
+import { ArrowDownUp, Search } from "lucide-react";
+import { RefreshButton } from "@/components/workspace/auto-refresh";
 
 interface DatabaseSummary {
   name: string;
@@ -104,17 +104,7 @@ export function DatabasesClient({ connectionId }: Props) {
             : `${filtered.length} of ${databases.length}`
           : undefined
       }
-      actions={
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={load}
-          disabled={loading}
-        >
-          <RefreshCcw className={cn("size-3.5", loading && "animate-spin")} />
-          Refresh
-        </Button>
-      }
+      actions={<RefreshButton onClick={load} loading={loading} />}
     >
       <div className="space-y-3">
         <div className="flex items-center gap-2 flex-wrap">

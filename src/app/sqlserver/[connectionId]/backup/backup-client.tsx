@@ -22,7 +22,8 @@ import {
 } from "@/components/ui/table";
 import { WorkspacePage } from "@/components/workspace/workspace-page";
 import { toast } from "sonner";
-import { DatabaseBackup, Loader2, RefreshCcw } from "lucide-react";
+import { DatabaseBackup, Loader2 } from "lucide-react";
+import { RefreshButton } from "@/components/workspace/auto-refresh";
 
 interface HistoryRow {
   type: string;
@@ -128,10 +129,7 @@ export function BackupClient({
               ))}
             </SelectContent>
           </Select>
-          <Button size="sm" variant="outline" onClick={load} disabled={loading}>
-            <RefreshCcw className={loading ? "size-3.5 animate-spin" : "size-3.5"} />
-            Refresh
-          </Button>
+          <RefreshButton onClick={load} loading={loading} />
         </div>
       }
     >

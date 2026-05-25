@@ -23,10 +23,10 @@ import {
   Network,
   Cpu,
   Layers,
-  RefreshCcw,
   Trash2,
   Loader2,
 } from "lucide-react";
+import { RefreshButton } from "@/components/workspace/auto-refresh";
 
 interface SystemInfo {
   serverVersion: string;
@@ -111,12 +111,7 @@ export function SystemClient({ connectionId }: Props) {
     <WorkspacePage
       title="System"
       description={info ? `${info.name} · ${info.os}` : undefined}
-      actions={
-        <Button size="sm" variant="outline" onClick={load}>
-          <RefreshCcw className="size-3.5" />
-          Refresh
-        </Button>
-      }
+      actions={<RefreshButton onClick={load} />}
     >
       {!info ? (
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">

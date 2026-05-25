@@ -41,10 +41,10 @@ import {
   Download,
   Hammer,
   Loader2,
-  RefreshCcw,
   Search,
   Trash2,
 } from "lucide-react";
+import { RefreshButton } from "@/components/workspace/auto-refresh";
 
 interface ImageSummary {
   id: string;
@@ -130,10 +130,7 @@ export function ImagesClient({ connectionId }: Props) {
       }
       actions={
         <>
-          <Button size="sm" variant="outline" onClick={load}>
-            <RefreshCcw className="size-3.5" />
-            Refresh
-          </Button>
+          <RefreshButton onClick={load} />
           <Button size="sm" variant="outline" onClick={() => setHubOpen(true)}>
             <Search className="size-3.5" />
             Search Hub
