@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { WorkspacePage } from "@/components/workspace/workspace-page";
 import { formatBytes } from "@/components/workspace/format";
+import { RefreshButton } from "@/components/workspace/auto-refresh";
 import { NetworksTab } from "./tabs/networks-tab";
 import { FilesTab } from "./tabs/files-tab";
 import { TerminalTab } from "./tabs/terminal-tab";
@@ -19,7 +20,6 @@ import {
   Loader2,
   PauseIcon,
   Play,
-  RefreshCcw,
   RotateCcw,
   Square,
   TerminalSquare,
@@ -351,10 +351,7 @@ export function ContainerDetailClient({ connectionId, cid }: Props) {
             <p className="text-xs text-muted-foreground">
               Live stats · refreshes every 3s
             </p>
-            <Button size="sm" variant="outline" onClick={loadStats}>
-              <RefreshCcw className="size-3.5" />
-              Refresh
-            </Button>
+            <RefreshButton onClick={loadStats} />
           </div>
           {statsErr ? (
             <p className="text-sm text-destructive font-mono break-words">

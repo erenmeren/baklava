@@ -18,7 +18,6 @@ import {
   Loader2,
   Pencil,
   Plus,
-  RefreshCcw,
   Shield,
   ShieldCheck,
   Trash2,
@@ -26,6 +25,7 @@ import {
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { RoleFormDialog, type RoleFormSeed } from "../role-form-dialog";
+import { RefreshButton } from "@/components/workspace/auto-refresh";
 
 interface RoleInfo {
   name: string;
@@ -135,19 +135,7 @@ export function RolesClient({ connectionId }: Props) {
       }
       actions={
         <>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => load()}
-            disabled={loading}
-          >
-            {loading ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <RefreshCcw className="size-3.5" />
-            )}
-            Refresh
-          </Button>
+          <RefreshButton onClick={load} loading={loading} />
           <Button size="sm" onClick={() => setCreateOpen(true)}>
             <Plus className="size-3.5" />
             New role

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { RefreshButton } from "@/components/workspace/auto-refresh";
 import { cn } from "@/lib/utils";
 import {
   ArrowDownToLine,
@@ -12,7 +13,6 @@ import {
   Eraser,
   Pause,
   Play,
-  RefreshCcw,
   Search,
   TerminalSquare,
 } from "lucide-react";
@@ -454,14 +454,13 @@ export function LogsTab({ connectionId, cid, active, onOpenTerminal }: Props) {
             Terminal
           </Button>
         ) : null}
-        <Button
-          size="xs"
-          variant="ghost"
+        <RefreshButton
           onClick={reconnect}
-          title="Reload from server"
-        >
-          <RefreshCcw className="size-3" />
-        </Button>
+          iconOnly
+          size="icon-xs"
+          variant="ghost"
+          label="Reload from server"
+        />
       </div>
 
       {errorMessage ? (

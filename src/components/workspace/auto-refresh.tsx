@@ -23,9 +23,13 @@ interface RefreshButtonProps {
   loading?: boolean;
   /** Text label shown next to the icon. Defaults to "Refresh". */
   label?: string;
-  /** Hide the label (icon-only). Useful in tight headers. */
+  /** Hide the label (icon-only). Useful in tight headers / sidebars. */
   iconOnly?: boolean;
-  size?: "xs" | "sm" | "default";
+  /**
+   * Size variant. For text+icon: "xs" | "sm" (default) | "default".
+   * For icon-only: "icon-xs" | "icon-sm" (default) | "icon-lg".
+   */
+  size?: "xs" | "sm" | "default" | "icon-xs" | "icon-sm" | "icon-lg";
   variant?: "outline" | "ghost" | "default";
   className?: string;
 }
@@ -35,13 +39,19 @@ export function RefreshButton({
   loading,
   label = "Refresh",
   iconOnly,
-  size = "sm",
+  size,
   variant = "outline",
   className,
 }: RefreshButtonProps) {
+  // Pick a sensible default for the size based on whether there's a label.
+  const resolvedSize = size ?? (iconOnly ? "icon-sm" : "sm");
+  // Icon scales with the button size so the proportions look right in
+  // tight sidebars (xs) and in workspace headers (sm/default).
+  const iconClass =
+    resolvedSize === "icon-xs" || resolvedSize === "xs" ? "size-3" : "size-3.5";
   return (
     <Button
-      size={iconOnly ? "icon-sm" : size}
+      size={resolvedSize}
       variant={variant}
       onClick={() => void onClick()}
       disabled={loading}
@@ -49,7 +59,7 @@ export function RefreshButton({
       aria-label={iconOnly ? label : undefined}
       className={className}
     >
-      <RefreshCcw className={cn("size-3.5", loading && "animate-spin")} />
+      <RefreshCcw className={cn(iconClass, loading && "animate-spin")} />
       {iconOnly ? null : label}
     </Button>
   );

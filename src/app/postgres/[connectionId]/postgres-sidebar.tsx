@@ -31,6 +31,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { RefreshButton } from "@/components/workspace/auto-refresh";
 import { CreateTableDialog } from "./create-table-dialog";
 import { CreateSchemaDialog } from "./create-schema-dialog";
 import { CreateDatabaseDialog } from "./create-database-dialog";
@@ -387,18 +388,13 @@ export function PostgresSidebar({ connectionId, defaultDatabase }: Props) {
           >
             <Plus className="size-3" />
           </Button>
-          <Button
+          <RefreshButton
+            onClick={refreshAll}
+            loading={loadingDbs}
+            iconOnly
             size="icon-xs"
             variant="ghost"
-            onClick={refreshAll}
-            title="Refresh"
-          >
-            {loadingDbs ? (
-              <Loader2 className="size-3 animate-spin" />
-            ) : (
-              <RefreshCcw className="size-3" />
-            )}
-          </Button>
+          />
         </div>
       </div>
 

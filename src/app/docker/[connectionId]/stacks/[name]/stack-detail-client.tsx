@@ -28,6 +28,10 @@ import {
 } from "@/components/ui/alert-dialog";
 import { WorkspacePage } from "@/components/workspace/workspace-page";
 import { RelativeTime } from "@/components/workspace/relative-time";
+import {
+  AutoRefresh,
+  DEFAULT_REFRESH_INTERVALS,
+} from "@/components/workspace/auto-refresh";
 import { toast } from "sonner";
 import {
   ArrowLeft,
@@ -82,8 +86,6 @@ export function StackDetailClient({ connectionId, name }: Props) {
 
   useEffect(() => {
     load();
-    const i = setInterval(load, 4000);
-    return () => clearInterval(i);
   }, [load]);
 
   const action = async (act: "start" | "stop" | "restart") => {
@@ -162,6 +164,12 @@ export function StackDetailClient({ connectionId, name }: Props) {
             <ArrowLeft className="size-3.5" />
             Back
           </Link>
+          <AutoRefresh
+            intervalMs={4_000}
+            intervals={DEFAULT_REFRESH_INTERVALS}
+            onTick={load}
+            loading={!data}
+          />
           {allRunning ? (
             <>
               <Button

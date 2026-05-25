@@ -21,6 +21,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { WorkspacePage } from "@/components/workspace/workspace-page";
+import { RefreshButton } from "@/components/workspace/auto-refresh";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import {
@@ -29,7 +30,6 @@ import {
   Loader2,
   Package,
   Plus,
-  RefreshCcw,
   Search,
   Trash2,
 } from "lucide-react";
@@ -193,20 +193,7 @@ export function ExtensionsClient({ connectionId, defaultDatabase }: Props) {
               ))}
             </SelectContent>
           </Select>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={load}
-            disabled={loading}
-            className="gap-1.5"
-          >
-            {loading ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <RefreshCcw className="size-3.5" />
-            )}
-            Refresh
-          </Button>
+          <RefreshButton onClick={load} loading={loading} />
         </div>
       }
     >

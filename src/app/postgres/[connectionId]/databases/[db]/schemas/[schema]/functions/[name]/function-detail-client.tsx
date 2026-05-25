@@ -8,6 +8,7 @@ import { EditorView } from "@codemirror/view";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { WorkspacePage } from "@/components/workspace/workspace-page";
+import { RefreshButton } from "@/components/workspace/auto-refresh";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -23,7 +24,6 @@ import {
   Copy,
   Loader2,
   Pencil,
-  RefreshCcw,
   Trash,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -167,19 +167,7 @@ export function FunctionDetailClient({
       }
       actions={
         <>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => load()}
-            disabled={loading}
-          >
-            {loading ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <RefreshCcw className="size-3.5" />
-            )}
-            Refresh
-          </Button>
+          <RefreshButton onClick={load} loading={loading} />
           <Button
             size="sm"
             variant="outline"

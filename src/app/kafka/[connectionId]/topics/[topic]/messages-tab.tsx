@@ -33,6 +33,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Sparkline } from "@/components/workspace/sparkline";
+import { RefreshButton } from "@/components/workspace/auto-refresh";
 import { TopicSearchSheet } from "./topic-search-sheet";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -52,7 +53,6 @@ import {
   MoreHorizontal,
   Pause,
   RadioTower,
-  RefreshCcw,
   Rows3,
   Search,
   Send,
@@ -644,15 +644,11 @@ export function MessagesTab({
           ) : null}
         </Button>
         {!live ? (
-          <Button
-            size="sm"
-            variant="outline"
+          <RefreshButton
             onClick={loadMessages}
-            disabled={loadingMessages}
-          >
-            {loadingMessages ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCcw className="size-3.5" />}
-            Fetch
-          </Button>
+            loading={loadingMessages}
+            label="Fetch"
+          />
         ) : (
           <Button size="sm" variant="outline" onClick={() => { setMessages([]); receivedRef.current = []; }}>
             <Eraser className="size-3.5" />

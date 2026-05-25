@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
 import { WorkspacePage } from "@/components/workspace/workspace-page";
+import { RefreshButton } from "@/components/workspace/auto-refresh";
 import { cn } from "@/lib/utils";
 import {
   Activity,
@@ -11,7 +11,6 @@ import {
   Disc3,
   HardDrive,
   Loader2,
-  RefreshCcw,
   Snowflake,
   Waypoints,
 } from "lucide-react";
@@ -174,20 +173,7 @@ export function DiagnosticsClient({ connectionId }: Props) {
       title="Diagnostics"
       description="WAL throughput, checkpoint pressure, XID horizons, replication, and autovacuum activity — server-wide."
       actions={
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={load}
-          disabled={loading}
-          className="gap-1.5"
-        >
-          {loading ? (
-            <Loader2 className="size-3.5 animate-spin" />
-          ) : (
-            <RefreshCcw className="size-3.5" />
-          )}
-          Refresh
-        </Button>
+        <RefreshButton onClick={load} loading={loading} />
       }
     >
       {error ? (
