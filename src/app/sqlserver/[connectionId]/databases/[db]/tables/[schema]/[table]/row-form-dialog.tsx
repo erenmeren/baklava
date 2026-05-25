@@ -15,7 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Loader2, KeyRound, PenLine, Plus } from "lucide-react";
+import { Loader2, KeyRound, PenLine, Plus, Zap } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
@@ -24,15 +24,20 @@ import {
   ctaGlow,
 } from "@/components/workspace/dialog-shell";
 
+/**
+ * SQL Server flavor of the row form. Same shape as the Postgres one
+ * (row-form-dialog.tsx under postgres/...) but tinted rose, with
+ * SQL-Server-specific type detection (bit / nvarchar(max) / etc.) and
+ * IDENTITY columns automatically locked out of the insert form.
+ */
+
 export interface ColumnInfo {
   name: string;
-  position: number;
   dataType: string;
-  isNullable: boolean;
-  default: string | null;
+  nullable: boolean;
+  isIdentity: boolean;
+  defaultDefinition: string | null;
   isPrimaryKey: boolean;
-  isUnique?: boolean;
-  comment?: string | null;
 }
 
 export type ColumnValue =
@@ -53,20 +58,21 @@ interface Props {
   schema: string;
   table: string;
   columns: ColumnInfo[];
-  initialRow?: { fields: { name: string }[]; cells: unknown[] };
+  initialRow?: { fields: string[]; cells: unknown[] };
   onSuccess: () => void;
 }
 
-function isJsonType(dt: string) {
-  return dt === "jsonb" || dt === "json";
-}
-
 function isLongTextType(dt: string) {
-  return dt === "text" || isJsonType(dt);
+  const t = dt.toLowerCase();
+  return (
+    /^(n?text)$/.test(t) ||
+    /^x?ml$/.test(t) ||
+    t.includes("(max)")
+  );
 }
 
-function isBoolType(dt: string) {
-  return dt === "bool" || dt === "boolean";
+function isBitType(dt: string) {
+  return dt.toLowerCase() === "bit";
 }
 
 function cellToText(cell: unknown): string {
@@ -78,18 +84,23 @@ function cellToText(cell: unknown): string {
 
 function initialValues(
   columns: ColumnInfo[],
-  initialRow: Props["initialRow"]
+  initialRow: Props["initialRow"],
 ): Record<string, ColumnValue> {
   const out: Record<string, ColumnValue> = {};
   if (!initialRow) {
     for (const c of columns) {
-      out[c.name] =
-        c.default !== null ? { kind: "default" } : { kind: "value", value: "" };
+      // IDENTITY columns aren't settable on insert; defaults pick up the
+      // sequence. Same for any column with a server default.
+      if (c.isIdentity || c.defaultDefinition !== null) {
+        out[c.name] = { kind: "default" };
+      } else {
+        out[c.name] = { kind: "value", value: "" };
+      }
     }
     return out;
   }
   const byName = new Map<string, unknown>();
-  initialRow.fields.forEach((f, i) => byName.set(f.name, initialRow.cells[i]));
+  initialRow.fields.forEach((f, i) => byName.set(f, initialRow.cells[i]));
   for (const c of columns) {
     const v = byName.get(c.name);
     if (v === null || v === undefined) {
@@ -103,10 +114,10 @@ function initialValues(
 
 function originalPk(
   columns: ColumnInfo[],
-  initialRow: NonNullable<Props["initialRow"]>
+  initialRow: NonNullable<Props["initialRow"]>,
 ): PrimaryKeyValue[] {
   const byName = new Map<string, unknown>();
-  initialRow.fields.forEach((f, i) => byName.set(f.name, initialRow.cells[i]));
+  initialRow.fields.forEach((f, i) => byName.set(f, initialRow.cells[i]));
   return columns
     .filter((c) => c.isPrimaryKey)
     .map((c) => ({ column: c.name, value: byName.get(c.name) ?? null }));
@@ -179,11 +190,11 @@ export function RowFormDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
-        <DialogBrandStripe tone="indigo" />
+        <DialogBrandStripe tone="rose" />
         <DialogHeader>
           <DialogTitle className="inline-flex items-center gap-2">
             <span
-              className="inline-flex size-5 items-center justify-center rounded-md bg-indigo-500/10 text-indigo-500"
+              className="inline-flex size-5 items-center justify-center rounded-md bg-rose-500/10 text-rose-500"
               aria-hidden
             >
               {isInsert ? (
@@ -195,7 +206,9 @@ export function RowFormDialog({
             {isInsert ? "Insert row" : "Edit row"}
           </DialogTitle>
           <DialogDescription>
-            <span className="font-mono text-foreground/80">{schema}.{table}</span>
+            <span className="font-mono text-foreground/80">
+              {schema}.{table}
+            </span>
           </DialogDescription>
         </DialogHeader>
 
@@ -203,20 +216,26 @@ export function RowFormDialog({
           <div className="space-y-2 py-1">
             {columns.map((c) => {
               const v = values[c.name] ?? { kind: "value" as const, value: "" };
-              const allowDefault = isInsert && c.default !== null;
-              const required = !c.isNullable && c.default === null;
+              // IDENTITY can't be overridden on insert; server-default columns
+              // get a "default" affordance, but editing them on UPDATE is fine.
+              const allowDefault =
+                isInsert &&
+                (c.isIdentity || c.defaultDefinition !== null);
+              const identityLocked = isInsert && c.isIdentity;
+              const required =
+                !c.nullable && c.defaultDefinition === null && !c.isIdentity;
               return (
                 <div
                   key={c.name}
                   className={cn(
-                    "group relative rounded-lg border border-border/50 bg-card/40 px-3 py-2 transition-colors hover:border-border/80 focus-within:border-indigo-500/40",
-                    c.isPrimaryKey && "border-indigo-500/30 bg-indigo-500/[0.03]",
+                    "group relative rounded-lg border border-border/50 bg-card/40 px-3 py-2 transition-colors hover:border-border/80 focus-within:border-rose-500/40",
+                    c.isPrimaryKey && "border-rose-500/30 bg-rose-500/[0.03]",
                   )}
                 >
                   {c.isPrimaryKey ? (
                     <span
                       aria-hidden
-                      className="pointer-events-none absolute inset-y-2 left-0 w-0.5 rounded-r-full bg-gradient-to-b from-indigo-500/0 via-indigo-500/70 to-indigo-500/0"
+                      className="pointer-events-none absolute inset-y-2 left-0 w-0.5 rounded-r-full bg-gradient-to-b from-rose-500/0 via-rose-500/70 to-rose-500/0"
                     />
                   ) : null}
                   <div className="flex items-center justify-between gap-2">
@@ -230,36 +249,42 @@ export function RowFormDialog({
                       {c.isPrimaryKey ? (
                         <Badge
                           variant="outline"
-                          className="border-indigo-500/40 bg-indigo-500/10 text-[9px] font-mono uppercase tracking-[0.14em] text-indigo-600 dark:text-indigo-400 py-0"
+                          className="border-rose-500/40 bg-rose-500/10 text-[9px] font-mono uppercase tracking-[0.14em] text-rose-600 dark:text-rose-400 py-0"
                         >
                           <KeyRound className="size-2.5" /> PK
                         </Badge>
                       ) : null}
+                      {c.isIdentity ? (
+                        <Badge
+                          variant="outline"
+                          className="border-amber-500/40 bg-amber-500/10 text-[9px] font-mono uppercase tracking-[0.14em] text-amber-600 dark:text-amber-400 py-0"
+                        >
+                          <Zap className="size-2.5" /> IDENTITY
+                        </Badge>
+                      ) : null}
                       {required ? (
                         <span
-                          className="text-rose-500 leading-none"
+                          className="leading-none text-rose-500"
                           title="Required (not null, no default)"
                         >
                           *
                         </span>
                       ) : null}
                     </Label>
-                    <div className="flex items-center gap-0.5 shrink-0">
+                    <div className="flex shrink-0 items-center gap-0.5">
                       <ModePill
                         active={v.kind === "null"}
                         onClick={() => setValue(c.name, { kind: "null" })}
-                        disabled={!c.isNullable}
-                        tone="indigo"
+                        disabled={!c.nullable || identityLocked}
+                        tone="rose"
                       >
                         null
                       </ModePill>
                       {allowDefault ? (
                         <ModePill
                           active={v.kind === "default"}
-                          onClick={() =>
-                            setValue(c.name, { kind: "default" })
-                          }
-                          tone="indigo"
+                          onClick={() => setValue(c.name, { kind: "default" })}
+                          tone="rose"
                         >
                           default
                         </ModePill>
@@ -272,7 +297,8 @@ export function RowFormDialog({
                             value: v.kind === "value" ? v.value : "",
                           })
                         }
-                        tone="indigo"
+                        disabled={identityLocked}
+                        tone="rose"
                       >
                         value
                       </ModePill>
@@ -285,19 +311,19 @@ export function RowFormDialog({
                         NULL
                       </div>
                     ) : v.kind === "default" ? (
-                      <div className="rounded-md border border-dashed border-indigo-500/30 bg-indigo-500/[0.04] px-3 py-2 text-[11.5px] font-mono text-indigo-600 dark:text-indigo-400">
+                      <div className="rounded-md border border-dashed border-rose-500/30 bg-rose-500/[0.04] px-3 py-2 text-[11.5px] font-mono text-rose-600 dark:text-rose-400">
                         <span className="uppercase tracking-[0.16em]">
-                          default
+                          {c.isIdentity ? "identity" : "default"}
                         </span>
-                        {c.default ? (
+                        {c.defaultDefinition ? (
                           <span className="ml-2 text-foreground/70">
-                            → {c.default}
+                            → {c.defaultDefinition}
                           </span>
                         ) : null}
                       </div>
-                    ) : isBoolType(c.dataType) ? (
+                    ) : isBitType(c.dataType) ? (
                       <div className="flex items-center gap-1.5 font-mono text-xs">
-                        {(["true", "false"] as const).map((b) => (
+                        {(["1", "0"] as const).map((b) => (
                           <button
                             key={b}
                             type="button"
@@ -307,11 +333,11 @@ export function RowFormDialog({
                             className={cn(
                               "rounded-md border px-3 py-1.5 transition-colors",
                               v.value === b
-                                ? "border-indigo-500/50 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400"
+                                ? "border-rose-500/50 bg-rose-500/10 text-rose-600 dark:text-rose-400"
                                 : "border-border/60 text-muted-foreground hover:border-border hover:text-foreground",
                             )}
                           >
-                            {b}
+                            {b === "1" ? "1 · true" : "0 · false"}
                           </button>
                         ))}
                       </div>
@@ -325,8 +351,7 @@ export function RowFormDialog({
                           })
                         }
                         className="font-mono text-xs"
-                        rows={isJsonType(c.dataType) ? 4 : 3}
-                        placeholder={isJsonType(c.dataType) ? "{ }" : ""}
+                        rows={3}
                       />
                     ) : (
                       <Input
@@ -338,7 +363,7 @@ export function RowFormDialog({
                           })
                         }
                         className="h-8 font-mono text-xs"
-                        placeholder={c.default ?? ""}
+                        placeholder={c.defaultDefinition ?? ""}
                       />
                     )}
                   </div>
@@ -360,8 +385,8 @@ export function RowFormDialog({
             onClick={submit}
             disabled={busy}
             className={cn(
-              "bg-indigo-600 text-white hover:bg-indigo-600/90 focus-visible:ring-indigo-500/40",
-              ctaGlow("indigo"),
+              "bg-rose-600 text-white hover:bg-rose-600/90 focus-visible:ring-rose-500/40",
+              ctaGlow("rose"),
             )}
           >
             {busy ? <Loader2 className="size-3.5 animate-spin" /> : null}

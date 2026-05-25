@@ -13,9 +13,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Loader2, Plus, X } from "lucide-react";
+import { Boxes, Loader2, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import { TypeCombobox } from "@/components/sql/type-combobox";
+import { cn } from "@/lib/utils";
+import {
+  DialogBrandStripe,
+  ctaGlow,
+} from "@/components/workspace/dialog-shell";
 
 const COMMON_TYPES = [
   "int",
@@ -163,10 +168,23 @@ export function CreateTableTypeDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-3xl max-h-[85vh] overflow-y-auto">
+        <DialogBrandStripe tone="rose" />
         <DialogHeader>
-          <DialogTitle>Create table type</DialogTitle>
+          <DialogTitle className="inline-flex items-center gap-2">
+            <span
+              className="inline-flex size-5 items-center justify-center rounded-md bg-rose-500/10 text-rose-500"
+              aria-hidden
+            >
+              <Boxes className="size-3" />
+            </span>
+            Create table type
+          </DialogTitle>
           <DialogDescription>
-            in <span className="font-mono">{database}.{schema}</span> —{" "}
+            in{" "}
+            <span className="font-mono text-foreground/80">{database}</span>
+            <span className="mx-1 text-border" aria-hidden>·</span>
+            <span className="font-mono text-foreground/80">{schema}</span>
+            <span className="mx-1.5 text-border" aria-hidden>—</span>
             user-defined table type for table-valued parameters
           </DialogDescription>
         </DialogHeader>
@@ -282,9 +300,16 @@ export function CreateTableTypeDialog({
           >
             Cancel
           </Button>
-          <Button onClick={submit} disabled={busy || !name.trim()}>
+          <Button
+            onClick={submit}
+            disabled={busy || !name.trim()}
+            className={cn(
+              "bg-rose-600 text-white hover:bg-rose-600/90 focus-visible:ring-rose-500/40",
+              ctaGlow("rose"),
+            )}
+          >
             {busy ? <Loader2 className="size-3.5 animate-spin" /> : null}
-            Create
+            Create table type
           </Button>
         </DialogFooter>
       </DialogContent>

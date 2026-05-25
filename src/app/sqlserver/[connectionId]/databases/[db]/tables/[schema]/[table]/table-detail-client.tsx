@@ -17,7 +17,8 @@ import {
 import { WorkspacePage } from "@/components/workspace/workspace-page";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { ArrowLeft, Copy, Check } from "lucide-react";
+import { ArrowLeft, Copy, Check, Plus } from "lucide-react";
+import { RowFormDialog, type ColumnInfo as RowColumnInfo } from "./row-form-dialog";
 
 interface Column {
   name: string;
@@ -106,6 +107,16 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
   const [data, setData] = useState<TableData | null>(null);
   const [offset, setOffset] = useState(0);
   const [copied, setCopied] = useState(false);
+  const [insertOpen, setInsertOpen] = useState(false);
+
+  const rowColumns: RowColumnInfo[] = (detail?.columns ?? []).map((c) => ({
+    name: c.name,
+    dataType: c.dataType,
+    nullable: c.nullable,
+    isIdentity: c.isIdentity,
+    defaultDefinition: c.defaultDefinition,
+    isPrimaryKey: c.isPrimaryKey,
+  }));
 
   const loadDetail = useCallback(async () => {
     const res = await fetch(base, { cache: "no-store" });
@@ -169,6 +180,24 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
 
         {/* DATA */}
         <TabsContent value="data" className="pt-4 flex-1 min-h-0 flex flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-muted-foreground">
+              {data
+                ? `${data.total.toLocaleString()} row${data.total === 1 ? "" : "s"}`
+                : "Loading…"}
+            </p>
+            <Button
+              size="sm"
+              onClick={() => setInsertOpen(true)}
+              disabled={!detail}
+              className={cn(
+                "bg-rose-600 text-white hover:bg-rose-600/90 focus-visible:ring-rose-500/40",
+              )}
+            >
+              <Plus className="size-3.5" />
+              Insert row
+            </Button>
+          </div>
           {!data ? (
             <Skeleton className="h-40 w-full" />
           ) : (
@@ -451,6 +480,23 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
           )}
         </TabsContent>
       </Tabs>
+
+      {detail ? (
+        <RowFormDialog
+          open={insertOpen}
+          onOpenChange={setInsertOpen}
+          mode="insert"
+          base={base}
+          schema={schema}
+          table={table}
+          columns={rowColumns}
+          onSuccess={() => {
+            setOffset(0);
+            void loadData(0);
+            void loadDetail();
+          }}
+        />
+      ) : null}
     </WorkspacePage>
   );
 }

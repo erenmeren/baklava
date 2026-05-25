@@ -12,8 +12,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2 } from "lucide-react";
+import { Database, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
+import {
+  DialogBrandStripe,
+  ctaGlow,
+} from "@/components/workspace/dialog-shell";
 
 interface Props {
   open: boolean;
@@ -72,8 +77,17 @@ export function CreateDatabaseDialog({
       }}
     >
       <DialogContent className="sm:max-w-[460px]">
+        <DialogBrandStripe tone="rose" />
         <DialogHeader>
-          <DialogTitle>New database</DialogTitle>
+          <DialogTitle className="inline-flex items-center gap-2">
+            <span
+              className="inline-flex size-5 items-center justify-center rounded-md bg-rose-500/10 text-rose-500"
+              aria-hidden
+            >
+              <Database className="size-3" />
+            </span>
+            New database
+          </DialogTitle>
           <DialogDescription>
             Creates a database on the current SQL Server instance with server
             defaults.
@@ -107,15 +121,24 @@ export function CreateDatabaseDialog({
           <DialogFooter>
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
               onClick={() => onOpenChange(false)}
               disabled={submitting}
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={submitting || !name.trim()}>
-              {submitting ? <Loader2 className="size-3.5 animate-spin" /> : null}
-              Create
+            <Button
+              type="submit"
+              disabled={submitting || !name.trim()}
+              className={cn(
+                "bg-rose-600 text-white hover:bg-rose-600/90 focus-visible:ring-rose-500/40",
+                ctaGlow("rose"),
+              )}
+            >
+              {submitting ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : null}
+              Create database
             </Button>
           </DialogFooter>
         </form>

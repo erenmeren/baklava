@@ -15,12 +15,40 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Loader2, RotateCcw } from "lucide-react";
+import {
+  Eye,
+  FileCode,
+  FunctionSquare,
+  Loader2,
+  RotateCcw,
+  Zap,
+} from "lucide-react";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import { editorTheme } from "@/lib/sql/editor-theme";
 import { smartSqlCompletions } from "@/lib/sql/editor-completions";
 import { SQLSERVER_KEYWORDS, SQLSERVER_TYPES } from "@/lib/sql/dialect-keywords";
 import { useTheme } from "@/components/theme-provider";
+import {
+  DialogBrandStripe,
+  ctaGlow,
+} from "@/components/workspace/dialog-shell";
+
+const KIND_ICON: Record<ModuleKind, typeof FileCode> = {
+  view: Eye,
+  proc: FileCode,
+  scalar_fn: FunctionSquare,
+  table_fn: FunctionSquare,
+  trigger: Zap,
+};
+
+const KIND_BADGE: Record<ModuleKind, string> = {
+  view: "VIEW",
+  proc: "PROCEDURE",
+  scalar_fn: "SCALAR FN",
+  table_fn: "TABLE FN",
+  trigger: "TRIGGER",
+};
 
 export type ModuleKind = "view" | "proc" | "scalar_fn" | "table_fn" | "trigger";
 
@@ -195,20 +223,44 @@ export function CreateModuleDialog({
     }
   };
 
+  const Icon = KIND_ICON[kind];
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
+        <DialogBrandStripe tone="rose" />
         <DialogHeader>
-          <DialogTitle>{KIND_TITLE[kind]}</DialogTitle>
+          <DialogTitle className="inline-flex items-center gap-2">
+            <span
+              className="inline-flex size-5 items-center justify-center rounded-md bg-rose-500/10 text-rose-500"
+              aria-hidden
+            >
+              <Icon className="size-3" />
+            </span>
+            {KIND_TITLE[kind]}
+            <span className="ml-1 inline-flex items-center rounded-full border border-rose-500/30 bg-rose-500/[0.06] px-1.5 py-px text-[9px] font-mono uppercase tracking-[0.16em] text-rose-600 dark:text-rose-400">
+              {KIND_BADGE[kind]}
+            </span>
+          </DialogTitle>
           <DialogDescription>
-            in <span className="font-mono">{database}.{schema}</span> — edit the
-            T-SQL template below, then Create
+            in{" "}
+            <span className="font-mono text-foreground/80">{database}</span>
+            <span className="mx-1 text-border" aria-hidden>·</span>
+            <span className="font-mono text-foreground/80">{schema}</span>
+            <span className="mx-1.5 text-border" aria-hidden>—</span>
+            edit the T-SQL template, then Create.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 flex-1 min-h-0 flex flex-col">
-          <div className="space-y-2">
-            <Label htmlFor="cm-name">Name</Label>
+          <div className="space-y-1.5">
+            <Label
+              htmlFor="cm-name"
+              className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground inline-flex items-center gap-1.5"
+            >
+              <span className="size-1 rounded-full bg-rose-500" aria-hidden />
+              Name
+            </Label>
             <Input
               id="cm-name"
               value={name}
@@ -220,20 +272,30 @@ export function CreateModuleDialog({
             />
           </div>
 
-          <div className="space-y-2 flex-1 min-h-0 flex flex-col">
+          <div className="space-y-1.5 flex-1 min-h-0 flex flex-col">
             <div className="flex items-center justify-between">
-              <Label>T-SQL</Label>
+              <Label className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground inline-flex items-center gap-1.5">
+                <span className="size-1 rounded-full bg-rose-500" aria-hidden />
+                T-SQL
+                {edited ? (
+                  <span className="ml-1 text-rose-500/80 normal-case tracking-normal">
+                    · edited
+                  </span>
+                ) : null}
+              </Label>
               <Button
                 size="xs"
                 variant="ghost"
                 onClick={resetScaffold}
                 disabled={!edited}
                 title="Reset to template"
+                className="text-[10px] font-mono uppercase tracking-[0.14em]"
               >
-                <RotateCcw className="size-3" /> Reset template
+                <RotateCcw className="size-3" />
+                Reset template
               </Button>
             </div>
-            <div className="flex-1 min-h-[260px] rounded-md border border-border/60 overflow-hidden bg-card">
+            <div className="flex-1 min-h-[260px] rounded-lg border border-border/60 overflow-hidden bg-card shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)]">
               <CodeMirror
                 value={body}
                 onChange={(v) => {
@@ -252,11 +314,11 @@ export function CreateModuleDialog({
                 className="h-full text-[12.5px]"
               />
             </div>
-            <p className="text-[11px] text-muted-foreground leading-relaxed">
+            <p className="text-[10.5px] leading-relaxed text-muted-foreground/80">
               Runs as a single batch against{" "}
-              <span className="font-mono">{database}</span>. The Name field just
-              keeps the scaffolded identifier in sync — the editor is the
-              source of truth.
+              <span className="font-mono text-foreground/70">{database}</span>.
+              The Name field keeps the scaffolded identifier in sync — the
+              editor is the source of truth.
             </p>
           </div>
 
@@ -278,9 +340,16 @@ export function CreateModuleDialog({
           >
             Cancel
           </Button>
-          <Button onClick={submit} disabled={busy || !body.trim()}>
+          <Button
+            onClick={submit}
+            disabled={busy || !body.trim()}
+            className={cn(
+              "bg-rose-600 text-white hover:bg-rose-600/90 focus-visible:ring-rose-500/40",
+              ctaGlow("rose"),
+            )}
+          >
             {busy ? <Loader2 className="size-3.5 animate-spin" /> : null}
-            Create
+            Create {KIND_LABEL[kind]}
           </Button>
         </DialogFooter>
       </DialogContent>

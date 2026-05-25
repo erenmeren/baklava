@@ -14,9 +14,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Loader2 } from "lucide-react";
+import { Loader2, Shapes } from "lucide-react";
 import { toast } from "sonner";
 import { TypeCombobox } from "@/components/sql/type-combobox";
+import { cn } from "@/lib/utils";
+import {
+  DialogBrandStripe,
+  ctaGlow,
+} from "@/components/workspace/dialog-shell";
 
 const COMMON_TYPES = [
   "int",
@@ -114,12 +119,25 @@ export function CreateTypeDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
+        <DialogBrandStripe tone="rose" />
         <DialogHeader>
-          <DialogTitle>Create user-defined type</DialogTitle>
+          <DialogTitle className="inline-flex items-center gap-2">
+            <span
+              className="inline-flex size-5 items-center justify-center rounded-md bg-rose-500/10 text-rose-500"
+              aria-hidden
+            >
+              <Shapes className="size-3" />
+            </span>
+            Create user-defined type
+          </DialogTitle>
           <DialogDescription>
-            in <span className="font-mono">{database}.{schema}</span> — alias
-            type built on a system base type
+            in{" "}
+            <span className="font-mono text-foreground/80">{database}</span>
+            <span className="mx-1 text-border" aria-hidden>·</span>
+            <span className="font-mono text-foreground/80">{schema}</span>
+            <span className="mx-1.5 text-border" aria-hidden>—</span>
+            alias type built on a system base type
           </DialogDescription>
         </DialogHeader>
 
@@ -189,9 +207,16 @@ export function CreateTypeDialog({
           >
             Cancel
           </Button>
-          <Button onClick={submit} disabled={busy || !name.trim()}>
+          <Button
+            onClick={submit}
+            disabled={busy || !name.trim()}
+            className={cn(
+              "bg-rose-600 text-white hover:bg-rose-600/90 focus-visible:ring-rose-500/40",
+              ctaGlow("rose"),
+            )}
+          >
             {busy ? <Loader2 className="size-3.5 animate-spin" /> : null}
-            Create
+            Create type
           </Button>
         </DialogFooter>
       </DialogContent>
