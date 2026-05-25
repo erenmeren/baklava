@@ -1873,6 +1873,14 @@ export async function getClusterSummary(
       admin.listGroups(),
     ]);
 
+    // Internal topics (__consumer_offsets, __transaction_state, …) are
+    // separated from user-visible counts so the KPI tiles are consistent
+    // with each other AND with the "Top topics by volume" leaderboard,
+    // which has always filtered them out. Health signals
+    // (under-replicated / offline) still scan every topic because an
+    // unhealthy __consumer_offsets is itself an on-call problem.
+    const isInternal = (name: string) => name.startsWith("__");
+
     let totalPartitions = 0;
     let underReplicatedPartitions = 0;
     let offlinePartitions = 0;
@@ -1881,10 +1889,12 @@ export async function getClusterSummary(
     let internalTopicCount = 0;
 
     for (const t of metadata.topics) {
-      const internal = t.name.startsWith("__");
-      if (internal) internalTopicCount += 1;
-      else userTopicCount += 1;
-      totalPartitions += t.partitions.length;
+      if (isInternal(t.name)) {
+        internalTopicCount += 1;
+      } else {
+        userTopicCount += 1;
+        totalPartitions += t.partitions.length;
+      }
       for (const p of t.partitions) {
         if (p.isr.length < p.replicas.length) {
           underReplicatedPartitions += 1;
@@ -1898,9 +1908,12 @@ export async function getClusterSummary(
       }
     }
 
-    // Per-topic message totals (sum high-low across partitions). Run in parallel.
+    // Per-topic message totals (sum high-low across partitions). Skip
+    // internal topics so we don't waste an admin RPC on __consumer_offsets
+    // and so the total matches what's visible in the leaderboard.
+    const userTopics = metadata.topics.filter((t) => !isInternal(t.name));
     const offsetResults = await Promise.all(
-      metadata.topics.map((t) =>
+      userTopics.map((t) =>
         admin
           .fetchTopicOffsets(t.name)
           .then((rows) => ({ name: t.name, rows }))
@@ -1922,7 +1935,6 @@ export async function getClusterSummary(
     }
 
     const topTopicsByVolume = [...perTopicMessages.entries()]
-      .filter(([name]) => !name.startsWith("__"))
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5)
       .map(([name, messages]) => ({ name, messages }));
