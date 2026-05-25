@@ -79,6 +79,15 @@ docker compose up -d postgres  # just one service
 docker compose down -v         # stop + wipe data
 ```
 
+Then populate demo data so the workspaces have something to browse:
+
+```bash
+bash seed/all.sh               # docker stack + pg/kafka/sqlserver data
+bash seed/postgres.sh          # just one tech
+```
+
+See [`seed/README.md`](seed/README.md) for what each script creates (one of every SSMS-style object in SQL Server, a keyed message stream in Kafka, a labelled three-container demo stack in Docker, a 250-row storefront schema in Postgres).
+
 #### Connection details
 
 All credentials are throwaway and for local dev only. Plug these into the connection forms in the UI.

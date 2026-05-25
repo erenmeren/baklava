@@ -2,22 +2,20 @@
 #
 #   docker compose up -d         # start everything
 #   docker compose down -v       # stop and wipe data
-#   docker compose up -d <svc>   # just one service (postgres, redis, etc.)
+#   docker compose up -d <svc>   # just one service (postgres, kafka, sqlserver)
 #
-# All credentials are throwaway and meant ONLY for local development. Default
-# baseline: user `baklava` / password `Baklava123!` where auth is required.
-# Services without sensible no-auth defaults stick to their built-in guest /
-# default accounts (rabbit guest:guest, clickhouse default).
+# Docker itself is the host daemon — no container needed. Baklava reads
+# unix:///var/run/docker.sock by default on macOS/Linux.
+#
+# All credentials are throwaway and meant ONLY for local development.
+# Default baseline: user-appropriate / password `Baklava123!`.
 #
 # Ports map 1:1 to the host so the Baklava UI can reach each service at
 # localhost:<default_port>.
+#
+# After `up -d`, seed demo data with `bash seed/all.sh` (or per-tech scripts).
 
 services:
-  # ── Runtime ────────────────────────────────────────────────────────────────
-  # Docker itself is the host daemon — no container needed. Baklava reads
-  # unix:///var/run/docker.sock by default on macOS/Linux.
-
-  # ── Relational ─────────────────────────────────────────────────────────────
   postgres:
     image: postgres:16-alpine
     environment:
@@ -29,18 +27,6 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
-
-  mysql:
-    image: mysql:8
-    environment:
-      MYSQL_ROOT_PASSWORD: Baklava123!
-      MYSQL_DATABASE: demo
-    ports: ["3306:3306"]
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-pBaklava123!"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
 
   sqlserver:
     image: mcr.microsoft.com/mssql/server:2022-latest
@@ -56,46 +42,6 @@ services:
       timeout: 5s
       retries: 20
 
-  # SQLite is file-backed, no daemon needed. Run `bash seed/sqlite.sh` to
-  # generate /tmp/baklava-data/demo.sqlite, then point Baklava at that path.
-
-  # ── Document / KV ──────────────────────────────────────────────────────────
-  mongo:
-    image: mongo:7
-    ports: ["27017:27017"]
-    healthcheck:
-      test: ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand({ping:1}).ok"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
-  redis:
-    image: redis:7-alpine
-    ports: ["6379:6379"]
-    healthcheck:
-      test: ["CMD", "redis-cli", "PING"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
-  etcd:
-    image: quay.io/coreos/etcd:v3.5.16
-    command:
-      - etcd
-      - --name=baklava
-      - --listen-client-urls=http://0.0.0.0:2379
-      - --advertise-client-urls=http://0.0.0.0:2379
-      - --listen-peer-urls=http://0.0.0.0:2380
-    ports:
-      - "2379:2379"
-      - "2380:2380"
-    healthcheck:
-      test: ["CMD", "etcdctl", "endpoint", "health"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
-  # ── Streaming / Messaging ──────────────────────────────────────────────────
   kafka:
     image: apache/kafka:3.8.0
     ports: ["9092:9092"]
@@ -111,159 +57,3 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       CLUSTER_ID: YbAkUvK2QaWdh1lUdN6Vlw
-
-  rabbit:
-    image: rabbitmq:3-management
-    ports:
-      - "5672:5672"    # AMQP
-      - "15672:15672"  # Management HTTP API + UI
-    healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-
-  nats:
-    image: nats:latest
-    # -js enables JetStream (required by Baklava's NATS workspace).
-    # -m 8222 exposes the monitoring HTTP endpoint.
-    command: ["-js", "-m", "8222"]
-    ports:
-      - "4222:4222"  # NATS protocol
-      - "8222:8222"  # HTTP monitoring
-
-  # ── Search / OLAP ──────────────────────────────────────────────────────────
-  elastic:
-    image: docker.elastic.co/elasticsearch/elasticsearch:8.13.0
-    environment:
-      discovery.type: single-node
-      xpack.security.enabled: "false"
-      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
-    ports: ["9200:9200"]
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:9200 >/dev/null"]
-      interval: 10s
-      timeout: 5s
-      retries: 20
-
-  clickhouse:
-    image: clickhouse/clickhouse-server:24-alpine
-    ulimits:
-      nofile:
-        soft: 262144
-        hard: 262144
-    ports:
-      - "8123:8123"  # HTTP
-      - "9000:9000"  # native protocol
-    healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider 'http://localhost:8123/?query=SELECT+1' || exit 1"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
-  # ── Graph ──────────────────────────────────────────────────────────────────
-  neo4j:
-    image: neo4j:5-community
-    environment:
-      NEO4J_AUTH: neo4j/Baklava123!
-      # Disable strict file permissions check that fails under Docker on macOS.
-      NEO4J_server_config_strict__validation_enabled: "false"
-    ports:
-      - "7474:7474"  # HTTP browser
-      - "7687:7687"  # Bolt
-    healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:7474 || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-
-  # ── Vector DBs ─────────────────────────────────────────────────────────────
-  qdrant:
-    image: qdrant/qdrant:latest
-    ports:
-      - "6333:6333"  # REST
-      - "6334:6334"  # gRPC
-    healthcheck:
-      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/127.0.0.1/6333' || exit 1"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
-  weaviate:
-    image: cr.weaviate.io/semitechnologies/weaviate:latest
-    command:
-      - --host=0.0.0.0
-      - --port=8080
-      - --scheme=http
-    environment:
-      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: "true"
-      PERSISTENCE_DATA_PATH: "/var/lib/weaviate"
-      DEFAULT_VECTORIZER_MODULE: "none"
-      ENABLE_MODULES: ""
-      CLUSTER_HOSTNAME: "node1"
-    ports:
-      - "8080:8080"   # REST
-      - "50051:50051" # gRPC
-    healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8080/v1/.well-known/ready || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 20
-
-  # Milvus standalone needs its own etcd + minio. Kept on internal-only ports
-  # so they don't collide with the top-level `etcd` service or anything on 9000.
-  milvus-etcd:
-    image: quay.io/coreos/etcd:v3.5.16
-    command:
-      - etcd
-      - --advertise-client-urls=http://0.0.0.0:2379
-      - --listen-client-urls=http://0.0.0.0:2379
-      - --data-dir=/etcd
-    # no `ports:` — only reachable within the compose network
-
-  milvus-minio:
-    image: minio/minio:latest
-    command: minio server /minio_data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
-    # no `ports:` — internal only
-
-  milvus:
-    image: milvusdb/milvus:v2.4.13
-    command: ["milvus", "run", "standalone"]
-    environment:
-      ETCD_ENDPOINTS: milvus-etcd:2379
-      MINIO_ADDRESS: milvus-minio:9000
-    ports:
-      - "19530:19530"  # gRPC
-      - "9091:9091"    # metrics/health
-    depends_on:
-      - milvus-etcd
-      - milvus-minio
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:9091/healthz || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 10
-      start_period: 60s  # standalone takes a while to come up cold
-
-  chroma:
-    image: chromadb/chroma:latest
-    ports: ["8000:8000"]
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8000/api/v2/heartbeat || exit 1"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
-  # Supabase is a 10-service stack (postgres + auth + storage + realtime +
-  # meta + functions + studio + kong + etc). Don't try to inline it here —
-  # use the official Supabase CLI:
-  #
-  #   brew install supabase/tap/supabase
-  #   supabase init        # in any throwaway dir
-  #   supabase start       # local stack on ports 54321 (api) + 54323 (studio)
-  #
-  # The CLI prints API URL + anon + service_role keys; paste those into
-  # Baklava's Supabase connection form.
