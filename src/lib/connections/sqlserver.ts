@@ -43,7 +43,13 @@ async function withPool<T>(
   fn: (pool: ConnectionPool) => Promise<T>,
   opts?: { database?: string; requestTimeoutMs?: number }
 ): Promise<T> {
-  const pool = await sql.connect({
+  // IMPORTANT: do NOT use `sql.connect(cfg)` — that returns mssql's
+  // *global* pool, which is shared across every concurrent request in the
+  // Next.js process. Two overlapping requests would clobber each other's
+  // active database, and one finishing first would close the global pool
+  // out from under the other (ECONNCLOSED). Construct a fresh pool per
+  // call instead so each request is fully isolated.
+  const pool = new ConnectionPool({
     server: config.host,
     port: config.port,
     database: opts?.database || config.database || undefined,
@@ -56,6 +62,7 @@ async function withPool<T>(
     connectionTimeout: 8000,
     requestTimeout: opts?.requestTimeoutMs ?? 15000,
   });
+  await pool.connect();
   try {
     return await fn(pool);
   } finally {
@@ -477,6 +484,150 @@ export async function dropSqlServerObject(
       await pool.request().batch(`DROP ${keyword} [${schema}].[${name}]`);
     },
     { database }
+  );
+}
+
+// ─── Row CRUD (insert / update / delete) ──────────────────────────────────
+//
+// Mirrors the Postgres driver's shape so the row-form-dialog UI can share
+// types (ColumnValue / PrimaryKeyValue) without translation. Identifiers go
+// through validateSqlServerIdentifier + bracket quoting; values go through
+// mssql's parameterised .input() so they can't escape the value context.
+
+export type SqlServerColumnValue =
+  | { kind: "null" }
+  | { kind: "default" }
+  | { kind: "value"; value: string };
+
+export interface SqlServerPrimaryKeyValue {
+  column: string;
+  value: unknown;
+}
+
+export async function insertSqlServerRow(
+  config: SqlServerConfig,
+  database: string,
+  schema: string,
+  table: string,
+  values: Record<string, SqlServerColumnValue>,
+): Promise<{ rowsAffected: number }> {
+  validateSqlServerIdentifier(database, "database name");
+  const s = validateSqlServerIdentifier(schema, "schema name");
+  const t = validateSqlServerIdentifier(table, "table name");
+
+  const cols: string[] = [];
+  const placeholders: string[] = [];
+  const paramSpecs: Array<{ name: string; value: unknown }> = [];
+  for (const [col, v] of Object.entries(values)) {
+    if (v.kind === "default") continue;
+    const cn = validateSqlServerIdentifier(col, "column name");
+    cols.push(`[${cn}]`);
+    const pName = `p${paramSpecs.length}`;
+    placeholders.push(`@${pName}`);
+    paramSpecs.push({
+      name: pName,
+      value: v.kind === "null" ? null : v.value,
+    });
+  }
+
+  const sql =
+    cols.length === 0
+      ? `INSERT INTO [${database}].[${s}].[${t}] DEFAULT VALUES`
+      : `INSERT INTO [${database}].[${s}].[${t}] (${cols.join(", ")}) VALUES (${placeholders.join(", ")})`;
+
+  return withPool(
+    config,
+    async (pool) => {
+      const req = pool.request();
+      for (const p of paramSpecs) req.input(p.name, p.value);
+      const res = await req.query(sql);
+      return { rowsAffected: res.rowsAffected[0] ?? 0 };
+    },
+    { database },
+  );
+}
+
+export async function updateSqlServerRow(
+  config: SqlServerConfig,
+  database: string,
+  schema: string,
+  table: string,
+  pk: SqlServerPrimaryKeyValue[],
+  values: Record<string, SqlServerColumnValue>,
+): Promise<{ rowsAffected: number }> {
+  if (pk.length === 0) {
+    throw new Error("Cannot update: no primary key on this table");
+  }
+  validateSqlServerIdentifier(database, "database name");
+  const s = validateSqlServerIdentifier(schema, "schema name");
+  const t = validateSqlServerIdentifier(table, "table name");
+
+  const sets: string[] = [];
+  const paramSpecs: Array<{ name: string; value: unknown }> = [];
+  for (const [col, v] of Object.entries(values)) {
+    if (v.kind === "default") continue;
+    const cn = validateSqlServerIdentifier(col, "column name");
+    const pName = `p${paramSpecs.length}`;
+    sets.push(`[${cn}] = @${pName}`);
+    paramSpecs.push({
+      name: pName,
+      value: v.kind === "null" ? null : v.value,
+    });
+  }
+  if (sets.length === 0) throw new Error("No columns to update");
+
+  const wheres = pk.map((item) => {
+    const cn = validateSqlServerIdentifier(item.column, "primary-key column");
+    const pName = `p${paramSpecs.length}`;
+    paramSpecs.push({ name: pName, value: item.value });
+    return `[${cn}] = @${pName}`;
+  });
+  const sql = `UPDATE [${database}].[${s}].[${t}] SET ${sets.join(", ")} WHERE ${wheres.join(" AND ")}`;
+
+  return withPool(
+    config,
+    async (pool) => {
+      const req = pool.request();
+      for (const p of paramSpecs) req.input(p.name, p.value);
+      const res = await req.query(sql);
+      return { rowsAffected: res.rowsAffected[0] ?? 0 };
+    },
+    { database },
+  );
+}
+
+export async function deleteSqlServerRow(
+  config: SqlServerConfig,
+  database: string,
+  schema: string,
+  table: string,
+  pk: SqlServerPrimaryKeyValue[],
+): Promise<{ rowsAffected: number }> {
+  if (pk.length === 0) {
+    throw new Error("Cannot delete: no primary key on this table");
+  }
+  validateSqlServerIdentifier(database, "database name");
+  const s = validateSqlServerIdentifier(schema, "schema name");
+  const t = validateSqlServerIdentifier(table, "table name");
+
+  const paramSpecs: Array<{ name: string; value: unknown }> = [];
+  const wheres = pk.map((item) => {
+    const cn = validateSqlServerIdentifier(item.column, "primary-key column");
+    const pName = `p${paramSpecs.length}`;
+    paramSpecs.push({ name: pName, value: item.value });
+    return `[${cn}] = @${pName}`;
+  });
+  const sql = `DELETE FROM [${database}].[${s}].[${t}] WHERE ${wheres.join(" AND ")}`;
+
+  return withPool(
+    config,
+    async (pool) => {
+      const req = pool.request();
+      for (const p of paramSpecs) req.input(p.name, p.value);
+      const res = await req.query(sql);
+      return { rowsAffected: res.rowsAffected[0] ?? 0 };
+    },
+    { database },
   );
 }
 
@@ -1544,7 +1695,10 @@ export async function getSqlServerTableData(
   return withPool(
     config,
     async (pool) => {
-      const fqn = `[${schema}].[${table}]`;
+      // 3-part naming so the query targets the right database even if the
+      // global mssql pool was switched by a concurrent request between
+      // withPool's connect and our query.
+      const fqn = `[${database}].[${schema}].[${table}]`;
       const countR = await pool.request().query<{ n: string | number }>(
         `SELECT COUNT_BIG(*) AS n FROM ${fqn}`,
       );

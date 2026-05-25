@@ -13,8 +13,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Loader2 } from "lucide-react";
+import { Link2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
+import {
+  DialogBrandStripe,
+  ctaGlow,
+} from "@/components/workspace/dialog-shell";
 
 interface Props {
   open: boolean;
@@ -81,10 +86,22 @@ export function CreateSynonymDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
+        <DialogBrandStripe tone="rose" />
         <DialogHeader>
-          <DialogTitle>Create synonym</DialogTitle>
+          <DialogTitle className="inline-flex items-center gap-2">
+            <span
+              className="inline-flex size-5 items-center justify-center rounded-md bg-rose-500/10 text-rose-500"
+              aria-hidden
+            >
+              <Link2 className="size-3" />
+            </span>
+            Create synonym
+          </DialogTitle>
           <DialogDescription>
-            in <span className="font-mono">{database}.{schema}</span>
+            in{" "}
+            <span className="font-mono text-foreground/80">{database}</span>
+            <span className="mx-1 text-border" aria-hidden>·</span>
+            <span className="font-mono text-foreground/80">{schema}</span>
           </DialogDescription>
         </DialogHeader>
 
@@ -142,9 +159,13 @@ export function CreateSynonymDialog({
           <Button
             onClick={submit}
             disabled={busy || !name.trim() || !target.trim()}
+            className={cn(
+              "bg-rose-600 text-white hover:bg-rose-600/90 focus-visible:ring-rose-500/40",
+              ctaGlow("rose"),
+            )}
           >
             {busy ? <Loader2 className="size-3.5 animate-spin" /> : null}
-            Create
+            Create synonym
           </Button>
         </DialogFooter>
       </DialogContent>
