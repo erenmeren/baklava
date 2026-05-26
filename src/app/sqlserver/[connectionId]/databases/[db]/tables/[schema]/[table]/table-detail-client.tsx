@@ -17,8 +17,9 @@ import {
 import { WorkspacePage } from "@/components/workspace/workspace-page";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { ArrowLeft, Copy, Check, Plus } from "lucide-react";
+import { ArrowLeft, Copy, Check, Plus, Wrench } from "lucide-react";
 import { RowFormDialog, type ColumnInfo as RowColumnInfo } from "./row-form-dialog";
+import { ModifyTableDialog } from "../../../../../modify-table-dialog";
 
 interface Column {
   name: string;
@@ -108,6 +109,7 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
   const [offset, setOffset] = useState(0);
   const [copied, setCopied] = useState(false);
   const [insertOpen, setInsertOpen] = useState(false);
+  const [modifyOpen, setModifyOpen] = useState(false);
 
   const rowColumns: RowColumnInfo[] = (detail?.columns ?? []).map((c) => ({
     name: c.name,
@@ -159,13 +161,24 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
           : `database ${database}`
       }
       actions={
-        <Link
-          href={`/sqlserver/${connectionId}/databases/${encodeURIComponent(database)}`}
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="size-3.5" />
-          Back
-        </Link>
+        <>
+          <Link
+            href={`/sqlserver/${connectionId}/databases/${encodeURIComponent(database)}`}
+            className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+          >
+            <ArrowLeft className="size-3.5" />
+            Back
+          </Link>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setModifyOpen(true)}
+            disabled={!detail}
+          >
+            <Wrench className="size-3.5" />
+            Modify
+          </Button>
+        </>
       }
     >
       <Tabs value={tab} onValueChange={setTab} className="h-full flex flex-col">
@@ -482,20 +495,36 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
       </Tabs>
 
       {detail ? (
-        <RowFormDialog
-          open={insertOpen}
-          onOpenChange={setInsertOpen}
-          mode="insert"
-          base={base}
-          schema={schema}
-          table={table}
-          columns={rowColumns}
-          onSuccess={() => {
-            setOffset(0);
-            void loadData(0);
-            void loadDetail();
-          }}
-        />
+        <>
+          <RowFormDialog
+            open={insertOpen}
+            onOpenChange={setInsertOpen}
+            mode="insert"
+            base={base}
+            schema={schema}
+            table={table}
+            columns={rowColumns}
+            onSuccess={() => {
+              setOffset(0);
+              void loadData(0);
+              void loadDetail();
+            }}
+          />
+          <ModifyTableDialog
+            open={modifyOpen}
+            onOpenChange={setModifyOpen}
+            connectionId={connectionId}
+            db={database}
+            schema={schema}
+            table={table}
+            columns={detail.columns}
+            onApplied={() => {
+              setData(null);
+              void loadDetail();
+              void loadData(offset);
+            }}
+          />
+        </>
       ) : null}
     </WorkspacePage>
   );
