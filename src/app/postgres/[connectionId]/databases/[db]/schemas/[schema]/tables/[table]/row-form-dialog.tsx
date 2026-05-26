@@ -250,6 +250,7 @@ export function RowFormDialog({
                         onClick={() => setValue(c.name, { kind: "null" })}
                         disabled={!c.isNullable}
                         tone="indigo"
+                        tabIndex={-1}
                       >
                         null
                       </ModePill>
@@ -260,6 +261,7 @@ export function RowFormDialog({
                             setValue(c.name, { kind: "default" })
                           }
                           tone="indigo"
+                          tabIndex={-1}
                         >
                           default
                         </ModePill>
@@ -273,6 +275,7 @@ export function RowFormDialog({
                           })
                         }
                         tone="indigo"
+                        tabIndex={-1}
                       >
                         value
                       </ModePill>
@@ -301,6 +304,7 @@ export function RowFormDialog({
                           <button
                             key={b}
                             type="button"
+                            tabIndex={-1}
                             onClick={() =>
                               setValue(c.name, { kind: "value", value: b })
                             }

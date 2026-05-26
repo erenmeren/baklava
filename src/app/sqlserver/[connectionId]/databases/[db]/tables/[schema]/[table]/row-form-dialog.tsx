@@ -277,6 +277,7 @@ export function RowFormDialog({
                         onClick={() => setValue(c.name, { kind: "null" })}
                         disabled={!c.nullable || identityLocked}
                         tone="rose"
+                        tabIndex={-1}
                       >
                         null
                       </ModePill>
@@ -285,6 +286,7 @@ export function RowFormDialog({
                           active={v.kind === "default"}
                           onClick={() => setValue(c.name, { kind: "default" })}
                           tone="rose"
+                          tabIndex={-1}
                         >
                           default
                         </ModePill>
@@ -299,6 +301,7 @@ export function RowFormDialog({
                         }
                         disabled={identityLocked}
                         tone="rose"
+                        tabIndex={-1}
                       >
                         value
                       </ModePill>
@@ -327,6 +330,7 @@ export function RowFormDialog({
                           <button
                             key={b}
                             type="button"
+                            tabIndex={-1}
                             onClick={() =>
                               setValue(c.name, { kind: "value", value: b })
                             }

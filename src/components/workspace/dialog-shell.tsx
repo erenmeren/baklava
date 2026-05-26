@@ -126,12 +126,14 @@ export function ModePill({
   onClick,
   disabled,
   tone = "rose",
+  tabIndex,
   children,
 }: {
   active: boolean;
   onClick: () => void;
   disabled?: boolean;
   tone?: DialogTone;
+  tabIndex?: number;
   children: ReactNode;
 }) {
   const activeRing = {
@@ -149,6 +151,7 @@ export function ModePill({
       type="button"
       onClick={onClick}
       disabled={disabled}
+      tabIndex={tabIndex}
       className={cn(
         "inline-flex items-center rounded-full px-2 py-px text-[10px] font-mono uppercase tracking-[0.12em] transition-colors",
         active
