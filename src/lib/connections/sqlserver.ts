@@ -631,6 +631,116 @@ export async function deleteSqlServerRow(
   );
 }
 
+// ─── Alter table (add / drop / rename / change column) ──────────────────
+//
+// Mirrors the Postgres ALTER pipeline (modify-table-dialog → PATCH route).
+// Each op is one T-SQL statement; all of them run inside a single
+// transaction so partial failures roll back cleanly.
+//
+// T-SQL quirks worth noting:
+// - Adding a column uses `ADD` (no `COLUMN` keyword).
+// - Renaming uses sp_rename — no native `RENAME COLUMN` syntax.
+// - ALTER COLUMN must re-state the type even when only nullability is
+//   changing, so this driver collapses "type + nullable" into one op
+//   (alterColumn) rather than Postgres's split setNotNull/dropNotNull.
+
+export type SqlServerAlterTableOp =
+  | {
+      kind: "addColumn";
+      name: string;
+      dataType: string;
+      nullable: boolean;
+      default?: string;
+    }
+  | { kind: "dropColumn"; name: string }
+  | { kind: "renameColumn"; from: string; to: string }
+  | {
+      kind: "alterColumn";
+      name: string;
+      dataType: string;
+      nullable: boolean;
+    };
+
+function alterTableSql(
+  database: string,
+  schema: string,
+  table: string,
+  op: SqlServerAlterTableOp,
+): string {
+  const fqn = `[${database}].[${schema}].[${table}]`;
+  switch (op.kind) {
+    case "addColumn": {
+      const col = validateSqlServerIdentifier(op.name, "column name");
+      const t = requireNoStatementTerminator(op.dataType.trim(), "Column type");
+      const parts = [`ALTER TABLE ${fqn} ADD [${col}] ${t}`];
+      parts.push(op.nullable ? "NULL" : "NOT NULL");
+      if (op.default && op.default.trim()) {
+        parts.push(
+          `DEFAULT (${requireNoStatementTerminator(op.default.trim(), "Default expression")})`,
+        );
+      }
+      return parts.join(" ");
+    }
+    case "dropColumn": {
+      const col = validateSqlServerIdentifier(op.name, "column name");
+      return `ALTER TABLE ${fqn} DROP COLUMN [${col}]`;
+    }
+    case "renameColumn": {
+      const from = validateSqlServerIdentifier(op.from, "column name");
+      const to = validateSqlServerIdentifier(op.to, "column name");
+      // sp_rename is a stored proc — we send the qualifier as an N'…'
+      // literal. The pieces are alnum/underscore via the validator so
+      // they can't break out of the string literal.
+      return `EXEC sp_rename N'${schema}.${table}.${from}', N'${to}', N'COLUMN'`;
+    }
+    case "alterColumn": {
+      const col = validateSqlServerIdentifier(op.name, "column name");
+      const t = requireNoStatementTerminator(op.dataType.trim(), "Column type");
+      return `ALTER TABLE ${fqn} ALTER COLUMN [${col}] ${t} ${
+        op.nullable ? "NULL" : "NOT NULL"
+      }`;
+    }
+  }
+}
+
+export async function alterSqlServerTable(
+  config: SqlServerConfig,
+  database: string,
+  schema: string,
+  table: string,
+  ops: SqlServerAlterTableOp[],
+): Promise<{ applied: number }> {
+  validateSqlServerIdentifier(database, "database name");
+  validateSqlServerIdentifier(schema, "schema name");
+  validateSqlServerIdentifier(table, "table name");
+  if (ops.length === 0) return { applied: 0 };
+
+  // Order: DROP → ALTER → RENAME → ADD. Same shape as the Postgres
+  // pipeline so a sequence of changes from one form submission applies
+  // in a sensible order (drops free up names before adds, renames after
+  // any column-level alters so we still reference the original name).
+  const drops = ops.filter((o) => o.kind === "dropColumn");
+  const alters = ops.filter((o) => o.kind === "alterColumn");
+  const renames = ops.filter((o) => o.kind === "renameColumn");
+  const adds = ops.filter((o) => o.kind === "addColumn");
+  const ordered = [...drops, ...alters, ...renames, ...adds];
+
+  const sql = [
+    "BEGIN TRANSACTION;",
+    ...ordered.map((op) => alterTableSql(database, schema, table, op) + ";"),
+    "COMMIT TRANSACTION;",
+  ].join("\n");
+
+  await withPool(
+    config,
+    async (pool) => {
+      await pool.request().batch(sql);
+    },
+    { database },
+  );
+  return { applied: ordered.length };
+}
+
 // ─── Create: sequence / synonym / type / table-type / arbitrary DDL ──────
 //
 // Each helper whitelists identifiers (schema, name, column names) and rejects
