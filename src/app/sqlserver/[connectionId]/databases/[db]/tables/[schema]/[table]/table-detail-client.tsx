@@ -21,6 +21,7 @@ import { Copy, Check, Plus, Trash, Wand2 } from "lucide-react";
 import { RowFormDialog, type ColumnInfo as RowColumnInfo } from "./row-form-dialog";
 import { ModifyTableDialog } from "../../../../../modify-table-dialog";
 import { DropConfirm } from "../../../../../drop-confirm";
+import { DataPagination } from "@/components/sql/pagination";
 
 interface Column {
   name: string;
@@ -100,14 +101,14 @@ function fmtCell(v: unknown): React.ReactNode {
   return String(v);
 }
 
-const PAGE = 100;
-
 export function TableDetailClient({ connectionId, database, schema, table }: Props) {
   const base = `/api/sqlserver/${connectionId}/databases/${encodeURIComponent(database)}/tables/${encodeURIComponent(schema)}/${encodeURIComponent(table)}`;
   const [tab, setTab] = useState("data");
   const [detail, setDetail] = useState<Detail | null>(null);
   const [data, setData] = useState<TableData | null>(null);
   const [offset, setOffset] = useState(0);
+  const [pageSize, setPageSize] = useState(100);
+  const [loadingData, setLoadingData] = useState(false);
   const [copied, setCopied] = useState(false);
   const [insertOpen, setInsertOpen] = useState(false);
   const [modifyOpen, setModifyOpen] = useState(false);
@@ -142,15 +143,21 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
   }, [base]);
 
   const loadData = useCallback(
-    async (off: number) => {
-      const res = await fetch(`${base}/data?offset=${off}&limit=${PAGE}`, {
-        cache: "no-store",
-      });
-      const d = await res.json();
-      if (res.ok) setData(d as TableData);
-      else toast.error("Could not load data", { description: d.error });
+    async (off: number, limit: number = pageSize) => {
+      setLoadingData(true);
+      try {
+        const res = await fetch(
+          `${base}/data?offset=${off}&limit=${limit}`,
+          { cache: "no-store" },
+        );
+        const d = await res.json();
+        if (res.ok) setData(d as TableData);
+        else toast.error("Could not load data", { description: d.error });
+      } finally {
+        setLoadingData(false);
+      }
     },
-    [base],
+    [base, pageSize],
   );
 
   useEffect(() => {
@@ -257,38 +264,21 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
                   </tbody>
                 </table>
               </div>
-              <div className="flex items-center justify-between text-xs font-mono text-muted-foreground">
-                <span>
-                  {offset + 1}–{Math.min(offset + PAGE, data.total)} of{" "}
-                  {data.total.toLocaleString()}
-                </span>
-                <div className="flex gap-1">
-                  <Button
-                    size="xs"
-                    variant="outline"
-                    disabled={offset === 0}
-                    onClick={() => {
-                      const o = Math.max(0, offset - PAGE);
-                      setOffset(o);
-                      void loadData(o);
-                    }}
-                  >
-                    Prev
-                  </Button>
-                  <Button
-                    size="xs"
-                    variant="outline"
-                    disabled={offset + PAGE >= data.total}
-                    onClick={() => {
-                      const o = offset + PAGE;
-                      setOffset(o);
-                      void loadData(o);
-                    }}
-                  >
-                    Next
-                  </Button>
-                </div>
-              </div>
+              <DataPagination
+                offset={offset}
+                pageSize={pageSize}
+                total={data.total}
+                loading={loadingData}
+                onOffsetChange={(next) => {
+                  setOffset(next);
+                  void loadData(next);
+                }}
+                onPageSizeChange={(size) => {
+                  setPageSize(size);
+                  setOffset(0);
+                  void loadData(0, size);
+                }}
+              />
             </>
           )}
         </TabsContent>

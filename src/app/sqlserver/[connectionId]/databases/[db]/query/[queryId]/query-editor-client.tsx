@@ -25,6 +25,7 @@ import { useSchemaCompletions } from "@/lib/sql/use-schema-completions";
 import { smartSqlCompletions } from "@/lib/sql/editor-completions";
 import { SQLSERVER_KEYWORDS, SQLSERVER_TYPES } from "@/lib/sql/dialect-keywords";
 import { ResultActions } from "@/components/sql/result-actions";
+import { DataPagination } from "@/components/sql/pagination";
 import {
   ShortcutCheatsheet,
   useIsMac,
@@ -643,6 +644,18 @@ function ResultGrid({
   multi: boolean;
   filenameBase: string;
 }) {
+  const [offset, setOffset] = useState(0);
+  const [pageSize, setPageSize] = useState(100);
+  // Reset to first page whenever the result set is replaced (new query run).
+  useEffect(() => {
+    setOffset(0);
+  }, [rs]);
+
+  const pageRows = useMemo(
+    () => rs.rows.slice(offset, offset + pageSize),
+    [rs.rows, offset, pageSize],
+  );
+
   return (
     <div>
       <div className="flex items-center justify-between gap-2 px-2 py-1 bg-muted/20 border-b border-border/40">
@@ -667,8 +680,8 @@ function ResultGrid({
           </tr>
         </thead>
         <tbody>
-          {rs.rows.map((row, ri) => (
-            <tr key={ri} className="border-t border-border/30 hover:bg-muted/30">
+          {pageRows.map((row, ri) => (
+            <tr key={offset + ri} className="border-t border-border/30 hover:bg-muted/30">
               {row.map((cell, ci) => (
                 <td key={ci} className="px-3 py-1 align-top max-w-[40ch] truncate">
                   {formatCell(cell)}
@@ -678,6 +691,20 @@ function ResultGrid({
           ))}
         </tbody>
       </table>
+      {rs.rows.length > 0 ? (
+        <div className="px-2 py-1.5 border-t border-border/40">
+          <DataPagination
+            offset={offset}
+            pageSize={pageSize}
+            total={rs.rows.length}
+            onOffsetChange={setOffset}
+            onPageSizeChange={(size) => {
+              setPageSize(size);
+              setOffset(0);
+            }}
+          />
+        </div>
+      ) : null}
       {rs.truncated ? (
         <div className="px-3 py-1.5 text-[10px] font-mono text-amber-600 border-t border-border/40">
           truncated to 1000 rows ({rs.rowCount} total)

@@ -29,6 +29,7 @@ import { useSchemaCompletions } from "@/lib/sql/use-schema-completions";
 import { smartSqlCompletions } from "@/lib/sql/editor-completions";
 import { POSTGRES_KEYWORDS, POSTGRES_TYPES } from "@/lib/sql/dialect-keywords";
 import { ResultActions } from "@/components/sql/result-actions";
+import { DataPagination } from "@/components/sql/pagination";
 import {
   ShortcutCheatsheet,
   useIsMac,
@@ -838,6 +839,13 @@ function DataPanel({
   headPad: string;
   kbd: string;
 }) {
+  const [offset, setOffset] = useState(0);
+  const [pageSize, setPageSize] = useState(100);
+  // Reset paging when the result set changes (new query, edited statement).
+  useEffect(() => {
+    setOffset(0);
+  }, [result]);
+
   if (phase === "idle" && !result && !error) {
     return (
       <EmptyState
@@ -870,7 +878,9 @@ function DataPanel({
       />
     );
   }
+  const pageRows = result.rows.slice(offset, offset + pageSize);
   return (
+    <div className="flex flex-col">
     <table className="w-full text-xs font-mono border-collapse">
       <thead className="bg-muted/60 sticky top-0 z-[1]">
         <tr>
@@ -888,9 +898,9 @@ function DataPanel({
         </tr>
       </thead>
       <tbody>
-        {result.rows.map((row, i) => (
+        {pageRows.map((row, i) => (
           <tr
-            key={i}
+            key={offset + i}
             className="border-b border-border/30 hover:bg-foreground/[0.025]"
           >
             {row.map((cell, j) => (
@@ -914,6 +924,21 @@ function DataPanel({
         ))}
       </tbody>
     </table>
+      {result.rows.length > 0 ? (
+        <div className="border-t border-border/40 px-3 py-2 bg-background sticky bottom-0">
+          <DataPagination
+            offset={offset}
+            pageSize={pageSize}
+            total={result.rows.length}
+            onOffsetChange={setOffset}
+            onPageSizeChange={(size) => {
+              setPageSize(size);
+              setOffset(0);
+            }}
+          />
+        </div>
+      ) : null}
+    </div>
   );
 }
 

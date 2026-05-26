@@ -27,10 +27,9 @@ import {
 } from "@/components/ui/alert-dialog";
 import { WorkspacePage } from "@/components/workspace/workspace-page";
 import { RefreshButton } from "@/components/workspace/auto-refresh";
+import { DataPagination } from "@/components/sql/pagination";
 import {
   Loader2,
-  ChevronLeft,
-  ChevronRight,
   Pencil,
   Plus,
   Trash2,
@@ -138,7 +137,7 @@ export function TableDetailClient({
   const [ddlCopied, setDdlCopied] = useState(false);
 
   const [pageData, setPageData] = useState<TableData | null>(null);
-  const [pageLimit] = useState(100);
+  const [pageLimit, setPageLimit] = useState(100);
   const [pageOffset, setPageOffset] = useState(0);
   const [loadingData, setLoadingData] = useState(false);
 
@@ -199,11 +198,11 @@ export function TableDetailClient({
   );
 
   const loadData = useCallback(
-    async (offset: number) => {
+    async (offset: number, limit: number = pageLimit) => {
       setLoadingData(true);
       try {
         const res = await fetch(
-          `${base}?view=data&limit=${pageLimit}&offset=${offset}`,
+          `${base}?view=data&limit=${limit}&offset=${offset}`,
           { cache: "no-store" }
         );
         const data = await res.json();
@@ -292,11 +291,6 @@ export function TableDetailClient({
       loadData(0);
     }
   }, [tab, columns, indexes, constraints, foreignKeys, ddl, stats, pageData, base, fetchView, loadData]);
-
-  const totalPages = pageData?.totalRows
-    ? Math.max(1, Math.ceil(pageData.totalRows / pageLimit))
-    : null;
-  const currentPage = Math.floor(pageOffset / pageLimit) + 1;
 
   const filteredRows = useMemo(() => {
     if (!pageData) return [];
@@ -465,38 +459,6 @@ export function TableDetailClient({
                 onClick={() => loadData(pageOffset)}
                 loading={loadingData}
               />
-              <Button
-                size="icon"
-                variant="outline"
-                onClick={() => {
-                  const next = Math.max(0, pageOffset - pageLimit);
-                  setPageOffset(next);
-                  loadData(next);
-                }}
-                disabled={pageOffset === 0 || loadingData}
-              >
-                <ChevronLeft className="size-3.5" />
-              </Button>
-              <span className="text-xs text-muted-foreground font-mono">
-                {currentPage}
-                {totalPages ? `/${totalPages}` : ""}
-              </span>
-              <Button
-                size="icon"
-                variant="outline"
-                onClick={() => {
-                  const next = pageOffset + pageLimit;
-                  setPageOffset(next);
-                  loadData(next);
-                }}
-                disabled={
-                  loadingData ||
-                  (pageData?.rowCount ?? 0) < pageLimit ||
-                  (totalPages != null && currentPage >= totalPages)
-                }
-              >
-                <ChevronRight className="size-3.5" />
-              </Button>
             </div>
           </div>
           {pageData ? (
@@ -625,6 +587,23 @@ export function TableDetailClient({
               ))}
             </div>
           )}
+          {pageData ? (
+            <DataPagination
+              offset={pageOffset}
+              pageSize={pageLimit}
+              total={pageData.totalRows ?? null}
+              loading={loadingData}
+              onOffsetChange={(next) => {
+                setPageOffset(next);
+                loadData(next);
+              }}
+              onPageSizeChange={(size) => {
+                setPageLimit(size);
+                setPageOffset(0);
+                loadData(0, size);
+              }}
+            />
+          ) : null}
         </TabsContent>
 
         <TabsContent value="structure" className="pt-4 space-y-3">
