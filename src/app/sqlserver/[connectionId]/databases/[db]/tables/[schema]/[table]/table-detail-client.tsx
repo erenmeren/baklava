@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -17,9 +17,10 @@ import {
 import { WorkspacePage } from "@/components/workspace/workspace-page";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { ArrowLeft, Copy, Check, Plus, Wrench } from "lucide-react";
+import { Copy, Check, Plus, Trash, Wand2 } from "lucide-react";
 import { RowFormDialog, type ColumnInfo as RowColumnInfo } from "./row-form-dialog";
 import { ModifyTableDialog } from "../../../../../modify-table-dialog";
+import { DropConfirm } from "../../../../../drop-confirm";
 
 interface Column {
   name: string;
@@ -110,6 +111,19 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
   const [copied, setCopied] = useState(false);
   const [insertOpen, setInsertOpen] = useState(false);
   const [modifyOpen, setModifyOpen] = useState(false);
+  const [dropOpen, setDropOpen] = useState(false);
+
+  // Sidebar's "Modify…" navigates here with ?modify=1 — open the dialog
+  // on arrival and strip the query string so a refresh doesn't reopen it.
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  useEffect(() => {
+    if (searchParams.get("modify") === "1") {
+      setModifyOpen(true);
+      router.replace(pathname);
+    }
+  }, [searchParams, router, pathname]);
 
   const rowColumns: RowColumnInfo[] = (detail?.columns ?? []).map((c) => ({
     name: c.name,
@@ -162,21 +176,25 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
       }
       actions={
         <>
-          <Link
-            href={`/sqlserver/${connectionId}/databases/${encodeURIComponent(database)}`}
-            className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-          >
-            <ArrowLeft className="size-3.5" />
-            Back
-          </Link>
           <Button
             size="sm"
             variant="outline"
             onClick={() => setModifyOpen(true)}
             disabled={!detail}
+            title="Add / drop / rename columns"
           >
-            <Wrench className="size-3.5" />
+            <Wand2 className="size-3.5" />
             Modify
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setDropOpen(true)}
+            className="text-destructive hover:text-destructive"
+            title="Drop this table"
+          >
+            <Trash className="size-3.5" />
+            Drop
           </Button>
         </>
       }
@@ -522,6 +540,27 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
               setData(null);
               void loadDetail();
               void loadData(offset);
+            }}
+          />
+          <DropConfirm
+            open={dropOpen}
+            onOpenChange={setDropOpen}
+            connectionId={connectionId}
+            target={
+              dropOpen
+                ? {
+                    kind: "object",
+                    database,
+                    schema,
+                    name: table,
+                    objectKind: "table",
+                  }
+                : null
+            }
+            onDropped={() => {
+              router.push(
+                `/sqlserver/${connectionId}/databases/${encodeURIComponent(database)}`,
+              );
             }}
           />
         </>
