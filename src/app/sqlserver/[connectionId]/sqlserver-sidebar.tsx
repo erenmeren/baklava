@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Activity,
@@ -572,6 +572,7 @@ function SchemaList({
   onDrop: (target: DropTarget) => void;
   onCopy: (text: string) => void;
 }) {
+  const router = useRouter();
   // Group objects: schema → groupKind → objects.
   const bySchema = useMemo(() => {
     const map = new Map<string, Map<GroupKind, SqlObject[]>>();
@@ -650,6 +651,35 @@ function SchemaList({
                               name: o.name,
                               objectKind: o.kind,
                             })
+                          }
+                          onModify={
+                            kind === "tables"
+                              ? () => {
+                                  const base = `/sqlserver/${connectionId}/databases/${encodeURIComponent(db)}`;
+                                  router.push(
+                                    `${base}/tables/${encodeURIComponent(o.schema)}/${encodeURIComponent(o.name)}?modify=1`,
+                                  );
+                                }
+                              : undefined
+                          }
+                          onSelectTop100={
+                            kind === "tables"
+                              ? () => {
+                                  const qid =
+                                    Date.now().toString(36) +
+                                    Math.random().toString(36).slice(2, 6);
+                                  const sql = `SELECT TOP 100 *\nFROM [${o.schema}].[${o.name}];\n`;
+                                  if (typeof window !== "undefined") {
+                                    window.localStorage.setItem(
+                                      `baklava:mssql-query-sql:${connectionId}:${db}:${qid}`,
+                                      sql,
+                                    );
+                                  }
+                                  router.push(
+                                    `/sqlserver/${connectionId}/databases/${encodeURIComponent(db)}/query/${qid}`,
+                                  );
+                                }
+                              : undefined
                           }
                         />
                       )}
@@ -914,6 +944,8 @@ function ObjectRow({
   pathname,
   onCopy,
   onDrop,
+  onModify,
+  onSelectTop100,
 }: {
   connectionId: string;
   db: string;
@@ -922,6 +954,8 @@ function ObjectRow({
   pathname: string;
   onCopy: () => void;
   onDrop: () => void;
+  onModify?: () => void;
+  onSelectTop100?: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const dropNoun = GROUP_NOUN[group];
@@ -984,6 +1018,19 @@ function ObjectRow({
               <MoreHorizontal className="size-3" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              {onSelectTop100 ? (
+                <DropdownMenuItem onClick={onSelectTop100}>
+                  <ListOrdered className="size-3.5" />
+                  Select top 100 rows
+                </DropdownMenuItem>
+              ) : null}
+              {onModify ? (
+                <DropdownMenuItem onClick={onModify}>
+                  <Wrench className="size-3.5" />
+                  Modify…
+                </DropdownMenuItem>
+              ) : null}
+              {onSelectTop100 || onModify ? <DropdownMenuSeparator /> : null}
               <DropdownMenuItem onClick={onCopy}>Copy name</DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem

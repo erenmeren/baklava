@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import {
   Activity,
@@ -11,6 +11,7 @@ import {
   Folder,
   Hash,
   HeartPulse,
+  ListOrdered,
   Loader2,
   Lock,
   MoreHorizontal,
@@ -20,6 +21,7 @@ import {
   Server,
   Shield,
   Table as TableIcon,
+  Wrench,
   Eye,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -115,6 +117,7 @@ const EMPTY_GROUPS: SchemaGroups = {
 
 export function PostgresSidebar({ connectionId, defaultDatabase }: Props) {
   const pathname = usePathname();
+  const router = useRouter();
 
   // ----- Tree state ---------------------------------------------------------
 
@@ -489,6 +492,39 @@ export function PostgresSidebar({ connectionId, defaultDatabase }: Props) {
                                     }
                                     menuItems={
                                       <>
+                                        <DropdownMenuItem
+                                          onClick={() => {
+                                            const qid =
+                                              Date.now().toString(36) +
+                                              Math.random()
+                                                .toString(36)
+                                                .slice(2, 6);
+                                            const sql = `SELECT *\nFROM "${schema.name}"."${t.name}"\nLIMIT 100;\n`;
+                                            if (typeof window !== "undefined") {
+                                              window.localStorage.setItem(
+                                                `baklava:pg-query-sql:${connectionId}:${db.name}:${qid}`,
+                                                sql,
+                                              );
+                                            }
+                                            router.push(
+                                              `/postgres/${connectionId}/databases/${encodeURIComponent(db.name)}/query/${qid}`,
+                                            );
+                                          }}
+                                        >
+                                          <ListOrdered className="size-3.5" />
+                                          Select top 100 rows
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem
+                                          onClick={() =>
+                                            router.push(
+                                              `/postgres/${connectionId}/databases/${encodeURIComponent(db.name)}/schemas/${encodeURIComponent(schema.name)}/tables/${encodeURIComponent(t.name)}?modify=1`,
+                                            )
+                                          }
+                                        >
+                                          <Wrench className="size-3.5" />
+                                          Modify…
+                                        </DropdownMenuItem>
+                                        <DropdownMenuSeparator />
                                         <DropdownMenuItem
                                           onClick={() =>
                                             openTableDDL(

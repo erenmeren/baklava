@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -164,6 +164,17 @@ export function TableDetailClient({
   const [dropIdxTarget, setDropIdxTarget] = useState<string | null>(null);
   const [idxWorking, setIdxWorking] = useState(false);
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  // Sidebar "Modify…" navigates here with ?modify=1 — open the dialog on
+  // arrival and strip the query string so a refresh doesn't reopen it.
+  useEffect(() => {
+    if (searchParams.get("modify") === "1") {
+      setModifyOpen(true);
+      router.replace(pathname);
+    }
+  }, [searchParams, router, pathname]);
 
   const dropTarget: DropTarget = {
     kind: "table",
