@@ -2,6 +2,7 @@ import type {
   ConnectionRecord,
   DockerConfig,
   KafkaConfig,
+  KubernetesConfig,
   PostgresConfig,
   SqlServerConfig,
   TechId,
@@ -28,5 +29,15 @@ export const connectionSummaries: Record<
   sqlserver: (r) => {
     const cfg = r.config as SqlServerConfig;
     return `${cfg.user}@${cfg.host}:${cfg.port}/${cfg.database}`;
+  },
+  kubernetes: (r) => {
+    const cfg = r.config as KubernetesConfig;
+    const where =
+      cfg.source === "inline"
+        ? "inline kubeconfig"
+        : cfg.kubeconfigPath || "~/.kube/config";
+    const ctx = cfg.context ? `· ${cfg.context}` : "";
+    const ns = cfg.namespace ? `· ns=${cfg.namespace}` : "";
+    return `${where} ${ctx} ${ns}`.replace(/\s+/g, " ").trim();
   },
 };

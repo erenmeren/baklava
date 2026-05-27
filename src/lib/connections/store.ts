@@ -155,6 +155,7 @@ const SECRET_KEYS = new Set([
   "serviceRoleKey",
   "token",
   "authToken",
+  "kubeconfigYaml",
 ]);
 
 function mergeConfig(
