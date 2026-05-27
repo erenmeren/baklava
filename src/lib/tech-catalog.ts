@@ -1,6 +1,12 @@
-export type TechCategory = "Runtime" | "Database" | "Streaming";
+export type TechCategory = "Runtime" | "Database" | "Streaming" | "Orchestration";
 
-export const TECH_CATEGORIES = ["All", "Runtime", "Database", "Streaming"] as const;
+export const TECH_CATEGORIES = [
+  "All",
+  "Runtime",
+  "Database",
+  "Streaming",
+  "Orchestration",
+] as const;
 
 export type TechCategoryFilter = (typeof TECH_CATEGORIES)[number];
 
@@ -50,6 +56,16 @@ export const TECH_CATALOG: TechMeta[] = [
     description: "Databases, tables, queries.",
     category: "Database",
     color: "from-red-400 to-rose-600",
+    status: "available",
+  },
+  {
+    id: "kubernetes",
+    name: "Kubernetes",
+    tagline: "Container orchestrator",
+    description:
+      "k9s-inspired terminal-style browser for pods, deployments, services and more.",
+    category: "Orchestration",
+    color: "from-cyan-400 to-blue-700",
     status: "available",
   },
 ];

@@ -1,4 +1,9 @@
-export type TechId = "docker" | "kafka" | "postgres" | "sqlserver";
+export type TechId =
+  | "docker"
+  | "kafka"
+  | "postgres"
+  | "sqlserver"
+  | "kubernetes";
 
 export type ConnectionStatus = "untested" | "ok" | "error";
 
@@ -63,4 +68,21 @@ export interface SqlServerConfig {
   encrypt: boolean;
   /** Trust self-signed/unknown certs (dev / private networks). */
   trustServerCertificate: boolean;
+}
+
+export interface KubernetesConfig {
+  /**
+   * Where the kubeconfig lives. `"path"` reads a file from disk (default
+   * ~/.kube/config); `"inline"` stores the YAML directly in the connection
+   * record. Inline YAML is treated as a secret by the persistence layer.
+   */
+  source: "path" | "inline";
+  /** Absolute or ~-prefixed path to a kubeconfig file. */
+  kubeconfigPath?: string;
+  /** Pasted kubeconfig YAML. */
+  kubeconfigYaml?: string;
+  /** Context name inside the kubeconfig. Empty = current-context. */
+  context?: string;
+  /** Default namespace to pin in the workspace. Empty = "default". */
+  namespace?: string;
 }

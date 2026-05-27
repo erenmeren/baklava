@@ -18,6 +18,7 @@ import { DockerForm } from "@/app/docker/docker-form";
 import { PostgresForm } from "@/app/postgres/postgres-form";
 import { KafkaForm } from "@/app/kafka/kafka-form";
 import { SqlServerForm } from "@/app/sqlserver/sqlserver-form";
+import { KubernetesForm } from "@/app/kubernetes/kubernetes-form";
 
 interface Props {
   tech: TechMeta | null;
@@ -39,6 +40,7 @@ const FORMS: Record<TechId, React.ComponentType<ConnectionFormProps>> = {
   postgres: PostgresForm,
   kafka: KafkaForm,
   sqlserver: SqlServerForm,
+  kubernetes: KubernetesForm,
 };
 
 export function ConnectionSheet({ tech, onOpenChange }: Props) {
