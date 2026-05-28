@@ -20,6 +20,7 @@ import { KafkaForm } from "@/app/kafka/kafka-form";
 import { SqlServerForm } from "@/app/sqlserver/sqlserver-form";
 import { KubernetesForm } from "@/app/kubernetes/kubernetes-form";
 import { RedisForm } from "@/app/redis/redis-form";
+import { MongoForm } from "@/app/mongo/mongo-form";
 
 interface Props {
   tech: TechMeta | null;
@@ -43,6 +44,7 @@ const FORMS: Record<TechId, React.ComponentType<ConnectionFormProps>> = {
   sqlserver: SqlServerForm,
   kubernetes: KubernetesForm,
   redis: RedisForm,
+  mongo: MongoForm,
 };
 
 export function ConnectionSheet({ tech, onOpenChange }: Props) {

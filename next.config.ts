@@ -11,6 +11,7 @@ const nextConfig: NextConfig = {
     "tedious",
     "@kubernetes/client-node",
     "ioredis",
+    "mongodb",
   ],
 };
 

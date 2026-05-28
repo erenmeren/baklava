@@ -3,6 +3,7 @@ import type {
   DockerConfig,
   KafkaConfig,
   KubernetesConfig,
+  MongoConfig,
   PostgresConfig,
   RedisConfig,
   SqlServerConfig,
@@ -50,5 +51,14 @@ export const connectionSummaries: Record<
     const auth = cfg.username ? `${cfg.username}@` : "";
     const db = typeof cfg.db === "number" && cfg.db > 0 ? `/${cfg.db}` : "";
     return `${proto}://${auth}${cfg.host ?? ""}:${cfg.port ?? 6379}${db}`;
+  },
+  mongo: (r) => {
+    // Strip credentials before rendering — the redacted URI still has the
+    // mask glyphs from publicView so we just need the suffix.
+    const cfg = r.config as MongoConfig;
+    const uri = cfg.uri ?? "";
+    const stripped = uri.replace(/(mongodb(?:\+srv)?:\/\/)[^@/]*@/, "$1");
+    const db = cfg.defaultDb ? ` · ${cfg.defaultDb}` : "";
+    return `${stripped}${db}`;
   },
 };
