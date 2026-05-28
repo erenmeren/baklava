@@ -4,7 +4,8 @@ export type TechId =
   | "postgres"
   | "sqlserver"
   | "kubernetes"
-  | "redis";
+  | "redis"
+  | "mongo";
 
 export type ConnectionStatus = "untested" | "ok" | "error";
 
@@ -92,6 +93,17 @@ export interface RedisConfig {
   db?: number;
   /** Enable TLS to the server (`rediss://`). */
   tls: boolean;
+}
+
+export interface MongoConfig {
+  /**
+   * Full MongoDB connection string — `mongodb://` for self-hosted,
+   * `mongodb+srv://` for Atlas / SRV records. Treated as a secret because
+   * the URI contains the password.
+   */
+  uri: string;
+  /** Default database to open the workspace on. Empty = list all. */
+  defaultDb?: string;
 }
 
 export interface KubernetesConfig {

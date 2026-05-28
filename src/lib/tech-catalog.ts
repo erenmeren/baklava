@@ -84,6 +84,16 @@ export const TECH_CATALOG: TechMeta[] = [
     color: "from-rose-400 to-red-700",
     status: "available",
   },
+  {
+    id: "mongo",
+    name: "MongoDB",
+    tagline: "Document database",
+    description:
+      "Compass-style: databases, collections, document browser with EJSON filter, aggregation pipeline, indexes.",
+    category: "Database",
+    color: "from-emerald-400 to-green-700",
+    status: "available",
+  },
 ];
 
 export function getTech(id: string): TechMeta | undefined {
