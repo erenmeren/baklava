@@ -10,6 +10,7 @@ const nextConfig: NextConfig = {
     "mssql",
     "tedious",
     "@kubernetes/client-node",
+    "ioredis",
   ],
 };
 

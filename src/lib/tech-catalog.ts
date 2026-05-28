@@ -1,4 +1,9 @@
-export type TechCategory = "Runtime" | "Database" | "Streaming" | "Orchestration";
+export type TechCategory =
+  | "Runtime"
+  | "Database"
+  | "Streaming"
+  | "Orchestration"
+  | "Cache";
 
 export const TECH_CATEGORIES = [
   "All",
@@ -6,6 +11,7 @@ export const TECH_CATEGORIES = [
   "Database",
   "Streaming",
   "Orchestration",
+  "Cache",
 ] as const;
 
 export type TechCategoryFilter = (typeof TECH_CATEGORIES)[number];
@@ -66,6 +72,16 @@ export const TECH_CATALOG: TechMeta[] = [
       "k9s-inspired terminal-style browser for pods, deployments, services and more.",
     category: "Orchestration",
     color: "from-cyan-400 to-blue-700",
+    status: "available",
+  },
+  {
+    id: "redis",
+    name: "Redis",
+    tagline: "In-memory data store",
+    description:
+      "RedisInsight-style browser: typed key viewer, CLI, pub/sub, streams, MONITOR, cluster topology.",
+    category: "Cache",
+    color: "from-rose-400 to-red-700",
     status: "available",
   },
 ];

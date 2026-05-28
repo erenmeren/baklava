@@ -4,6 +4,7 @@ import type {
   KafkaConfig,
   KubernetesConfig,
   PostgresConfig,
+  RedisConfig,
   SqlServerConfig,
   TechId,
 } from "./types";
@@ -39,5 +40,15 @@ export const connectionSummaries: Record<
     const ctx = cfg.context ? `· ${cfg.context}` : "";
     const ns = cfg.namespace ? `· ns=${cfg.namespace}` : "";
     return `${where} ${ctx} ${ns}`.replace(/\s+/g, " ").trim();
+  },
+  redis: (r) => {
+    const cfg = r.config as RedisConfig;
+    const proto = cfg.tls ? "rediss" : "redis";
+    if (cfg.mode === "cluster") {
+      return `${proto}-cluster · ${(cfg.nodes ?? "").split(",").length} seed nodes`;
+    }
+    const auth = cfg.username ? `${cfg.username}@` : "";
+    const db = typeof cfg.db === "number" && cfg.db > 0 ? `/${cfg.db}` : "";
+    return `${proto}://${auth}${cfg.host ?? ""}:${cfg.port ?? 6379}${db}`;
   },
 };

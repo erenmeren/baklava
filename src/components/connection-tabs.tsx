@@ -19,6 +19,7 @@ const FIRST_PAGE: Record<TechId, string> = {
   kafka: "",
   sqlserver: "",
   kubernetes: "pods",
+  redis: "keys",
 };
 
 const STORAGE_KEY = "baklava:open-tabs";
