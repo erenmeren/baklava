@@ -56,8 +56,10 @@ function saveOpenTabs(ids: string[]) {
 }
 
 function activeIdFromPath(pathname: string): string | null {
-  // /docker/<id>/...   /postgres/<id>/...   /kafka/<id>/...
-  const m = pathname.match(/^\/(?:docker|postgres|kafka)\/([^/]+)/);
+  // /<tech>/<id>/...
+  const m = pathname.match(
+    /^\/(?:docker|postgres|kafka|sqlserver|kubernetes|redis|mongo)\/([^/]+)/,
+  );
   return m ? m[1] : null;
 }
 

@@ -19,21 +19,27 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
-  if (!body?.config?.uri?.trim()) {
+  // Trim + strip wrapping quotes the user may have pasted accidentally.
+  const rawUri = body?.config?.uri ?? "";
+  const cleaned = rawUri.trim().replace(/^['"`](.*)['"`]$/, "$1").trim();
+  if (!cleaned) {
     return NextResponse.json(
       { error: "Connection URI is required" },
       { status: 400 },
     );
   }
-  if (
-    !body.config.uri.startsWith("mongodb://") &&
-    !body.config.uri.startsWith("mongodb+srv://")
-  ) {
+  const lower = cleaned.toLowerCase();
+  if (!lower.startsWith("mongodb://") && !lower.startsWith("mongodb+srv://")) {
+    const preview = cleaned.slice(0, 30) + (cleaned.length > 30 ? "…" : "");
     return NextResponse.json(
-      { error: "URI must begin with mongodb:// or mongodb+srv://" },
+      {
+        error: `URI must begin with mongodb:// or mongodb+srv://. Got: "${preview}"`,
+      },
       { status: 400 },
     );
   }
+  // Use the cleaned value going forward.
+  body.config = { ...body.config, uri: cleaned };
 
   const probeId = `__probe_${Math.random().toString(36).slice(2)}`;
   try {

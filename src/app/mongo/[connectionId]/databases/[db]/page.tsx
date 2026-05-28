@@ -4,6 +4,7 @@ import type { MongoConfig } from "@/lib/connections/types";
 import { listCollections } from "@/lib/connections/mongo";
 import { formatError } from "@/lib/errors";
 import { WorkspacePage } from "@/components/workspace/workspace-page";
+import { CreateCollectionButton } from "./create-collection-button";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +33,7 @@ export default async function DatabasePage({ params }: Props) {
     <WorkspacePage
       title={dbName}
       description="Collections, view counts, sizes and index counts at a glance."
+      actions={<CreateCollectionButton connectionId={connectionId} dbName={dbName} />}
     >
       {result.ok ? (
         <div className="border border-border/60 rounded-md overflow-hidden">
