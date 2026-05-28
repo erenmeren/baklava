@@ -4,6 +4,7 @@ import { requireConnection } from "@/lib/connections/server";
 import type { MongoConfig } from "@/lib/connections/types";
 import { probe } from "@/lib/connections/mongo";
 import { MongoSidebar } from "./mongo-sidebar";
+import { MongoTabs } from "./mongo-tabs";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +39,10 @@ export default async function MongoWorkspaceLayout({
         />
       }
     >
-      {children}
+      <div className="flex flex-col h-full min-h-0">
+        <MongoTabs connectionId={connectionId} />
+        <div className="flex-1 min-h-0">{children}</div>
+      </div>
     </WorkspaceShell>
   );
 }
