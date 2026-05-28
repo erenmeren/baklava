@@ -4,47 +4,53 @@ import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 
 interface Props {
-  target: string;
+  connectionId: string;
+  namespace: string;
+  pod: string;
   onClose: () => void;
 }
 
-const LEVELS = ["INFO", "INFO", "INFO", "DEBUG", "WARN", "INFO", "ERROR"] as const;
-const PHRASES = [
-  "incoming request method=GET path=/healthz",
-  "processed 142 events in 18ms",
-  "connection accepted from 10.244.2.34",
-  "cache hit ratio=0.91",
-  "renewed lease ttl=15s",
-  "outgoing call upstream=ledger status=200",
-  "rate limit close threshold ratio=0.78",
-  "queue depth=12 lag=4ms",
-  "metrics flushed",
-  "config reload triggered",
-];
-
-function level(): (typeof LEVELS)[number] {
-  return LEVELS[Math.floor(Math.random() * LEVELS.length)];
+interface Line {
+  id: number;
+  text: string;
+  level: "INFO" | "WARN" | "ERROR" | "DEBUG" | "RAW";
 }
 
-function phrase(): string {
-  return PHRASES[Math.floor(Math.random() * PHRASES.length)];
+function inferLevel(text: string): Line["level"] {
+  // Heuristic — most app logs prefix the level; we just colorize so the
+  // overlay reads at a glance like k9s.
+  const upper = text.slice(0, 80).toUpperCase();
+  if (upper.includes("ERROR") || upper.includes("FATAL")) return "ERROR";
+  if (upper.includes("WARN")) return "WARN";
+  if (upper.includes("DEBUG") || upper.includes("TRACE")) return "DEBUG";
+  if (upper.includes("INFO")) return "INFO";
+  return "RAW";
 }
 
-function ts(): string {
-  return new Date().toISOString().replace("T", " ").slice(0, 19);
-}
+const MAX_LINES = 1000;
 
 /**
- * Mock log stream. Pumps a new line every ~280ms, supports follow / pause,
- * grep filter, and clear. Mirrors `kubectl logs -f` aesthetics.
+ * Real log stream. Subscribes to /api/kubernetes/[id]/pods/[ns]/[name]/logs
+ * over SSE — server pumps `line` events (one per kubectl log line) and a
+ * final `end` event when the stream closes. Follow / pause / grep / clear /
+ * download all mirror `kubectl logs -f` ergonomics.
  */
-export function LogOverlay({ target, onClose }: Props) {
-  const [lines, setLines] = useState<
-    { ts: string; level: string; msg: string }[]
-  >([]);
+export function LogOverlay({ connectionId, namespace, pod, onClose }: Props) {
+  const [lines, setLines] = useState<Line[]>([]);
   const [follow, setFollow] = useState(true);
   const [grep, setGrep] = useState("");
+  const [status, setStatus] = useState<"connecting" | "live" | "ended" | "error">(
+    "connecting",
+  );
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const followRef = useRef(true);
+  const sourceRef = useRef<EventSource | null>(null);
+  const idRef = useRef(0);
+
+  useEffect(() => {
+    followRef.current = follow;
+  }, [follow]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -54,40 +60,79 @@ export function LogOverlay({ target, onClose }: Props) {
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  // Seed
   useEffect(() => {
-    const seed: { ts: string; level: string; msg: string }[] = [];
-    for (let i = 0; i < 14; i++) {
-      seed.push({ ts: ts(), level: level(), msg: phrase() });
-    }
-    setLines(seed);
-  }, []);
+    const url = `/api/kubernetes/${connectionId}/pods/${encodeURIComponent(
+      namespace,
+    )}/${encodeURIComponent(pod)}/logs?tailLines=200`;
+    const es = new EventSource(url);
+    sourceRef.current = es;
+    es.addEventListener("line", (e) => {
+      const payload = JSON.parse((e as MessageEvent).data) as { text: string };
+      setStatus("live");
+      setLines((cur) => {
+        const next = cur.slice(-(MAX_LINES - 1));
+        next.push({
+          id: idRef.current++,
+          text: payload.text,
+          level: inferLevel(payload.text),
+        });
+        return next;
+      });
+    });
+    es.addEventListener("end", () => {
+      setStatus("ended");
+      es.close();
+    });
+    es.addEventListener("error", (e) => {
+      const msgEvent = e as MessageEvent;
+      if (msgEvent.data) {
+        try {
+          const { message } = JSON.parse(msgEvent.data) as { message?: string };
+          if (message) setErrorMsg(message);
+        } catch {
+          // ignore
+        }
+      }
+      setStatus("error");
+      es.close();
+    });
+    return () => {
+      es.close();
+      sourceRef.current = null;
+    };
+  }, [connectionId, namespace, pod]);
 
-  // Stream
   useEffect(() => {
-    if (!follow) return;
-    const id = setInterval(() => {
-      setLines((cur) => [
-        ...cur.slice(-300),
-        { ts: ts(), level: level(), msg: phrase() },
-      ]);
-    }, 280);
-    return () => clearInterval(id);
-  }, [follow]);
-
-  // Auto-scroll on new lines.
-  useEffect(() => {
-    if (!follow) return;
+    if (!followRef.current) return;
     const el = scrollRef.current;
     if (!el) return;
     el.scrollTop = el.scrollHeight;
-  }, [lines, follow]);
+  }, [lines]);
 
   const filtered = grep
-    ? lines.filter((l) =>
-        (l.msg + " " + l.level).toLowerCase().includes(grep.toLowerCase()),
-      )
+    ? lines.filter((l) => l.text.toLowerCase().includes(grep.toLowerCase()))
     : lines;
+
+  const target = `${namespace}/${pod}`;
+  const statusLabel: Record<typeof status, { label: string; color: string }> = {
+    connecting: { label: "connecting", color: "text-amber-600 dark:text-amber-400" },
+    live: { label: follow ? "following" : "paused", color: follow ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground" },
+    ended: { label: "ended", color: "text-muted-foreground" },
+    error: { label: "error", color: "text-red-600 dark:text-red-400" },
+  };
+
+  function download() {
+    const text = lines.map((l) => l.text).join("\n") + "\n";
+    const blob = new Blob([text], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${pod}.log`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
 
   return (
     <div className="fixed inset-0 z-40">
@@ -105,16 +150,22 @@ export function LogOverlay({ target, onClose }: Props) {
             <span
               className={cn(
                 "inline-flex items-center gap-1.5 text-[10px] ml-2",
-                follow ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground",
+                statusLabel[status].color,
               )}
             >
               <span
                 className={cn(
                   "size-1.5 rounded-full",
-                  follow ? "bg-emerald-500 status-pulse" : "bg-muted-foreground",
+                  status === "live" && follow
+                    ? "bg-emerald-500 status-pulse"
+                    : status === "live"
+                      ? "bg-muted-foreground"
+                      : status === "error"
+                        ? "bg-red-500"
+                        : "bg-amber-500",
                 )}
               />
-              {follow ? "following" : "paused"}
+              {statusLabel[status].label}
             </span>
           </div>
           <div className="flex items-center gap-2 shrink-0">
@@ -141,6 +192,12 @@ export function LogOverlay({ target, onClose }: Props) {
               clear
             </button>
             <button
+              onClick={download}
+              className="rounded border border-border/60 px-2 py-1 text-xs hover:bg-foreground/5"
+            >
+              download
+            </button>
+            <button
               onClick={onClose}
               className="text-muted-foreground hover:text-foreground text-xs"
             >
@@ -152,34 +209,41 @@ export function LogOverlay({ target, onClose }: Props) {
           ref={scrollRef}
           className="flex-1 min-h-0 overflow-auto bg-zinc-950 text-zinc-200 font-mono text-[11.5px] leading-[1.55]"
         >
-          {filtered.map((l, i) => (
-            <div key={i} className="px-4 py-px flex gap-3 hover:bg-white/[0.03]">
-              <span className="text-zinc-500 tabular-nums shrink-0">
-                {l.ts}
-              </span>
+          {status === "error" && errorMsg ? (
+            <div className="px-4 py-3 text-red-400 border-b border-red-500/30 bg-red-500/5 whitespace-pre-wrap">
+              {errorMsg}
+            </div>
+          ) : null}
+          {filtered.map((l) => (
+            <div key={l.id} className="px-4 py-px flex gap-3 hover:bg-white/[0.03]">
               <span
                 className={cn(
-                  "shrink-0 w-12",
+                  "shrink-0 w-12 uppercase tracking-[0.1em] text-[10px]",
                   l.level === "ERROR"
                     ? "text-red-400"
                     : l.level === "WARN"
                       ? "text-amber-400"
                       : l.level === "DEBUG"
                         ? "text-zinc-500"
-                        : "text-emerald-400",
+                        : l.level === "INFO"
+                          ? "text-emerald-400"
+                          : "text-zinc-600",
                 )}
               >
-                {l.level}
+                {l.level === "RAW" ? "" : l.level}
               </span>
               <span className="flex-1 min-w-0 whitespace-pre-wrap break-words">
-                {l.msg}
+                {l.text}
               </span>
             </div>
           ))}
-          {filtered.length === 0 ? (
+          {filtered.length === 0 && status !== "error" ? (
             <div className="px-4 py-12 text-center text-zinc-500">
-              no log lines match{" "}
-              <span className="text-zinc-300">&apos;{grep}&apos;</span>
+              {status === "connecting"
+                ? "waiting for first line…"
+                : grep
+                  ? <>no log lines match <span className="text-zinc-300">&apos;{grep}&apos;</span></>
+                  : "no log lines yet"}
             </div>
           ) : null}
         </div>

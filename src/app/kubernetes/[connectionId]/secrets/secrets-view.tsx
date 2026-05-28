@@ -66,9 +66,10 @@ export function SecretsView({ rows }: { rows: SecretRow[] }) {
     <ResourceTable
       resource="Secrets"
       shortName="sec"
+      kind="secret"
       rows={rows}
       columns={COLUMNS}
-      actions={{ delete: true }}
+      actions={{ edit: true, delete: true }}
     />
   );
 }

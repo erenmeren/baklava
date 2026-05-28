@@ -6,6 +6,8 @@ import { useK8s } from "./k8s-context";
 import { DetailOverlay } from "./detail-overlay";
 import { LogOverlay } from "./log-overlay";
 import { ConfirmOverlay } from "./confirm-overlay";
+import { ShellOverlay } from "./shell-overlay";
+import { EditOverlay } from "./edit-overlay";
 
 export interface Column<T> {
   /** Header label. Rendered uppercase in the head row. */
@@ -27,12 +29,18 @@ export interface ResourceTableProps<T extends { name: string; namespace?: string
   resource: string;
   /** Headline single-letter the table uses in toast strings, e.g. "po". */
   shortName?: string;
+  /**
+   * URL-friendly singular kind, e.g. "pod" / "deployment". Used to route
+   * the YAML edit endpoint. Required when `actions.edit` is true.
+   */
+  kind?: string;
   rows: T[];
   columns: Column<T>[];
   /** Optional resource-specific action enablement (e.g. logs only on pods). */
   actions?: {
     logs?: boolean;
     shell?: boolean;
+    edit?: boolean;
     delete?: boolean;
   };
   /** Render the right-hand "describe" YAML for the selected row. */
@@ -52,6 +60,7 @@ export interface ResourceTableProps<T extends { name: string; namespace?: string
 export function ResourceTable<T extends { name: string; namespace?: string }>({
   resource,
   shortName,
+  kind,
   rows,
   columns,
   actions = {},
@@ -64,6 +73,8 @@ export function ResourceTable<T extends { name: string; namespace?: string }>({
   const [overlay, setOverlay] = useState<
     null | { kind: "describe" | "yaml"; row: T }
     | { kind: "logs"; row: T }
+    | { kind: "shell"; row: T }
+    | { kind: "edit"; row: T }
     | { kind: "delete"; row: T }
   >(null);
 
@@ -148,6 +159,16 @@ export function ResourceTable<T extends { name: string; namespace?: string }>({
         setOverlay({ kind: "logs", row });
         return;
       }
+      if (e.key === "s" && actions.shell) {
+        e.preventDefault();
+        setOverlay({ kind: "shell", row });
+        return;
+      }
+      if (e.key === "e" && actions.edit) {
+        e.preventDefault();
+        setOverlay({ kind: "edit", row });
+        return;
+      }
       if (e.key === "D" && actions.delete) {
         e.preventDefault();
         setOverlay({ kind: "delete", row });
@@ -156,7 +177,7 @@ export function ResourceTable<T extends { name: string; namespace?: string }>({
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [overlay, visibleRows, selected, actions.logs, actions.delete]);
+  }, [overlay, visibleRows, selected, actions.logs, actions.shell, actions.edit, actions.delete]);
 
   useEffect(() => {
     scrollToSelection();
@@ -331,6 +352,22 @@ export function ResourceTable<T extends { name: string; namespace?: string }>({
               logs
             </span>
           ) : null}
+          {actions.shell ? (
+            <span>
+              <kbd className="px-1 py-0 border border-border/60 rounded mr-1">
+                s
+              </kbd>
+              shell
+            </span>
+          ) : null}
+          {actions.edit ? (
+            <span>
+              <kbd className="px-1 py-0 border border-border/60 rounded mr-1">
+                e
+              </kbd>
+              edit
+            </span>
+          ) : null}
           {actions.delete ? (
             <span className="text-red-600 dark:text-red-400">
               <kbd className="px-1 py-0 border border-red-500/40 bg-red-500/10 rounded mr-1">
@@ -363,7 +400,26 @@ export function ResourceTable<T extends { name: string; namespace?: string }>({
       ) : null}
       {overlay?.kind === "logs" ? (
         <LogOverlay
-          target={`${overlay.row.namespace ?? "default"}/${overlay.row.name}`}
+          connectionId={k8s.connectionId}
+          namespace={overlay.row.namespace ?? "default"}
+          pod={overlay.row.name}
+          onClose={() => setOverlay(null)}
+        />
+      ) : null}
+      {overlay?.kind === "shell" ? (
+        <ShellOverlay
+          connectionId={k8s.connectionId}
+          namespace={overlay.row.namespace ?? "default"}
+          pod={overlay.row.name}
+          onClose={() => setOverlay(null)}
+        />
+      ) : null}
+      {overlay?.kind === "edit" && kind ? (
+        <EditOverlay
+          connectionId={k8s.connectionId}
+          kind={kind}
+          namespace={overlay.row.namespace}
+          name={overlay.row.name}
           onClose={() => setOverlay(null)}
         />
       ) : null}

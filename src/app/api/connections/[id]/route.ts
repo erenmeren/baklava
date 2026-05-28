@@ -6,6 +6,8 @@ import {
   updateConnection,
 } from "@/lib/connections/store";
 import { dropConnectionSessions } from "@/lib/connections/terminal-sessions";
+import { dropKubernetesClient } from "@/lib/connections/kubernetes";
+import { dropConnectionExecSessions } from "@/lib/connections/kubernetes-sessions";
 
 export const runtime = "nodejs";
 
@@ -62,5 +64,7 @@ export async function DELETE(_req: Request, ctx: RouteContext) {
     return NextResponse.json({ error: "Connection not found" }, { status: 404 });
   }
   dropConnectionSessions(id);
+  dropConnectionExecSessions(id);
+  dropKubernetesClient(id);
   return NextResponse.json({ ok: true });
 }
