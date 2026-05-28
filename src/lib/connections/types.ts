@@ -3,7 +3,8 @@ export type TechId =
   | "kafka"
   | "postgres"
   | "sqlserver"
-  | "kubernetes";
+  | "kubernetes"
+  | "redis";
 
 export type ConnectionStatus = "untested" | "ok" | "error";
 
@@ -68,6 +69,29 @@ export interface SqlServerConfig {
   encrypt: boolean;
   /** Trust self-signed/unknown certs (dev / private networks). */
   trustServerCertificate: boolean;
+}
+
+export interface RedisConfig {
+  /**
+   * `"single"` connects to one host:port. `"cluster"` takes a list of seed
+   * nodes and lets ioredis discover the rest of the cluster topology via
+   * CLUSTER SLOTS.
+   */
+  mode: "single" | "cluster";
+  /** Single-node host (mode === "single"). */
+  host?: string;
+  /** Single-node port (mode === "single"). */
+  port?: number;
+  /** Cluster seed nodes "host:port,host:port,…" (mode === "cluster"). */
+  nodes?: string;
+  /** ACL username (Redis 6+). Empty = default user. */
+  username?: string;
+  /** Password / ACL secret. Stored as a secret field. */
+  password?: string;
+  /** Logical DB index (single mode only; cluster ignores DB selection). */
+  db?: number;
+  /** Enable TLS to the server (`rediss://`). */
+  tls: boolean;
 }
 
 export interface KubernetesConfig {
