@@ -93,9 +93,10 @@ export function ServicesView({ rows }: { rows: ServiceRow[] }) {
     <ResourceTable
       resource="Services"
       shortName="svc"
+      kind="service"
       rows={rows}
       columns={COLUMNS}
-      actions={{ delete: true }}
+      actions={{ edit: true, delete: true }}
     />
   );
 }

@@ -53,9 +53,10 @@ export function ConfigMapsView({ rows }: { rows: ConfigMapRow[] }) {
     <ResourceTable
       resource="ConfigMaps"
       shortName="cm"
+      kind="configmap"
       rows={rows}
       columns={COLUMNS}
-      actions={{ delete: true }}
+      actions={{ edit: true, delete: true }}
     />
   );
 }

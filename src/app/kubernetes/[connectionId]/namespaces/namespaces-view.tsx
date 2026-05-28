@@ -61,9 +61,10 @@ export function NamespacesView({ rows }: { rows: NamespaceRow[] }) {
     <ResourceTable
       resource="Namespaces"
       shortName="ns"
+      kind="namespace"
       rows={withNs}
       columns={COLUMNS as Column<NsRow>[]}
-      actions={{ delete: true }}
+      actions={{ edit: true, delete: true }}
     />
   );
 }

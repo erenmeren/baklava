@@ -97,9 +97,10 @@ export function DeploymentsView({ rows }: { rows: DeploymentRow[] }) {
     <ResourceTable
       resource="Deployments"
       shortName="deploy"
+      kind="deployment"
       rows={rows}
       columns={COLUMNS}
-      actions={{ delete: true }}
+      actions={{ edit: true, delete: true }}
     />
   );
 }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { saveConnection, publicView } from "@/lib/connections/store";
 import type { KubernetesConfig } from "@/lib/connections/types";
 import { formatError } from "@/lib/errors";
+import { dropKubernetesClient, probe } from "@/lib/connections/kubernetes";
 
 export const runtime = "nodejs";
 
@@ -11,12 +12,6 @@ interface TestRequest {
   save?: boolean;
 }
 
-/**
- * UI-shell stub: pretends every connection works and synthesises a probe.
- * The real driver (@kubernetes/client-node) will replace the body of this
- * function later — request/response shape and error handling already match
- * the production contract.
- */
 export async function POST(req: NextRequest) {
   let body: TestRequest;
   try {
@@ -51,12 +46,11 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // Probe with a temporary id so the cached client doesn't poison a real
+  // record if the user is about to save under a different id.
+  const probeId = `__probe_${Math.random().toString(36).slice(2)}`;
   try {
-    const probe = {
-      context: body.config.context?.trim() || "current-context",
-      serverVersion: "v1.31.0",
-      nodeCount: 3,
-    };
+    const result = await probe(probeId, body.config);
     const record = body.save
       ? saveConnection({
           tech: "kubernetes",
@@ -67,7 +61,7 @@ export async function POST(req: NextRequest) {
       : null;
     return NextResponse.json({
       ok: true,
-      probe,
+      probe: result,
       connection: record ? publicView(record) : null,
     });
   } catch (err) {
@@ -75,5 +69,7 @@ export async function POST(req: NextRequest) {
       { ok: false, error: formatError(err) },
       { status: 200 },
     );
+  } finally {
+    dropKubernetesClient(probeId);
   }
 }

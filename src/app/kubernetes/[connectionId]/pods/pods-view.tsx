@@ -143,9 +143,10 @@ export function PodsView({ rows }: { rows: PodRow[] }) {
     <ResourceTable
       resource="Pods"
       shortName="po"
+      kind="pod"
       rows={rows}
       columns={COLUMNS}
-      actions={{ logs: true, shell: true, delete: true }}
+      actions={{ logs: true, shell: true, edit: true, delete: true }}
       describeYaml={describePod}
     />
   );

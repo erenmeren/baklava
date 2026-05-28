@@ -2,7 +2,7 @@ import { WorkspaceShell } from "@/components/workspace/workspace-shell";
 import { getTech } from "@/lib/tech-catalog";
 import { requireConnection } from "@/lib/connections/server";
 import type { KubernetesConfig } from "@/lib/connections/types";
-import { buildMockCluster } from "@/lib/kubernetes/mock-cluster";
+import { listNamespaces, probe } from "@/lib/connections/kubernetes";
 import { K8sSidebar } from "./k8s-sidebar";
 import { K8sShell } from "./k8s-shell";
 
@@ -24,19 +24,21 @@ export default async function KubernetesWorkspaceLayout({
   );
   const tech = getTech("kubernetes")!;
   const cfg = record.config;
-  const cluster = buildMockCluster();
-  const subtitle = `${cluster.context} · ${cluster.serverVersion}`;
 
-  const counts = {
-    pods: cluster.pods.length,
-    deployments: cluster.deployments.length,
-    services: cluster.services.length,
-    configMaps: cluster.configMaps.length,
-    secrets: cluster.secrets.length,
-    namespaces: cluster.namespaces.length,
-  };
+  // Probe + namespaces are best-effort. If the cluster is unreachable we still
+  // render the shell so the user can navigate to /kubernetes and fix the
+  // connection without a hard 500.
+  const [probeResult, nsRows] = await Promise.all([
+    probe(connectionId, cfg).catch(() => null),
+    listNamespaces(connectionId, cfg).catch(() => []),
+  ]);
 
-  const initialNamespace = cfg.namespace || "default";
+  const context = probeResult?.context || cfg.context || "current-context";
+  const serverVersion = probeResult?.serverVersion || "unknown";
+  const nodeCount = probeResult?.nodeCount ?? 0;
+  const subtitle = `${context} · ${serverVersion}`;
+  const namespaceNames = nsRows.map((n) => n.name);
+  const initialNamespace = cfg.namespace || namespaceNames[0] || "default";
 
   return (
     <WorkspaceShell
@@ -46,19 +48,19 @@ export default async function KubernetesWorkspaceLayout({
       sidebar={
         <K8sSidebar
           connectionId={connectionId}
-          counts={counts}
-          context={cluster.context}
-          serverVersion={cluster.serverVersion}
-          nodes={cluster.nodes.length}
+          context={context}
+          serverVersion={serverVersion}
+          nodes={nodeCount}
+          namespaceCount={namespaceNames.length}
         />
       }
     >
       <K8sShell
         connectionId={connectionId}
-        namespaces={cluster.namespaces.map((n) => n.name)}
+        namespaces={namespaceNames}
         initialNamespace={initialNamespace}
-        context={cluster.context}
-        serverVersion={cluster.serverVersion}
+        context={context}
+        serverVersion={serverVersion}
       >
         {children}
       </K8sShell>

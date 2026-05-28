@@ -4,21 +4,12 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 
-interface Counts {
-  pods: number;
-  deployments: number;
-  services: number;
-  configMaps: number;
-  secrets: number;
-  namespaces: number;
-}
-
 interface Props {
   connectionId: string;
-  counts: Counts;
   context: string;
   serverVersion: string;
   nodes: number;
+  namespaceCount: number;
 }
 
 interface NavItem {
@@ -26,26 +17,25 @@ interface NavItem {
   short: string; // colon-command key (k9s style)
   key: string; // sidebar hotkey hint character
   label: string;
-  count: number;
 }
 
 export function K8sSidebar({
   connectionId,
-  counts,
   context,
   serverVersion,
   nodes,
+  namespaceCount,
 }: Props) {
   const pathname = usePathname();
   const base = `/kubernetes/${connectionId}`;
 
   const items: NavItem[] = [
-    { href: `${base}/pods`,        short: "po",  key: "1", label: "Pods",        count: counts.pods },
-    { href: `${base}/deployments`, short: "dep", key: "2", label: "Deployments", count: counts.deployments },
-    { href: `${base}/services`,    short: "svc", key: "3", label: "Services",    count: counts.services },
-    { href: `${base}/configmaps`,  short: "cm",  key: "4", label: "ConfigMaps",  count: counts.configMaps },
-    { href: `${base}/secrets`,     short: "sec", key: "5", label: "Secrets",     count: counts.secrets },
-    { href: `${base}/namespaces`,  short: "ns",  key: "6", label: "Namespaces",  count: counts.namespaces },
+    { href: `${base}/pods`,        short: "po",  key: "1", label: "Pods" },
+    { href: `${base}/deployments`, short: "dep", key: "2", label: "Deployments" },
+    { href: `${base}/services`,    short: "svc", key: "3", label: "Services" },
+    { href: `${base}/configmaps`,  short: "cm",  key: "4", label: "ConfigMaps" },
+    { href: `${base}/secrets`,     short: "sec", key: "5", label: "Secrets" },
+    { href: `${base}/namespaces`,  short: "ns",  key: "6", label: "Namespaces" },
   ];
 
   return (
@@ -82,13 +72,11 @@ export function K8sSidebar({
                 <span className="flex-1 truncate">{item.label}</span>
                 <span
                   className={cn(
-                    "tabular-nums text-[10px] px-1.5 py-px rounded-sm",
-                    active
-                      ? "bg-cyan-500/15 text-cyan-700 dark:text-cyan-300"
-                      : "bg-foreground/5 text-muted-foreground/80 group-hover:bg-foreground/10",
+                    "tabular-nums text-[9.5px] uppercase tracking-[0.22em] opacity-60",
+                    active && "text-cyan-600 dark:text-cyan-400 opacity-100",
                   )}
                 >
-                  {item.count}
+                  {item.short}
                 </span>
               </Link>
             );
@@ -115,6 +103,10 @@ export function K8sSidebar({
         <div className="flex items-center justify-between">
           <span className="text-muted-foreground">nodes</span>
           <span className="text-foreground tabular-nums">{nodes}</span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-muted-foreground">ns</span>
+          <span className="text-foreground tabular-nums">{namespaceCount}</span>
         </div>
       </div>
 

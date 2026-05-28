@@ -9,6 +9,7 @@ const nextConfig: NextConfig = {
     "pg",
     "mssql",
     "tedious",
+    "@kubernetes/client-node",
   ],
 };
 
