@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Loader2, Plus, Search, Trash2, Save, X } from "lucide-react";
+import { Loader2, Plus, Search, Trash2, Save, X, Download, ListFilter } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -34,10 +34,55 @@ export function DocumentsTab({ connectionId, dbName, collName }: Props) {
   const [selected, setSelected] = useState<number | null>(null);
   const [editor, setEditor] = useState<EditorMode>(null);
   const [editorValue, setEditorValue] = useState("");
+  const [distinctOpen, setDistinctOpen] = useState(false);
+  const [distinctField, setDistinctField] = useState("");
+  const [distinctValues, setDistinctValuesState] = useState<string[] | null>(null);
+  const [distinctLoading, setDistinctLoading] = useState(false);
 
   const url = `/api/mongo/${connectionId}/databases/${encodeURIComponent(
     dbName,
   )}/collections/${encodeURIComponent(collName)}/documents`;
+
+  function exportJson() {
+    if (!result || result.documents.length === 0) {
+      toast.error("Nothing to export — run a query first");
+      return;
+    }
+    const text = "[\n" + result.documents.join(",\n") + "\n]\n";
+    const blob = new Blob([text], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `${collName}-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(a.href);
+  }
+
+  async function runDistinct() {
+    if (!distinctField.trim()) return;
+    setDistinctLoading(true);
+    setDistinctValuesState(null);
+    try {
+      const res = await fetch(
+        url.replace(/\/documents$/, "/distinct"),
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ field: distinctField, filter }),
+        },
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setDistinctValuesState(data.values);
+    } catch (err) {
+      toast.error("Distinct failed", {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setDistinctLoading(false);
+    }
+  }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -213,6 +258,12 @@ export function DocumentsTab({ connectionId, dbName, collName }: Props) {
         >
           <Trash2 className="size-4" /> Delete
         </Button>
+        <Button variant="outline" onClick={() => setDistinctOpen(true)}>
+          <ListFilter className="size-4" /> Distinct
+        </Button>
+        <Button variant="outline" onClick={exportJson}>
+          <Download className="size-4" /> Export
+        </Button>
         {result ? (
           <div className="ml-auto text-[11px] text-muted-foreground font-mono">
             <span className="text-foreground tabular-nums">{result.total}</span> matched
@@ -320,6 +371,87 @@ export function DocumentsTab({ connectionId, dbName, collName }: Props) {
           onClose={() => setEditor(null)}
           onSave={saveEditor}
         />
+      ) : null}
+
+      {distinctOpen ? (
+        <div className="fixed inset-0 z-40">
+          <div
+            className="absolute inset-0 bg-background/55 backdrop-blur-[2px]"
+            onClick={() => setDistinctOpen(false)}
+          />
+          <div className="absolute inset-x-4 top-20 max-w-xl mx-auto bg-popover border border-border/70 rounded-lg shadow-2xl shadow-black/30 overflow-hidden flex flex-col max-h-[70vh]">
+            <div className="flex items-center justify-between px-4 py-2.5 border-b border-border/60 bg-muted/30">
+              <h2 className="font-semibold text-sm">
+                Distinct values · uses current filter
+              </h2>
+              <button
+                onClick={() => setDistinctOpen(false)}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+            <div className="p-4 space-y-3 border-b border-border/60">
+              <div className="flex items-end gap-2">
+                <div className="flex-1 space-y-1">
+                  <label className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+                    Field path
+                  </label>
+                  <Input
+                    autoFocus
+                    value={distinctField}
+                    onChange={(e) => setDistinctField(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") runDistinct();
+                    }}
+                    className="font-mono"
+                    placeholder="status"
+                  />
+                </div>
+                <Button
+                  onClick={runDistinct}
+                  disabled={!distinctField.trim() || distinctLoading}
+                >
+                  {distinctLoading ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : null}
+                  Run
+                </Button>
+              </div>
+              <p className="text-[11px] text-muted-foreground font-mono">
+                filter: <span className="text-foreground">{filter}</span>
+              </p>
+            </div>
+            <div className="flex-1 overflow-auto p-4 font-mono text-xs">
+              {distinctValues === null ? (
+                <div className="text-center text-muted-foreground py-12">
+                  enter a field and press Run
+                </div>
+              ) : distinctValues.length === 0 ? (
+                <div className="text-center text-muted-foreground py-12">
+                  no values
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  <div className="text-[11px] text-muted-foreground mb-2">
+                    <span className="text-foreground tabular-nums">
+                      {distinctValues.length}
+                    </span>{" "}
+                    distinct values
+                  </div>
+                  {distinctValues.map((v, i) => (
+                    <div
+                      key={i}
+                      className="px-2 py-1 rounded hover:bg-foreground/5 break-all text-emerald-700 dark:text-emerald-400"
+                    >
+                      {v}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       ) : null}
     </div>
   );

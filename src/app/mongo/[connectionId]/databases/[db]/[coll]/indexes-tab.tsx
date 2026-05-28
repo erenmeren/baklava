@@ -25,6 +25,12 @@ interface Index {
   size?: number;
 }
 
+interface Usage {
+  name: string;
+  ops: number;
+  since: string;
+}
+
 function formatSize(b?: number) {
   if (!b) return "—";
   if (b < 1024) return `${b}B`;
@@ -37,6 +43,7 @@ export function IndexesTab({ connectionId, dbName, collName }: Props) {
     dbName,
   )}/collections/${encodeURIComponent(collName)}/indexes`;
   const [indexes, setIndexes] = useState<Index[] | null>(null);
+  const [usage, setUsage] = useState<Record<string, Usage>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -45,10 +52,19 @@ export function IndexesTab({ connectionId, dbName, collName }: Props) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(url);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      setIndexes(data.indexes);
+      const [idxRes, usageRes] = await Promise.all([
+        fetch(url).then((r) => r.json()),
+        fetch(`${url.replace(/\/indexes$/, "/index-stats")}`)
+          .then((r) => r.json())
+          .catch(() => ({ usage: [] })),
+      ]);
+      if (idxRes.error) throw new Error(idxRes.error);
+      setIndexes(idxRes.indexes);
+      const usageMap: Record<string, Usage> = {};
+      for (const u of (usageRes.usage ?? []) as Usage[]) {
+        usageMap[u.name] = u;
+      }
+      setUsage(usageMap);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -102,7 +118,7 @@ export function IndexesTab({ connectionId, dbName, collName }: Props) {
         <table className="w-full font-mono text-xs">
           <thead className="bg-muted/30 border-b border-border/60">
             <tr>
-              {["name", "keys", "flags", "ttl", "size", ""].map((h) => (
+              {["name", "keys", "flags", "ttl", "size", "ops", ""].map((h) => (
                 <th
                   key={h}
                   className="px-3 py-1.5 text-left text-[10px] uppercase tracking-[0.18em] text-muted-foreground"
@@ -115,14 +131,14 @@ export function IndexesTab({ connectionId, dbName, collName }: Props) {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={6} className="px-4 py-12 text-center text-muted-foreground">
+                <td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
                   <Loader2 className="size-4 animate-spin inline mr-2" />
                   loading
                 </td>
               </tr>
             ) : indexes?.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-12 text-center text-muted-foreground">
+                <td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
                   no indexes
                 </td>
               </tr>
@@ -155,6 +171,22 @@ export function IndexesTab({ connectionId, dbName, collName }: Props) {
                   </td>
                   <td className="px-3 py-1.5 tabular-nums text-muted-foreground">
                     {formatSize(idx.size)}
+                  </td>
+                  <td className="px-3 py-1.5 tabular-nums">
+                    {usage[idx.name] !== undefined ? (
+                      <span
+                        className={cn(
+                          usage[idx.name].ops > 0
+                            ? "text-emerald-600 dark:text-emerald-400"
+                            : "text-rose-500",
+                        )}
+                        title={`since ${usage[idx.name].since}`}
+                      >
+                        {usage[idx.name].ops.toLocaleString()}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
                   </td>
                   <td className="px-3 py-1.5 text-right">
                     <button
