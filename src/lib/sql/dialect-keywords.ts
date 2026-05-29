@@ -152,6 +152,81 @@ export const SQLSERVER_KEYWORDS: string[] = [
   "grant", "revoke", "deny", "owner", "authorization",
 ];
 
+// ─── MySQL ──────────────────────────────────────────────────────────────────
+//
+// Sourced from MySQL's reserved/non-reserved keyword reference:
+//   https://dev.mysql.com/doc/refman/8.0/en/keywords.html
+
+export const MYSQL_KEYWORDS: string[] = [
+  // Query / DML
+  "select", "from", "where", "group", "by", "having", "order", "asc", "desc",
+  "limit", "offset", "distinct", "distinctrow", "all", "as", "with", "recursive",
+  "insert", "into", "values", "value", "update", "set", "delete", "replace",
+  "ignore", "duplicate", "key", "returning",
+  "union", "intersect", "except",
+  // Joins
+  "join", "inner", "outer", "left", "right", "full", "cross", "natural",
+  "straight_join", "using", "on",
+  // Predicates / boolean
+  "and", "or", "not", "xor", "in", "exists", "any", "some", "between",
+  "like", "rlike", "regexp", "sounds", "is", "null", "true", "false", "unknown",
+  "escape", "div", "mod", "binary",
+  "case", "when", "then", "else", "end", "if", "ifnull", "nullif",
+  // Locking
+  "for", "share", "lock", "tables", "unlock", "nowait", "locked", "of",
+  // Window
+  "over", "partition", "window", "rows", "range", "groups",
+  "following", "preceding", "current", "unbounded", "exclude",
+  // DDL
+  "create", "alter", "drop", "table", "view", "index", "fulltext", "spatial",
+  "trigger", "procedure", "function", "event", "database", "schema", "server",
+  "tablespace", "logfile", "if", "exists", "rename", "to", "add", "change",
+  "modify", "column", "constraint", "primary", "foreign", "references",
+  "check", "default", "unique", "auto_increment", "comment", "engine",
+  "charset", "collate", "character", "temporary", "unsigned", "zerofill",
+  "first", "after", "algorithm", "definer", "invoker", "security", "sql",
+  // Partitioning
+  "partition", "partitions", "subpartition", "list", "hash", "linear",
+  "columns", "maxvalue", "less", "than",
+  // Maintenance / utilities
+  "truncate", "explain", "describe", "desc", "analyze", "optimize", "check",
+  "repair", "flush", "reset", "load", "data", "infile", "outfile",
+  "import", "export",
+  // Transactions
+  "begin", "start", "commit", "rollback", "savepoint", "release",
+  "transaction", "isolation", "level", "serializable", "repeatable", "read",
+  "committed", "uncommitted", "write", "work", "chain", "no",
+  // Functions / operators
+  "cast", "convert", "extract", "position", "substring", "substr",
+  "trim", "concat", "coalesce", "greatest", "least", "interval",
+  "count", "sum", "avg", "min", "max", "group_concat",
+  "row_number", "rank", "dense_rank", "lag", "lead",
+  "first_value", "last_value", "nth_value", "ntile", "now", "curdate",
+  "curtime", "date_add", "date_sub", "date_format",
+  // Roles / security
+  "grant", "revoke", "usage", "execute", "proxy", "user", "role",
+  "identified", "password", "privileges", "with", "option",
+  // System / session
+  "show", "use", "set", "global", "session", "local", "names", "status",
+  "variables", "processlist", "warnings", "errors",
+];
+
+export const MYSQL_TYPES: string[] = [
+  // Numeric
+  "tinyint", "smallint", "mediumint", "int", "integer", "bigint",
+  "decimal", "dec", "numeric", "fixed", "float", "double", "real", "bit",
+  "bool", "boolean", "serial",
+  // Date / time
+  "date", "datetime", "timestamp", "time", "year",
+  // String
+  "char", "varchar", "binary", "varbinary", "tinytext", "text",
+  "mediumtext", "longtext", "tinyblob", "blob", "mediumblob", "longblob",
+  "enum", "set",
+  // JSON / spatial
+  "json", "geometry", "point", "linestring", "polygon",
+  "multipoint", "multilinestring", "multipolygon", "geometrycollection",
+];
+
 export const SQLSERVER_TYPES: string[] = [
   // Numeric
   "tinyint", "smallint", "int", "bigint", "bit",

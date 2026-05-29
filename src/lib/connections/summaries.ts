@@ -4,6 +4,7 @@ import type {
   KafkaConfig,
   KubernetesConfig,
   MongoConfig,
+  MysqlConfig,
   PostgresConfig,
   RedisConfig,
   SqlServerConfig,
@@ -27,6 +28,11 @@ export const connectionSummaries: Record<
   kafka: (r) => {
     const cfg = r.config as KafkaConfig;
     return cfg.brokers.join(", ");
+  },
+  mysql: (r) => {
+    const cfg = r.config as MysqlConfig;
+    const db = cfg.database ? `/${cfg.database}` : "";
+    return `${cfg.user}@${cfg.host}:${cfg.port}${db}`;
   },
   sqlserver: (r) => {
     const cfg = r.config as SqlServerConfig;

@@ -56,6 +56,16 @@ export const TECH_CATALOG: TechMeta[] = [
     status: "available",
   },
   {
+    id: "mysql",
+    name: "MySQL",
+    tagline: "Relational database",
+    description:
+      "phpMyAdmin-style: databases, tables, query editor, row CRUD, indexes and live process list.",
+    category: "Database",
+    color: "from-amber-400 to-orange-600",
+    status: "available",
+  },
+  {
     id: "sqlserver",
     name: "SQL Server",
     tagline: "Microsoft relational database",

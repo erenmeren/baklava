@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 const FIRST_PAGE: Record<TechId, string> = {
   docker: "containers",
   postgres: "",
+  mysql: "",
   kafka: "",
   sqlserver: "",
   kubernetes: "pods",
