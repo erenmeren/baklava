@@ -7,6 +7,7 @@ const nextConfig: NextConfig = {
     "kafkajs",
     "avsc",
     "pg",
+    "mysql2",
     "mssql",
     "tedious",
     "@kubernetes/client-node",

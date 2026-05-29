@@ -16,6 +16,7 @@ import type { ConnectionRecord, TechId } from "@/lib/connections/types";
 import { techIconUrl, type TechMeta } from "@/lib/tech-catalog";
 import { DockerForm } from "@/app/docker/docker-form";
 import { PostgresForm } from "@/app/postgres/postgres-form";
+import { MysqlForm } from "@/app/mysql/mysql-form";
 import { KafkaForm } from "@/app/kafka/kafka-form";
 import { SqlServerForm } from "@/app/sqlserver/sqlserver-form";
 import { KubernetesForm } from "@/app/kubernetes/kubernetes-form";
@@ -40,6 +41,7 @@ export interface ConnectionFormProps {
 const FORMS: Record<TechId, React.ComponentType<ConnectionFormProps>> = {
   docker: DockerForm,
   postgres: PostgresForm,
+  mysql: MysqlForm,
   kafka: KafkaForm,
   sqlserver: SqlServerForm,
   kubernetes: KubernetesForm,

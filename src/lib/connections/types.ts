@@ -2,6 +2,7 @@ export type TechId =
   | "docker"
   | "kafka"
   | "postgres"
+  | "mysql"
   | "sqlserver"
   | "kubernetes"
   | "redis"
@@ -57,6 +58,17 @@ export interface PostgresConfig {
   database: string;
   user: string;
   password: string;
+  ssl: boolean;
+}
+
+export interface MysqlConfig {
+  host: string;
+  port: number;
+  /** Default database to open the workspace on. Empty = server-level. */
+  database: string;
+  user: string;
+  password: string;
+  /** Enable TLS to the server. */
   ssl: boolean;
 }
 
