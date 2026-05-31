@@ -22,12 +22,7 @@ import { SqlServerForm } from "@/app/sqlserver/sqlserver-form";
 import { KubernetesForm } from "@/app/kubernetes/kubernetes-form";
 import { RedisForm } from "@/app/redis/redis-form";
 import { MongoForm } from "@/app/mongo/mongo-form";
-
-// Placeholder — replaced by the real R2Form in Phase 3.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function R2FormPlaceholder(_props: ConnectionFormProps) {
-  return null;
-}
+import { R2Form } from "@/app/r2/r2-form";
 
 interface Props {
   tech: TechMeta | null;
@@ -53,7 +48,7 @@ const FORMS: Record<TechId, React.ComponentType<ConnectionFormProps>> = {
   kubernetes: KubernetesForm,
   redis: RedisForm,
   mongo: MongoForm,
-  r2: R2FormPlaceholder,
+  r2: R2Form,
 };
 
 export function ConnectionSheet({ tech, onOpenChange }: Props) {
