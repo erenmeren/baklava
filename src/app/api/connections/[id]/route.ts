@@ -10,6 +10,7 @@ import { dropKubernetesClient } from "@/lib/connections/kubernetes";
 import { dropConnectionExecSessions } from "@/lib/connections/kubernetes-sessions";
 import { dropRedisClient } from "@/lib/connections/redis";
 import { dropMongoClient } from "@/lib/connections/mongo";
+import { dropR2Client } from "@/lib/connections/r2";
 
 export const runtime = "nodejs";
 
@@ -70,5 +71,6 @@ export async function DELETE(_req: Request, ctx: RouteContext) {
   dropKubernetesClient(id);
   dropRedisClient(id);
   dropMongoClient(id);
+  dropR2Client(id);
   return NextResponse.json({ ok: true });
 }

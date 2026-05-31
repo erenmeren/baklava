@@ -6,6 +6,7 @@ import type {
   MongoConfig,
   MysqlConfig,
   PostgresConfig,
+  R2Config,
   RedisConfig,
   SqlServerConfig,
   TechId,
@@ -66,5 +67,10 @@ export const connectionSummaries: Record<
     const stripped = uri.replace(/(mongodb(?:\+srv)?:\/\/)[^@/]*@/, "$1");
     const db = cfg.defaultDb ? ` · ${cfg.defaultDb}` : "";
     return `${stripped}${db}`;
+  },
+  r2: (r) => {
+    const cfg = r.config as R2Config;
+    const bucket = cfg.bucket ? ` · ${cfg.bucket}` : "";
+    return `${cfg.accessKeyId}@${cfg.accountId}.r2${bucket}`;
   },
 };

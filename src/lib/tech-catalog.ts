@@ -3,7 +3,8 @@ export type TechCategory =
   | "Database"
   | "Streaming"
   | "Orchestration"
-  | "Cache";
+  | "Cache"
+  | "Storage";
 
 export const TECH_CATEGORIES = [
   "All",
@@ -12,6 +13,7 @@ export const TECH_CATEGORIES = [
   "Streaming",
   "Orchestration",
   "Cache",
+  "Storage",
 ] as const;
 
 export type TechCategoryFilter = (typeof TECH_CATEGORIES)[number];
@@ -102,6 +104,16 @@ export const TECH_CATALOG: TechMeta[] = [
       "Compass-style: databases, collections, document browser with EJSON filter, aggregation pipeline, indexes.",
     category: "Database",
     color: "from-emerald-400 to-green-700",
+    status: "available",
+  },
+  {
+    id: "r2",
+    name: "Cloudflare R2",
+    tagline: "Object storage",
+    description:
+      "S3-style object browser: buckets, prefix navigation, upload/download, presigned links, CORS and lifecycle.",
+    category: "Storage",
+    color: "from-orange-400 to-amber-500",
     status: "available",
   },
 ];
