@@ -22,6 +22,7 @@ const FIRST_PAGE: Record<TechId, string> = {
   kubernetes: "pods",
   redis: "keys",
   mongo: "databases",
+  r2: "",
 };
 
 const STORAGE_KEY = "baklava:open-tabs";
@@ -59,7 +60,7 @@ function saveOpenTabs(ids: string[]) {
 function activeIdFromPath(pathname: string): string | null {
   // /<tech>/<id>/...
   const m = pathname.match(
-    /^\/(?:docker|postgres|kafka|sqlserver|kubernetes|redis|mongo)\/([^/]+)/,
+    /^\/(?:docker|postgres|mysql|kafka|sqlserver|kubernetes|redis|mongo|r2)\/([^/]+)/,
   );
   return m ? m[1] : null;
 }
