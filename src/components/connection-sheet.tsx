@@ -23,6 +23,12 @@ import { KubernetesForm } from "@/app/kubernetes/kubernetes-form";
 import { RedisForm } from "@/app/redis/redis-form";
 import { MongoForm } from "@/app/mongo/mongo-form";
 
+// Placeholder — replaced by the real R2Form in Phase 3.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function R2FormPlaceholder(_props: ConnectionFormProps) {
+  return null;
+}
+
 interface Props {
   tech: TechMeta | null;
   onOpenChange: (open: boolean) => void;
@@ -47,6 +53,7 @@ const FORMS: Record<TechId, React.ComponentType<ConnectionFormProps>> = {
   kubernetes: KubernetesForm,
   redis: RedisForm,
   mongo: MongoForm,
+  r2: R2FormPlaceholder,
 };
 
 export function ConnectionSheet({ tech, onOpenChange }: Props) {
