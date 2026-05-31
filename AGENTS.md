@@ -19,7 +19,7 @@ Open-source unified ops console for Docker, Kafka, PostgreSQL (and more to come)
 ## Routing model
 
 - `/` — home grid of integrated technologies (`src/lib/tech-catalog.ts`).
-- `/[tech]` — connection management page. Forms (`src/app/<tech>/<tech>-form.tsx`) are also reused by the home Sheet.
+- Connection management lives entirely in the home-screen Sheet (`ConnectionSheet`); there is **no** standalone `/[tech]` page. Each `src/app/<tech>/` dir holds only the `[connectionId]` workspace and the reused `<tech>-form.tsx`.
 - `/[tech]/[connectionId]/...` — workspace with sidebar. Pattern:
   - `layout.tsx` reads the connection via `requireConnection<C>(id, tech)` from `src/lib/connections/server.ts` (404s if missing) and renders `<WorkspaceShell>` with a tech-specific sidebar.
   - Each section (containers, topics, tables…) is its own page.
@@ -133,7 +133,7 @@ shadcn wrappers in `src/components/ui/` re-export `@base-ui/react/*` primitives.
 4. Drop a driver helper in `src/lib/connections/<tech>.ts` (probe + per-object operations). Mirror the Kafka/Docker connect-try-finally-disconnect pattern.
 5. If the driver is a native package, add it to `serverExternalPackages` in `next.config.ts`.
 6. Add API routes under `src/app/api/<tech>/` (`test`, `[id]/...`). Use `formatError`. SSE routes follow the streaming pattern above.
-7. Build the form at `src/app/<tech>/<tech>-form.tsx` (reused by `ConnectionSheet` and the standalone `/<tech>` page).
+7. Build the form at `src/app/<tech>/<tech>-form.tsx` (reused by `ConnectionSheet`; there is no standalone `/<tech>` page).
 8. Build the workspace at `src/app/<tech>/[connectionId]/`:
    - `layout.tsx` with `<WorkspaceShell>` and a sidebar of `<SidebarLink>`s (or a custom tree, like Postgres).
    - One page per object kind, optionally with a `[id]` detail subpage and `*-client.tsx` sibling.
