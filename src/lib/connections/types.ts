@@ -6,7 +6,8 @@ export type TechId =
   | "sqlserver"
   | "kubernetes"
   | "redis"
-  | "mongo";
+  | "mongo"
+  | "r2";
 
 export type ConnectionStatus = "untested" | "ok" | "error";
 
@@ -133,4 +134,18 @@ export interface KubernetesConfig {
   context?: string;
   /** Default namespace to pin in the workspace. Empty = "default". */
   namespace?: string;
+}
+
+export interface R2Config {
+  /**
+   * Cloudflare account ID. The S3 endpoint is derived as
+   * `https://<accountId>.r2.cloudflarestorage.com`; region is always "auto".
+   */
+  accountId: string;
+  /** R2 access key ID. Not a secret — treated like a username. */
+  accessKeyId: string;
+  /** R2 secret access key. Stored as a secret (see SECRET_KEYS). */
+  secretAccessKey: string;
+  /** Optional default bucket to open the workspace on. Empty = list all. */
+  bucket?: string;
 }
