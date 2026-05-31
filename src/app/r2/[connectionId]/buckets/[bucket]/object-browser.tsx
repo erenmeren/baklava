@@ -107,10 +107,12 @@ export function ObjectBrowser({ connectionId, bucket }: Props) {
 
   const crumbs = prefix ? prefix.replace(/\/$/, "").split("/") : [];
 
-  const upload = async (files: FileList) => {
+  const upload = async (files: File[]) => {
+    if (files.length === 0) return;
     setWorking(true);
     try {
-      for (const file of Array.from(files)) {
+      let ok = 0;
+      for (const file of files) {
         const form = new FormData();
         form.append("file", file);
         form.append("key", `${prefix}${file.name}`);
@@ -119,11 +121,10 @@ export function ObjectBrowser({ connectionId, bucket }: Props) {
           body: form,
         });
         const data = await res.json();
-        if (!res.ok) {
-          toast.error(`Upload failed: ${file.name}`, { description: data.error });
-        }
+        if (res.ok) ok++;
+        else toast.error(`Upload failed: ${file.name}`, { description: data.error });
       }
-      toast.success("Upload complete");
+      if (ok > 0) toast.success(`Uploaded ${ok} file${ok === 1 ? "" : "s"}`);
       load(prefix);
     } finally {
       setWorking(false);
@@ -256,9 +257,11 @@ export function ObjectBrowser({ connectionId, bucket }: Props) {
           multiple
           className="hidden"
           onChange={(e) => {
-            // Reset value so re-selecting the same file re-fires onChange.
             if (e.target.files?.length) {
-              const files = e.target.files;
+              // Materialize the File[] BEFORE clearing value — `e.target.files`
+              // is a live FileList that empties when the input is reset, so
+              // capturing only the reference would upload zero files.
+              const files = Array.from(e.target.files);
               e.target.value = "";
               upload(files);
             }
