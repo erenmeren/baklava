@@ -219,7 +219,14 @@ export function ObjectBrowser({ connectionId, bucket }: Props) {
           type="file"
           multiple
           className="hidden"
-          onChange={(e) => e.target.files && upload(e.target.files)}
+          onChange={(e) => {
+            // Reset value so re-selecting the same file re-fires onChange.
+            if (e.target.files?.length) {
+              const files = e.target.files;
+              e.target.value = "";
+              upload(files);
+            }
+          }}
         />
         <Button size="sm" onClick={() => fileRef.current?.click()} disabled={working}>
           <UploadIcon className="size-3.5" />
