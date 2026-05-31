@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ChevronRight,
   Download,
   Folder,
   FileText,
+  Info,
   Link2,
   Loader2,
   Pencil,
@@ -48,6 +49,17 @@ function fmtSize(b: number) {
   return `${(b / 1024 ** 3).toFixed(2)} GB`;
 }
 
+interface ObjectMeta {
+  key: string;
+  size: number;
+  contentType: string | null;
+  etag: string | null;
+  lastModified: number | null;
+  metadata: Record<string, string>;
+  cacheControl: string | null;
+  contentDisposition: string | null;
+}
+
 interface Props {
   connectionId: string;
   bucket: string;
@@ -63,6 +75,9 @@ export function ObjectBrowser({ connectionId, bucket }: Props) {
   const [folderOpen, setFolderOpen] = useState(false);
   const [folderName, setFolderName] = useState("");
   const [working, setWorking] = useState(false);
+  const [detailTarget, setDetailTarget] = useState<ObjectEntry | null>(null);
+  const [detailMeta, setDetailMeta] = useState<ObjectMeta | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const apiBase = `/api/r2/${connectionId}/buckets/${encodeURIComponent(bucket)}`;
@@ -210,6 +225,27 @@ export function ObjectBrowser({ connectionId, bucket }: Props) {
       return next;
     });
 
+  const openDetail = async (o: ObjectEntry) => {
+    setDetailTarget(o);
+    setDetailMeta(null);
+    setDetailLoading(true);
+    try {
+      const res = await fetch(
+        `${apiBase}/objects/meta?key=${encodeURIComponent(o.key)}`,
+        { cache: "no-store" },
+      );
+      const data = await res.json();
+      if (res.ok) {
+        setDetailMeta(data as ObjectMeta);
+      } else {
+        toast.error("Load details failed", { description: data.error });
+        setDetailTarget(null);
+      }
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full min-h-0 gap-3">
       {/* Toolbar */}
@@ -349,6 +385,9 @@ export function ObjectBrowser({ connectionId, bucket }: Props) {
                 </td>
                 <td className="px-2 py-1.5">
                   <div className="flex items-center gap-0.5 justify-end">
+                    <Button size="icon-xs" variant="ghost" title="Details" onClick={() => openDetail(o)}>
+                      <Info className="size-3" />
+                    </Button>
                     <Button size="icon-xs" variant="ghost" title="Download" onClick={() => download(o.key)}>
                       <Download className="size-3" />
                     </Button>
@@ -441,6 +480,73 @@ export function ObjectBrowser({ connectionId, bucket }: Props) {
             <Button onClick={doRename} disabled={working || !renameValue.trim()}>
               {working ? <Loader2 className="size-3.5 animate-spin" /> : null}
               Rename
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Object detail dialog */}
+      <Dialog
+        open={detailTarget !== null}
+        onOpenChange={(v) => !v && setDetailTarget(null)}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Object details</DialogTitle>
+          </DialogHeader>
+          {detailLoading ? (
+            <div className="flex justify-center py-8">
+              <Loader2 className="size-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : detailMeta ? (
+            <div className="flex flex-col gap-4 text-sm">
+              <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5">
+                <dt className="text-muted-foreground font-medium whitespace-nowrap">Key</dt>
+                <dd className="font-mono break-all">{detailMeta.key}</dd>
+
+                <dt className="text-muted-foreground font-medium">Size</dt>
+                <dd className="font-mono">{fmtSize(detailMeta.size)}</dd>
+
+                <dt className="text-muted-foreground font-medium whitespace-nowrap">Content-Type</dt>
+                <dd className="font-mono">{detailMeta.contentType ?? "—"}</dd>
+
+                <dt className="text-muted-foreground font-medium">ETag</dt>
+                <dd className="font-mono break-all">{detailMeta.etag ?? "—"}</dd>
+
+                <dt className="text-muted-foreground font-medium whitespace-nowrap">Last modified</dt>
+                <dd className="font-mono">
+                  {detailMeta.lastModified
+                    ? new Date(detailMeta.lastModified).toLocaleString()
+                    : "—"}
+                </dd>
+
+                <dt className="text-muted-foreground font-medium whitespace-nowrap">Cache-Control</dt>
+                <dd className="font-mono">{detailMeta.cacheControl ?? "—"}</dd>
+
+                <dt className="text-muted-foreground font-medium whitespace-nowrap">Content-Disposition</dt>
+                <dd className="font-mono">{detailMeta.contentDisposition ?? "—"}</dd>
+              </dl>
+
+              <div>
+                <p className="text-muted-foreground font-medium mb-1.5">Custom metadata</p>
+                {Object.keys(detailMeta.metadata).length > 0 ? (
+                  <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 font-mono">
+                    {Object.entries(detailMeta.metadata).map(([k, v]) => (
+                      <React.Fragment key={k}>
+                        <dt className="text-muted-foreground break-all">{k}</dt>
+                        <dd className="break-all">{v}</dd>
+                      </React.Fragment>
+                    ))}
+                  </dl>
+                ) : (
+                  <p className="text-muted-foreground font-mono">(none)</p>
+                )}
+              </div>
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDetailTarget(null)}>
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>
