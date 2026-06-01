@@ -11,6 +11,7 @@ import { dropConnectionExecSessions } from "@/lib/connections/kubernetes-session
 import { dropRedisClient } from "@/lib/connections/redis";
 import { dropMongoClient } from "@/lib/connections/mongo";
 import { dropR2Client } from "@/lib/connections/r2";
+import { dropMinioClient } from "@/lib/connections/minio";
 
 export const runtime = "nodejs";
 
@@ -72,5 +73,6 @@ export async function DELETE(_req: Request, ctx: RouteContext) {
   dropRedisClient(id);
   dropMongoClient(id);
   dropR2Client(id);
+  dropMinioClient(id);
   return NextResponse.json({ ok: true });
 }
