@@ -1,7 +1,8 @@
 import "server-only";
 import type { S3Client } from "@aws-sdk/client-s3";
-import type { TechId, R2Config } from "./types";
+import type { TechId, R2Config, MinioConfig } from "./types";
 import { r2ClientFor, dropR2Client, endpointFor } from "./r2";
+import { minioClientFor, dropMinioClient, resolveEndpoint } from "./minio";
 
 export interface BlobTech {
   tech: TechId;
@@ -28,6 +29,20 @@ export const BLOB_TECHS: Partial<Record<TechId, BlobTech>> = {
     },
     endpointOf: (cfg) => endpointFor((cfg as R2Config).accountId),
     defaultName: "Cloudflare R2",
+  },
+  minio: {
+    tech: "minio",
+    clientFor: (id, cfg) => minioClientFor(id, cfg as MinioConfig),
+    dropClient: dropMinioClient,
+    validateConfig: (cfg) => {
+      const c = cfg as MinioConfig;
+      if (!c?.endpoint?.trim()) return "Endpoint is required";
+      if (!c?.accessKey?.trim() || !c?.secretKey)
+        return "Access Key and Secret Key are required";
+      return null;
+    },
+    endpointOf: (cfg) => resolveEndpoint(cfg as MinioConfig),
+    defaultName: "MinIO",
   },
 };
 
