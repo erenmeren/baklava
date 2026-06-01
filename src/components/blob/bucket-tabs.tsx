@@ -228,7 +228,7 @@ function Tab({
         <span
           className={cn(
             "shrink-0 grid place-items-center transition-opacity",
-            active ? "opacity-100" : "opacity-70 group-hover/r2tab:opacity-100",
+            active ? "opacity-100" : "opacity-70 group-hover/blobtab:opacity-100",
           )}
         >
           {icon}
@@ -247,7 +247,7 @@ function Tab({
           title="Close tab"
           className={cn(
             "self-center mx-1 size-4 grid place-items-center rounded outline-none shrink-0",
-            "text-muted-foreground/0 group-hover/r2tab:text-muted-foreground/70 focus-visible:text-foreground",
+            "text-muted-foreground/0 group-hover/blobtab:text-muted-foreground/70 focus-visible:text-foreground",
             active && "text-muted-foreground/60",
             "hover:!text-foreground hover:bg-accent/70 transition-colors",
           )}

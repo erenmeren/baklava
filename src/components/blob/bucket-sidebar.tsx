@@ -258,7 +258,7 @@ export function BucketSidebar({ tech, connectionId, defaultBucket }: Props) {
                 <>
                   Permanently delete bucket{" "}
                   <span className="font-mono">{deleteTarget}</span>. The bucket
-                  must be empty or R2 will reject the request.
+                  must be empty or the server will reject the request.
                 </>
               ) : null}
             </AlertDialogDescription>
