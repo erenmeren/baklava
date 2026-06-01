@@ -178,10 +178,10 @@ decision with a single field + toggle.
 
 ### 8. MinIO form — `src/app/minio/minio-form.tsx`
 
-Fields: name, Endpoint (placeholder `localhost:9000`), Use SSL toggle (a shadcn
-`Switch` or checkbox — use what the repo already has; otherwise a labeled
-checkbox), Access Key, Secret Key (`type="password"`, "(unchanged — leave blank
-to keep)" edit pattern), Region (default `us-east-1`), optional default bucket.
+Fields: name, Endpoint (placeholder `localhost:9000`), **Use SSL** — a shadcn
+`Switch` (`@/components/ui/switch`, already present in the repo) with a label,
+Access Key, Secret Key (`type="password"`, "(unchanged — leave blank to keep)"
+edit pattern), Region (default `us-east-1`), optional default bucket.
 Test / Test & save / edit-mode PATCH — mirrors `r2-form` structure.
 
 ## Data flow
