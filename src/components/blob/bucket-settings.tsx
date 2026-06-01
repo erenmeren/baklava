@@ -2,11 +2,13 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Loader2, Save, ExternalLink } from "lucide-react";
+import type { TechId } from "@/lib/connections/types";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { toast } from "sonner";
 
 interface Props {
+  tech: TechId;
   connectionId: string;
   bucket: string;
 }
@@ -89,8 +91,8 @@ function JsonRuleEditor({
   );
 }
 
-export function BucketSettings({ connectionId, bucket }: Props) {
-  const base = `/api/r2/${connectionId}/buckets/${encodeURIComponent(bucket)}`;
+export function BucketSettings({ tech, connectionId, bucket }: Props) {
+  const base = `/api/${tech}/${connectionId}/buckets/${encodeURIComponent(bucket)}`;
   return (
     <div className="space-y-8 max-w-3xl py-2">
       <JsonRuleEditor

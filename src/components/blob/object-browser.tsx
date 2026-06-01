@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import type { TechId } from "@/lib/connections/types";
 import {
   ChevronRight,
   Download,
@@ -61,11 +62,12 @@ interface ObjectMeta {
 }
 
 interface Props {
+  tech: TechId;
   connectionId: string;
   bucket: string;
 }
 
-export function ObjectBrowser({ connectionId, bucket }: Props) {
+export function ObjectBrowser({ tech, connectionId, bucket }: Props) {
   const [prefix, setPrefix] = useState("");
   const [listing, setListing] = useState<Listing | null>(null);
   const [loading, setLoading] = useState(false);
@@ -80,7 +82,7 @@ export function ObjectBrowser({ connectionId, bucket }: Props) {
   const [detailLoading, setDetailLoading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const apiBase = `/api/r2/${connectionId}/buckets/${encodeURIComponent(bucket)}`;
+  const apiBase = `/api/${tech}/${connectionId}/buckets/${encodeURIComponent(bucket)}`;
 
   const load = useCallback(
     async (p: string) => {

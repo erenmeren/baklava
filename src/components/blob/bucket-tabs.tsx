@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import type { TechId } from "@/lib/connections/types";
 import { Boxes, Home, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -11,17 +12,18 @@ type Tab =
   | { kind: "bucket"; name: string };
 
 interface Props {
+  tech: TechId;
   connectionId: string;
 }
 
-function storageKey(connectionId: string) {
-  return `baklava:r2-tabs:${connectionId}`;
+function storageKey(tech: TechId, connectionId: string) {
+  return `baklava:${tech}-tabs:${connectionId}`;
 }
 
-function loadTabs(connectionId: string): Tab[] {
+function loadTabs(tech: TechId, connectionId: string): Tab[] {
   if (typeof window === "undefined") return [];
   try {
-    const raw = window.localStorage.getItem(storageKey(connectionId));
+    const raw = window.localStorage.getItem(storageKey(tech, connectionId));
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? (parsed as Tab[]) : [];
@@ -30,10 +32,10 @@ function loadTabs(connectionId: string): Tab[] {
   }
 }
 
-function saveTabs(connectionId: string, tabs: Tab[]) {
+function saveTabs(tech: TechId, connectionId: string, tabs: Tab[]) {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(storageKey(connectionId), JSON.stringify(tabs));
+    window.localStorage.setItem(storageKey(tech, connectionId), JSON.stringify(tabs));
   } catch {
     // ignore
   }
@@ -48,12 +50,12 @@ function tabKey(t: Tab): string {
   }
 }
 
-function tabHref(connectionId: string, t: Tab): string {
+function tabHref(tech: TechId, connectionId: string, t: Tab): string {
   switch (t.kind) {
     case "overview":
-      return `/r2/${connectionId}`;
+      return `/${tech}/${connectionId}`;
     case "bucket":
-      return `/r2/${connectionId}/buckets/${encodeURIComponent(t.name)}`;
+      return `/${tech}/${connectionId}/buckets/${encodeURIComponent(t.name)}`;
   }
 }
 
@@ -66,8 +68,8 @@ function tabLabel(t: Tab): string {
   }
 }
 
-function tabFromPath(pathname: string, connectionId: string): Tab | null {
-  const prefix = `/r2/${connectionId}`;
+function tabFromPath(tech: TechId, pathname: string, connectionId: string): Tab | null {
+  const prefix = `/${tech}/${connectionId}`;
   if (!pathname.startsWith(prefix)) return null;
   const rest = pathname.slice(prefix.length);
   if (rest === "" || rest === "/") {
@@ -81,24 +83,24 @@ function tabFromPath(pathname: string, connectionId: string): Tab | null {
   return null;
 }
 
-export function R2Tabs({ connectionId }: Props) {
+export function BucketTabs({ tech, connectionId }: Props) {
   const pathname = usePathname() ?? "";
   const router = useRouter();
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
-    setTabs(loadTabs(connectionId));
+    setTabs(loadTabs(tech, connectionId));
     setHydrated(true);
-  }, [connectionId]);
+  }, [tech, connectionId]);
 
   useEffect(() => {
-    if (hydrated) saveTabs(connectionId, tabs);
-  }, [tabs, hydrated, connectionId]);
+    if (hydrated) saveTabs(tech, connectionId, tabs);
+  }, [tabs, hydrated, tech, connectionId]);
 
   const activeTab = useMemo(
-    () => tabFromPath(pathname, connectionId),
-    [pathname, connectionId],
+    () => tabFromPath(tech, pathname, connectionId),
+    [tech, pathname, connectionId],
   );
   const activeKey = activeTab ? tabKey(activeTab) : null;
 
@@ -121,11 +123,11 @@ export function R2Tabs({ connectionId }: Props) {
       if (key === activeKey) {
         const fallback = next[idx - 1] ?? next[idx] ?? null;
         router.push(
-          fallback ? tabHref(connectionId, fallback) : `/r2/${connectionId}`,
+          fallback ? tabHref(tech, connectionId, fallback) : `/${tech}/${connectionId}`,
         );
       }
     },
-    [tabs, activeKey, router, connectionId],
+    [tabs, activeKey, router, tech, connectionId],
   );
 
   if (!hydrated) {
@@ -138,10 +140,10 @@ export function R2Tabs({ connectionId }: Props) {
     <div
       className="flex items-stretch h-9 border-b border-border/60 bg-muted/30 overflow-x-auto no-scrollbar"
       role="tablist"
-      aria-label="Open R2 views"
+      aria-label="Open bucket views"
     >
       <Tab
-        href={`/r2/${connectionId}`}
+        href={`/${tech}/${connectionId}`}
         active={activeKey === "overview"}
         title="Overview"
         icon={<Home className="size-3 shrink-0" />}
@@ -162,7 +164,7 @@ export function R2Tabs({ connectionId }: Props) {
           return (
             <Tab
               key={k}
-              href={tabHref(connectionId, t)}
+              href={tabHref(tech, connectionId, t)}
               active={active}
               title={tabLabel(t)}
               icon={<Boxes className="size-3 shrink-0" />}
@@ -196,7 +198,7 @@ function Tab({
   return (
     <div
       className={cn(
-        "group/r2tab relative inline-flex items-stretch h-9 max-w-[260px] min-w-0 transition-colors",
+        "group/blobtab relative inline-flex items-stretch h-9 max-w-[260px] min-w-0 transition-colors",
         active
           ? "text-foreground bg-background"
           : "text-muted-foreground hover:text-foreground hover:bg-background/40",
