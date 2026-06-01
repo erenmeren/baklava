@@ -7,7 +7,8 @@ export type TechId =
   | "kubernetes"
   | "redis"
   | "mongo"
-  | "r2";
+  | "r2"
+  | "minio";
 
 export type ConnectionStatus = "untested" | "ok" | "error";
 
@@ -147,5 +148,17 @@ export interface R2Config {
   /** R2 secret access key. Stored as a secret (see SECRET_KEYS). */
   secretAccessKey: string;
   /** Optional default bucket to open the workspace on. Empty = list all. */
+  bucket?: string;
+}
+
+export interface MinioConfig {
+  /** "host:port" or a full "http(s)://host:port" URL. */
+  endpoint: string;
+  /** Used only when `endpoint` has no scheme. */
+  useSSL: boolean;
+  accessKey: string;
+  secretKey: string;
+  /** S3 region; default "us-east-1". */
+  region: string;
   bucket?: string;
 }

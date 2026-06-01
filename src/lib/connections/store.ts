@@ -158,6 +158,7 @@ const SECRET_KEYS = new Set([
   "kubeconfigYaml",
   "uri",
   "secretAccessKey",
+  "secretKey",
 ]);
 
 function mergeConfig(
