@@ -3,6 +3,7 @@ import type {
   DockerConfig,
   KafkaConfig,
   KubernetesConfig,
+  MinioConfig,
   MongoConfig,
   MysqlConfig,
   PostgresConfig,
@@ -72,5 +73,10 @@ export const connectionSummaries: Record<
     const cfg = r.config as R2Config;
     const bucket = cfg.bucket ? ` · ${cfg.bucket}` : "";
     return `${cfg.accessKeyId}@${cfg.accountId}.r2${bucket}`;
+  },
+  minio: (r) => {
+    const cfg = r.config as MinioConfig;
+    const bucket = cfg.bucket ? ` · ${cfg.bucket}` : "";
+    return `${cfg.accessKey}@${cfg.endpoint}${bucket}`;
   },
 };

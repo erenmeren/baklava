@@ -23,6 +23,7 @@ import { KubernetesForm } from "@/app/kubernetes/kubernetes-form";
 import { RedisForm } from "@/app/redis/redis-form";
 import { MongoForm } from "@/app/mongo/mongo-form";
 import { R2Form } from "@/app/r2/r2-form";
+import { MinioForm } from "@/app/minio/minio-form";
 
 interface Props {
   tech: TechMeta | null;
@@ -49,6 +50,7 @@ const FORMS: Record<TechId, React.ComponentType<ConnectionFormProps>> = {
   redis: RedisForm,
   mongo: MongoForm,
   r2: R2Form,
+  minio: MinioForm,
 };
 
 export function ConnectionSheet({ tech, onOpenChange }: Props) {

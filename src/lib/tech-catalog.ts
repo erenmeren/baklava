@@ -116,6 +116,15 @@ export const TECH_CATALOG: TechMeta[] = [
     color: "from-orange-400 to-amber-500",
     status: "available",
   },
+  {
+    id: "minio",
+    name: "MinIO",
+    tagline: "S3-compatible object storage",
+    description: "Self-hosted S3 object browser: buckets, prefix navigation, upload/download, presigned links, CORS and lifecycle.",
+    category: "Storage",
+    color: "from-red-400 to-rose-600",
+    status: "available",
+  },
 ];
 
 export function getTech(id: string): TechMeta | undefined {

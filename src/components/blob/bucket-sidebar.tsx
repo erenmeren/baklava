@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import type { TechId } from "@/lib/connections/types";
 import {
   Boxes,
   Database,
@@ -45,11 +46,12 @@ interface BucketInfo {
 }
 
 interface Props {
+  tech: TechId;
   connectionId: string;
   defaultBucket: string;
 }
 
-export function R2Sidebar({ connectionId, defaultBucket }: Props) {
+export function BucketSidebar({ tech, connectionId, defaultBucket }: Props) {
   const pathname = usePathname();
   const [buckets, setBuckets] = useState<BucketInfo[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -61,7 +63,7 @@ export function R2Sidebar({ connectionId, defaultBucket }: Props) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/r2/${connectionId}/buckets`, {
+      const res = await fetch(`/api/${tech}/${connectionId}/buckets`, {
         cache: "no-store",
       });
       if (res.ok) {
@@ -71,19 +73,19 @@ export function R2Sidebar({ connectionId, defaultBucket }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [connectionId]);
+  }, [tech, connectionId]);
 
   useEffect(() => {
     load();
   }, [load]);
 
-  const base = `/r2/${connectionId}`;
+  const base = `/${tech}/${connectionId}`;
   const overviewActive = pathname === base;
 
   const createBucket = async () => {
     setWorking(true);
     try {
-      const res = await fetch(`/api/r2/${connectionId}/buckets`, {
+      const res = await fetch(`/api/${tech}/${connectionId}/buckets`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ name: newName.trim() }),
@@ -106,7 +108,7 @@ export function R2Sidebar({ connectionId, defaultBucket }: Props) {
     setWorking(true);
     try {
       const res = await fetch(
-        `/api/r2/${connectionId}/buckets/${encodeURIComponent(name)}`,
+        `/api/${tech}/${connectionId}/buckets/${encodeURIComponent(name)}`,
         { method: "DELETE" },
       );
       const data = await res.json();
@@ -256,7 +258,7 @@ export function R2Sidebar({ connectionId, defaultBucket }: Props) {
                 <>
                   Permanently delete bucket{" "}
                   <span className="font-mono">{deleteTarget}</span>. The bucket
-                  must be empty or R2 will reject the request.
+                  must be empty or the server will reject the request.
                 </>
               ) : null}
             </AlertDialogDescription>
