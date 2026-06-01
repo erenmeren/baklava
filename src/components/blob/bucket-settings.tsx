@@ -95,36 +95,52 @@ export function BucketSettings({ tech, connectionId, bucket }: Props) {
   const base = `/api/${tech}/${connectionId}/buckets/${encodeURIComponent(bucket)}`;
   return (
     <div className="space-y-8 max-w-3xl py-2">
-      <JsonRuleEditor
-        label="CORS rules"
-        endpoint={`${base}/cors`}
-        help="Array of S3 CORSRule objects (AllowedOrigins, AllowedMethods, AllowedHeaders, …)."
-      />
+      {tech === "minio" ? (
+        // MinIO does not implement the S3 per-bucket CORS API — PutBucketCors
+        // returns "not implemented". CORS is configured at the server level.
+        <Alert>
+          <AlertTitle>CORS rules</AlertTitle>
+          <AlertDescription>
+            MinIO doesn&apos;t support per-bucket CORS through the S3 API. Configure
+            allowed origins at the server level via the{" "}
+            <code className="text-[11px]">MINIO_API_CORS_ALLOW_ORIGIN</code>{" "}
+            environment variable on the MinIO server.
+          </AlertDescription>
+        </Alert>
+      ) : (
+        <JsonRuleEditor
+          label="CORS rules"
+          endpoint={`${base}/cors`}
+          help="Array of S3 CORSRule objects (AllowedOrigins, AllowedMethods, AllowedHeaders, …)."
+        />
+      )}
       <JsonRuleEditor
         label="Lifecycle rules"
         endpoint={`${base}/lifecycle`}
-        help="Array of S3 LifecycleRule objects (ID, Filter, Expiration, …). R2 supports a subset."
+        help="Array of S3 LifecycleRule objects (ID, Filter, Expiration, …). Backends support a subset."
       />
-      <Alert>
-        <AlertTitle className="flex items-center gap-1.5">
-          Public access
-        </AlertTitle>
-        <AlertDescription className="space-y-2">
-          <p>
-            R2 public access (the r2.dev domain and custom domains) is managed
-            through the Cloudflare dashboard, not the S3 API, so it can&apos;t be
-            toggled here.
-          </p>
-          <a
-            href="https://dash.cloudflare.com/?to=/:account/r2/default/buckets"
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 text-foreground underline"
-          >
-            Open in Cloudflare dashboard <ExternalLink className="size-3" />
-          </a>
-        </AlertDescription>
-      </Alert>
+      {tech === "r2" ? (
+        <Alert>
+          <AlertTitle className="flex items-center gap-1.5">
+            Public access
+          </AlertTitle>
+          <AlertDescription className="space-y-2">
+            <p>
+              R2 public access (the r2.dev domain and custom domains) is managed
+              through the Cloudflare dashboard, not the S3 API, so it can&apos;t be
+              toggled here.
+            </p>
+            <a
+              href="https://dash.cloudflare.com/?to=/:account/r2/default/buckets"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-foreground underline"
+            >
+              Open in Cloudflare dashboard <ExternalLink className="size-3" />
+            </a>
+          </AlertDescription>
+        </Alert>
+      ) : null}
     </div>
   );
 }
