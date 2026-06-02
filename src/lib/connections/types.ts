@@ -8,7 +8,8 @@ export type TechId =
   | "redis"
   | "mongo"
   | "r2"
-  | "minio";
+  | "minio"
+  | "s3";
 
 export type ConnectionStatus = "untested" | "ok" | "error";
 
@@ -160,5 +161,15 @@ export interface MinioConfig {
   secretKey: string;
   /** S3 region; default "us-east-1". */
   region: string;
+  bucket?: string;
+}
+
+export interface S3Config {
+  /** AWS region, e.g. "us-east-1". Drives the endpoint. */
+  region: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  /** Optional temporary-credential session token. */
+  sessionToken?: string;
   bucket?: string;
 }
