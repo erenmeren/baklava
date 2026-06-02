@@ -12,6 +12,7 @@ import { dropRedisClient } from "@/lib/connections/redis";
 import { dropMongoClient } from "@/lib/connections/mongo";
 import { dropR2Client } from "@/lib/connections/r2";
 import { dropMinioClient } from "@/lib/connections/minio";
+import { dropS3Client } from "@/lib/connections/s3-aws";
 
 export const runtime = "nodejs";
 
@@ -74,5 +75,6 @@ export async function DELETE(_req: Request, ctx: RouteContext) {
   dropMongoClient(id);
   dropR2Client(id);
   dropMinioClient(id);
+  dropS3Client(id);
   return NextResponse.json({ ok: true });
 }

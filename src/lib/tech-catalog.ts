@@ -125,6 +125,15 @@ export const TECH_CATALOG: TechMeta[] = [
     color: "from-red-400 to-rose-600",
     status: "available",
   },
+  {
+    id: "s3",
+    name: "Amazon S3",
+    tagline: "Object storage",
+    description: "AWS S3 object browser: buckets, prefix navigation, upload/download, presigned links, CORS and lifecycle.",
+    category: "Storage",
+    color: "from-green-500 to-teal-600",
+    status: "available",
+  },
 ];
 
 export function getTech(id: string): TechMeta | undefined {

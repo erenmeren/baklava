@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" role="img" aria-label="Amazon S3">
+  <path d="M5 6.2 12 3l7 3.2v3.4c0 4.7-2.9 8.7-7 9.9-4.1-1.2-7-5.2-7-9.9V6.2Z" opacity=".85"/>
+  <text x="12" y="14.5" font-family="monospace" font-size="6" font-weight="700" text-anchor="middle" fill="var(--background,#fff)">S3</text>
+</svg>

@@ -24,6 +24,7 @@ const FIRST_PAGE: Record<TechId, string> = {
   mongo: "databases",
   r2: "",
   minio: "",
+  s3: "",
 };
 
 const STORAGE_KEY = "baklava:open-tabs";
@@ -61,7 +62,7 @@ function saveOpenTabs(ids: string[]) {
 function activeIdFromPath(pathname: string): string | null {
   // /<tech>/<id>/...
   const m = pathname.match(
-    /^\/(?:docker|postgres|mysql|kafka|sqlserver|kubernetes|redis|mongo|r2|minio)\/([^/]+)/,
+    /^\/(?:docker|postgres|mysql|kafka|sqlserver|kubernetes|redis|mongo|r2|minio|s3)\/([^/]+)/,
   );
   return m ? m[1] : null;
 }
