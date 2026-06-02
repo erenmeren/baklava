@@ -9,6 +9,7 @@ import type {
   PostgresConfig,
   R2Config,
   RedisConfig,
+  S3Config,
   SqlServerConfig,
   TechId,
 } from "./types";
@@ -78,5 +79,10 @@ export const connectionSummaries: Record<
     const cfg = r.config as MinioConfig;
     const bucket = cfg.bucket ? ` · ${cfg.bucket}` : "";
     return `${cfg.accessKey}@${cfg.endpoint}${bucket}`;
+  },
+  s3: (r) => {
+    const cfg = r.config as S3Config;
+    const bucket = cfg.bucket ? ` · ${cfg.bucket}` : "";
+    return `${cfg.accessKeyId}@s3.${cfg.region}${bucket}`;
   },
 };

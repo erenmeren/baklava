@@ -91,13 +91,35 @@ function JsonRuleEditor({
   );
 }
 
+const CORS_SUPPORTED = new Set<TechId>(["r2", "s3"]);
+
+const PUBLIC_ACCESS_NOTES: Partial<
+  Record<TechId, { body: string; href: string; linkLabel: string }>
+> = {
+  r2: {
+    body: "R2 public access (the r2.dev domain and custom domains) is managed through the Cloudflare dashboard, not the S3 API, so it can't be toggled here.",
+    href: "https://dash.cloudflare.com/?to=/:account/r2/default/buckets",
+    linkLabel: "Open in Cloudflare dashboard",
+  },
+  s3: {
+    body: "S3 public access is governed by Block Public Access settings and bucket policies, managed in the AWS console, not the S3 object API.",
+    href: "https://s3.console.aws.amazon.com/s3/buckets",
+    linkLabel: "Open in AWS console",
+  },
+};
+
 export function BucketSettings({ tech, connectionId, bucket }: Props) {
   const base = `/api/${tech}/${connectionId}/buckets/${encodeURIComponent(bucket)}`;
+  const note = PUBLIC_ACCESS_NOTES[tech];
   return (
     <div className="space-y-8 max-w-3xl py-2">
-      {tech === "minio" ? (
-        // MinIO does not implement the S3 per-bucket CORS API — PutBucketCors
-        // returns "not implemented". CORS is configured at the server level.
+      {CORS_SUPPORTED.has(tech) ? (
+        <JsonRuleEditor
+          label="CORS rules"
+          endpoint={`${base}/cors`}
+          help="Array of S3 CORSRule objects (AllowedOrigins, AllowedMethods, AllowedHeaders, …)."
+        />
+      ) : (
         <Alert>
           <AlertTitle>CORS rules</AlertTitle>
           <AlertDescription>
@@ -107,36 +129,24 @@ export function BucketSettings({ tech, connectionId, bucket }: Props) {
             environment variable on the MinIO server.
           </AlertDescription>
         </Alert>
-      ) : (
-        <JsonRuleEditor
-          label="CORS rules"
-          endpoint={`${base}/cors`}
-          help="Array of S3 CORSRule objects (AllowedOrigins, AllowedMethods, AllowedHeaders, …)."
-        />
       )}
       <JsonRuleEditor
         label="Lifecycle rules"
         endpoint={`${base}/lifecycle`}
         help="Array of S3 LifecycleRule objects (ID, Filter, Expiration, …). Backends support a subset."
       />
-      {tech === "r2" ? (
+      {note ? (
         <Alert>
-          <AlertTitle className="flex items-center gap-1.5">
-            Public access
-          </AlertTitle>
+          <AlertTitle className="flex items-center gap-1.5">Public access</AlertTitle>
           <AlertDescription className="space-y-2">
-            <p>
-              R2 public access (the r2.dev domain and custom domains) is managed
-              through the Cloudflare dashboard, not the S3 API, so it can&apos;t be
-              toggled here.
-            </p>
+            <p>{note.body}</p>
             <a
-              href="https://dash.cloudflare.com/?to=/:account/r2/default/buckets"
+              href={note.href}
               target="_blank"
               rel="noreferrer"
               className="inline-flex items-center gap-1 text-foreground underline"
             >
-              Open in Cloudflare dashboard <ExternalLink className="size-3" />
+              {note.linkLabel} <ExternalLink className="size-3" />
             </a>
           </AlertDescription>
         </Alert>

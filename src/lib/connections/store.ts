@@ -159,6 +159,7 @@ const SECRET_KEYS = new Set([
   "uri",
   "secretAccessKey",
   "secretKey",
+  "sessionToken",
 ]);
 
 function mergeConfig(

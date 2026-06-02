@@ -1,8 +1,9 @@
 import "server-only";
 import type { S3Client } from "@aws-sdk/client-s3";
-import type { TechId, R2Config, MinioConfig } from "./types";
+import type { TechId, R2Config, MinioConfig, S3Config } from "./types";
 import { r2ClientFor, dropR2Client, endpointFor } from "./r2";
 import { minioClientFor, dropMinioClient, resolveEndpoint } from "./minio";
+import { s3AwsClientFor, dropS3Client, endpointFor as s3EndpointFor } from "./s3-aws";
 
 export interface BlobTech {
   tech: TechId;
@@ -43,6 +44,20 @@ export const BLOB_TECHS: Partial<Record<TechId, BlobTech>> = {
     },
     endpointOf: (cfg) => resolveEndpoint(cfg as MinioConfig),
     defaultName: "MinIO",
+  },
+  s3: {
+    tech: "s3",
+    clientFor: (id, cfg) => s3AwsClientFor(id, cfg as S3Config),
+    dropClient: dropS3Client,
+    validateConfig: (cfg) => {
+      const c = cfg as S3Config;
+      if (!c?.region?.trim()) return "Region is required";
+      if (!c?.accessKeyId?.trim() || !c?.secretAccessKey)
+        return "Access Key ID and Secret Access Key are required";
+      return null;
+    },
+    endpointOf: (cfg) => s3EndpointFor((cfg as S3Config).region),
+    defaultName: "Amazon S3",
   },
 };
 
