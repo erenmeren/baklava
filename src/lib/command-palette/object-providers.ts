@@ -129,42 +129,8 @@ const sqlserverProvider: ObjectProvider = async (id, query, { pathname }) => {
   }
 };
 
-// ─── Kubernetes ──────────────────────────────────────────────────────────────
-// The k8s workspace is k9s-style: resources live on per-kind list pages
-// (`/kubernetes/<id>/pods`, …) with no per-object detail route, and the active
-// namespace is held in the shell's in-memory state, not the URL. So the closest
-// faithful object search is pods in the namespace from the path (if any),
-// linking to the pods list page. `/api/kubernetes/<id>/pods?namespace=<ns>`
-// returns `{ rows: [{ namespace, name }] }`.
-const kubernetesProvider: ObjectProvider = async (id, query, { pathname }) => {
-  if (query.trim().length < 1) return [];
-  // The k8s URL is /kubernetes/<id>/<resource> — there's no namespace segment,
-  // so we list across all namespaces and surface it in the sublabel.
-  void pathname;
-  try {
-    const res = await fetch(`/api/kubernetes/${id}/pods`, { cache: "no-store" });
-    if (!res.ok) return [];
-    const data = (await res.json()) as {
-      rows?: Array<{ namespace: string; name: string }>;
-    };
-    const q = query.toLowerCase();
-    return (data.rows ?? [])
-      .filter((p) => p.name.toLowerCase().includes(q))
-      .slice(0, 25)
-      .map((p) => ({
-        label: p.name,
-        sublabel: `${p.namespace} · pod`,
-        href: `/kubernetes/${id}/pods`,
-        icon: "Box",
-      }));
-  } catch {
-    return [];
-  }
-};
-
 export const OBJECT_PROVIDERS: Partial<Record<TechId, ObjectProvider>> = {
   postgres: postgresProvider,
   mysql: mysqlProvider,
   sqlserver: sqlserverProvider,
-  kubernetes: kubernetesProvider,
 };

@@ -117,7 +117,7 @@ export function GlobalCommandPalette() {
           <CommandGroup heading="In this connection">
             {objects.map((o) => (
               <CommandItem
-                key={o.href}
+                key={`${o.href}#${o.label}`}
                 value={`obj ${o.label} ${o.sublabel ?? ""}`}
                 onSelect={() => go(o.href)}
               >

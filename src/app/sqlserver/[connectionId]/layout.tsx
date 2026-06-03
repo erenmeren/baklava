@@ -4,7 +4,6 @@ import { requireConnection } from "@/lib/connections/server";
 import type { SqlServerConfig } from "@/lib/connections/types";
 import { SqlServerSidebar } from "./sqlserver-sidebar";
 import { SqlServerTabs } from "./sqlserver-tabs";
-import { CommandPaletteHost } from "./command-palette-host";
 
 export const dynamic = "force-dynamic";
 
@@ -40,10 +39,6 @@ export default async function SqlServerWorkspaceLayout({
         <SqlServerTabs connectionId={connectionId} defaultDatabase={cfg.database} />
         <div className="flex-1 min-h-0">{children}</div>
       </div>
-      <CommandPaletteHost
-        connectionId={connectionId}
-        defaultDatabase={cfg.database}
-      />
     </WorkspaceShell>
   );
 }
