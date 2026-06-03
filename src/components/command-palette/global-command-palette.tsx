@@ -19,6 +19,7 @@ import {
 import { getRecent } from "@/lib/command-palette/recent";
 import { sectionsFor } from "@/lib/command-palette/sections";
 import { workspaceHref } from "@/lib/connections/first-page";
+import { getTech } from "@/lib/tech-catalog";
 import { onOpenCommandPalette } from "@/lib/command-palette/palette-events";
 import { useTheme } from "@/components/theme-provider";
 import type { ConnectionRecord, TechId } from "@/lib/connections/types";
@@ -71,9 +72,12 @@ export function GlobalCommandPalette() {
       const i = order.indexOf(c.id);
       return i === -1 ? Number.MAX_SAFE_INTEGER : i;
     };
-    return [...connections].sort(
-      (a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name)
-    );
+    return connections
+      // Only surface connections whose tech is a supported workspace —
+      // the store may still hold legacy connections for dropped techs,
+      // which have no route to navigate to.
+      .filter((c) => getTech(c.tech))
+      .sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connections, open]); // re-read recents when reopened
 
@@ -85,6 +89,12 @@ export function GlobalCommandPalette() {
   // includes its label so cmdk's own filter keeps them visible.
   const [query, setQuery] = useState("");
   const [objects, setObjects] = useState<PaletteObject[]>([]);
+
+  // Start every open with a clean query so stale text from a prior open
+  // doesn't filter out the Go-to / Actions groups.
+  useEffect(() => {
+    if (open) setQuery("");
+  }, [open]);
   useEffect(() => {
     if (!here) {
       setObjects([]);
