@@ -1,4 +1,19 @@
 import type { TechId } from "./types";
+import { getTech } from "@/lib/tech-catalog";
+
+/**
+ * Parse a `/<tech>/<id>/...` workspace path into its tech + connection id.
+ * The tech is validated against the catalog, so this is the single source of
+ * truth for "which path is a workspace" — no per-tech regex to keep in sync.
+ */
+export function parseWorkspacePath(
+  pathname: string | null | undefined,
+): { tech: TechId; id: string } | null {
+  const m = pathname?.match(/^\/([^/]+)\/([^/]+)/);
+  if (!m) return null;
+  const [, seg, id] = m;
+  return getTech(seg) ? { tech: seg as TechId, id } : null;
+}
 
 /** The initial section a workspace tab opens at, per tech. Empty = the
  *  workspace root (overview). */

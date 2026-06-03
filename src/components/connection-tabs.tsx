@@ -12,7 +12,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import { workspaceHref } from "@/lib/connections/first-page";
+import { workspaceHref, parseWorkspacePath } from "@/lib/connections/first-page";
 
 const STORAGE_KEY = "baklava:open-tabs";
 
@@ -42,11 +42,8 @@ function saveOpenTabs(ids: string[]) {
 }
 
 function activeIdFromPath(pathname: string): string | null {
-  // /<tech>/<id>/...
-  const m = pathname.match(
-    /^\/(?:docker|postgres|mysql|kafka|sqlserver|kubernetes|redis|mongo|r2|minio|s3)\/([^/]+)/,
-  );
-  return m ? m[1] : null;
+  // /<tech>/<id>/... — tech validated against the catalog.
+  return parseWorkspacePath(pathname)?.id ?? null;
 }
 
 export function ConnectionTabs() {

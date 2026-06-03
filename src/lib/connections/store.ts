@@ -194,16 +194,30 @@ function mergeConfig(
 
 export function updateConnection(
   id: string,
-  patch: { name?: string; config?: Record<string, unknown> }
+  patch: {
+    name?: string;
+    config?: Record<string, unknown>;
+    /**
+     * Config keys to remove after merging. Needed for optional secrets like
+     * `sessionToken` — `mergeConfig` keeps secret keys on blank (so passwords
+     * survive a no-retype edit), so clearing one requires an explicit unset.
+     */
+    unset?: string[];
+  }
 ): AnyRecord | undefined {
   const existing = getStore().byId.get(id);
   if (!existing) return undefined;
+  let config = patch.config
+    ? mergeConfig(existing.config as Record<string, unknown>, patch.config)
+    : (existing.config as Record<string, unknown>);
+  if (patch.unset?.length) {
+    config = { ...config };
+    for (const key of patch.unset) delete config[key];
+  }
   const updated: AnyRecord = {
     ...existing,
     name: patch.name?.trim() || existing.name,
-    config: patch.config
-      ? mergeConfig(existing.config as Record<string, unknown>, patch.config)
-      : existing.config,
+    config,
     status: "untested",
     lastError: undefined,
   };

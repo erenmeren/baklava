@@ -32,6 +32,8 @@ export async function GET(_req: Request, ctx: RouteContext) {
 interface PatchBody {
   name?: string;
   config?: Record<string, unknown>;
+  /** Config keys to remove (e.g. clearing an optional sessionToken). */
+  unset?: string[];
 }
 
 export async function PATCH(req: Request, ctx: RouteContext) {
@@ -48,7 +50,8 @@ export async function PATCH(req: Request, ctx: RouteContext) {
   }
   if (
     body.name === undefined &&
-    (body.config === undefined || Object.keys(body.config).length === 0)
+    (body.config === undefined || Object.keys(body.config).length === 0) &&
+    !body.unset?.length
   ) {
     return NextResponse.json(
       { error: "Nothing to update — provide name or config" },

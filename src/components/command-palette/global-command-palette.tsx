@@ -18,7 +18,7 @@ import {
 } from "@/lib/command-palette/object-providers";
 import { getRecent } from "@/lib/command-palette/recent";
 import { sectionsFor } from "@/lib/command-palette/sections";
-import { workspaceHref } from "@/lib/connections/first-page";
+import { workspaceHref, parseWorkspacePath } from "@/lib/connections/first-page";
 import { getTech } from "@/lib/tech-catalog";
 import { onOpenCommandPalette } from "@/lib/command-palette/palette-events";
 import { useTheme } from "@/components/theme-provider";
@@ -32,13 +32,12 @@ function Icon({ name, className }: { name: string; className?: string }) {
   return C ? <C className={className ?? "size-3.5"} /> : null;
 }
 
+// Tech is derived from the catalog via parseWorkspacePath — no hardcoded
+// tech list to keep in sync here.
 function currentConnId(
   pathname: string | null
 ): { tech: TechId; id: string } | null {
-  const m = pathname?.match(
-    /^\/(docker|postgres|mysql|kafka|sqlserver|kubernetes|redis|mongo|r2|minio|s3)\/([^/]+)/
-  );
-  return m ? { tech: m[1] as TechId, id: m[2] } : null;
+  return parseWorkspacePath(pathname);
 }
 
 export function GlobalCommandPalette() {
