@@ -10,7 +10,7 @@ export interface PaletteObject {
 export type ObjectProvider = (
   connectionId: string,
   query: string,
-  ctx: { pathname: string },
+  ctx: { pathname: string; signal?: AbortSignal },
 ) => Promise<PaletteObject[]>;
 
 /** Pull the active database from a /<tech>/<id>/databases/<db>/... path. */
@@ -26,13 +26,13 @@ function dbFromPath(tech: string, pathname: string): string | null {
 // Mirrors src/components/postgres/command-palette.tsx: fetches the active
 // database's relations and links each to its table page. (The endpoint returns
 // extra fields — kind/columns/isSystem — which we don't need here.)
-const postgresProvider: ObjectProvider = async (id, query, { pathname }) => {
+const postgresProvider: ObjectProvider = async (id, query, { pathname, signal }) => {
   const db = dbFromPath("postgres", pathname);
   if (!db || query.trim().length < 1) return [];
   try {
     const res = await fetch(
       `/api/postgres/${id}/databases/${encodeURIComponent(db)}/all-relations`,
-      { cache: "no-store" },
+      { cache: "no-store", signal },
     );
     if (!res.ok) return [];
     const data = (await res.json()) as {
@@ -60,13 +60,13 @@ const postgresProvider: ObjectProvider = async (id, query, { pathname }) => {
 // database (`/mysql/<id>/databases/<db>`) and list its tables — a faithful
 // subset of the per-tech palette. `/api/mysql/<id>/databases/<db>` returns
 // `{ tables: [{ name, kind }] }`; href matches the per-tech palette.
-const mysqlProvider: ObjectProvider = async (id, query, { pathname }) => {
+const mysqlProvider: ObjectProvider = async (id, query, { pathname, signal }) => {
   const db = dbFromPath("mysql", pathname);
   if (!db || query.trim().length < 1) return [];
   try {
     const res = await fetch(
       `/api/mysql/${id}/databases/${encodeURIComponent(db)}`,
-      { cache: "no-store" },
+      { cache: "no-store", signal },
     );
     if (!res.ok) return [];
     const data = (await res.json()) as {
@@ -94,13 +94,13 @@ const mysqlProvider: ObjectProvider = async (id, query, { pathname }) => {
 // the module page — same branching the per-tech palette uses. The per-tech
 // palette searched the connection's default database; the global palette scopes
 // to the database in the path (`/sqlserver/<id>/databases/<db>`).
-const sqlserverProvider: ObjectProvider = async (id, query, { pathname }) => {
+const sqlserverProvider: ObjectProvider = async (id, query, { pathname, signal }) => {
   const db = dbFromPath("sqlserver", pathname);
   if (!db || query.trim().length < 1) return [];
   try {
     const res = await fetch(
       `/api/sqlserver/${id}/databases/${encodeURIComponent(db)}/objects`,
-      { cache: "no-store" },
+      { cache: "no-store", signal },
     );
     if (!res.ok) return [];
     const data = (await res.json()) as {

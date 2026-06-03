@@ -15,6 +15,7 @@ import {
   PutBucketLifecycleConfigurationCommand,
   type CORSRule,
   type LifecycleRule,
+  type BucketLocationConstraint,
 } from "@aws-sdk/client-s3";
 import { Upload } from "@aws-sdk/lib-storage";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
@@ -142,7 +143,24 @@ export async function listBuckets(client: S3Client): Promise<BucketInfo[]> {
 
 export async function createBucket(client: S3Client, name: string): Promise<void> {
   validateBucketName(name);
-  await client.send(new CreateBucketCommand({ Bucket: name }));
+  // AWS S3 requires CreateBucketConfiguration.LocationConstraint for every
+  // region except us-east-1. R2 ("auto") and MinIO (us-east-1 default) must
+  // NOT receive a constraint, so only set it for a real, non-default region.
+  const region = await client.config.region();
+  const constraint =
+    region && region !== "us-east-1" && region !== "auto" ? region : undefined;
+  await client.send(
+    new CreateBucketCommand({
+      Bucket: name,
+      ...(constraint
+        ? {
+            CreateBucketConfiguration: {
+              LocationConstraint: constraint as BucketLocationConstraint,
+            },
+          }
+        : {}),
+    }),
+  );
 }
 
 export async function deleteBucket(client: S3Client, name: string): Promise<void> {
@@ -242,12 +260,22 @@ export async function deleteObjects(
   keys: string[],
 ): Promise<void> {
   if (keys.length === 0) return;
-  await client.send(
+  const out = await client.send(
     new DeleteObjectsCommand({
       Bucket: bucket,
       Delete: { Objects: keys.map((Key) => ({ Key })) },
     }),
   );
+  // DeleteObjects returns HTTP 200 even when individual keys fail (e.g. access
+  // denied). Surface those so callers don't report a false success — and so a
+  // rename/move (copy + delete-source) doesn't silently leave a duplicate.
+  const errors = out.Errors ?? [];
+  if (errors.length > 0) {
+    const e = errors[0];
+    throw new Error(
+      `Failed to delete ${errors.length} object(s): ${e.Key ?? "?"} — ${e.Message ?? e.Code ?? "unknown error"}`,
+    );
+  }
 }
 
 export async function presignGet(

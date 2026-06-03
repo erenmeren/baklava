@@ -45,12 +45,18 @@ export function GlobalCommandPalette() {
   const [open, setOpen] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
-  const { connections } = useConnections();
+  // `open` as the reload token: refetch the connection list each time the
+  // palette opens so newly-added/removed connections show up without a reload.
+  const { connections } = useConnections(open);
   const { resolvedTheme, setTheme } = useTheme();
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        // Let rich editors keep their own ⌘K binding (CodeMirror's
+        // delete-to-end-of-line, the xterm terminal) instead of stealing it.
+        const t = e.target as Element | null;
+        if (t?.closest?.(".cm-editor, .xterm")) return;
         e.preventDefault();
         setOpen((v) => !v);
       }
@@ -81,7 +87,10 @@ export function GlobalCommandPalette() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connections, open]); // re-read recents when reopened
 
-  const here = currentConnId(pathname);
+  // Memoized so it's a stable reference across renders — otherwise the
+  // object-fetch effect below (which has `here` in its deps) re-runs every
+  // render and loops via setObjects.
+  const here = useMemo(() => currentConnId(pathname), [pathname]);
   const sections = here ? sectionsFor(here.tech) : [];
 
   // "In this connection" object search — debounced calls to the per-tech
@@ -105,12 +114,23 @@ export function GlobalCommandPalette() {
       setObjects([]);
       return;
     }
+    const controller = new AbortController();
     const t = setTimeout(() => {
-      void provider(here.id, query, { pathname: pathname ?? "" }).then(
-        setObjects,
-      );
+      void provider(here.id, query, {
+        pathname: pathname ?? "",
+        signal: controller.signal,
+      })
+        .then((r) => {
+          if (!controller.signal.aborted) setObjects(r);
+        })
+        .catch(() => {
+          /* aborted or failed — leave results as-is */
+        });
     }, 150);
-    return () => clearTimeout(t);
+    return () => {
+      clearTimeout(t);
+      controller.abort();
+    };
   }, [here, query, open, pathname]);
 
   return (
