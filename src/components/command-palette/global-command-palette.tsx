@@ -12,6 +12,10 @@ import {
   CommandItem,
 } from "@/components/ui/command";
 import { useConnections } from "@/lib/command-palette/use-connections";
+import {
+  OBJECT_PROVIDERS,
+  type PaletteObject,
+} from "@/lib/command-palette/object-providers";
 import { getRecent } from "@/lib/command-palette/recent";
 import { sectionsFor } from "@/lib/command-palette/sections";
 import { workspaceHref } from "@/lib/connections/first-page";
@@ -76,11 +80,58 @@ export function GlobalCommandPalette() {
   const here = currentConnId(pathname);
   const sections = here ? sectionsFor(here.tech) : [];
 
+  // "In this connection" object search — debounced calls to the per-tech
+  // provider. Results are server-filtered by `query`; each item's `value`
+  // includes its label so cmdk's own filter keeps them visible.
+  const [query, setQuery] = useState("");
+  const [objects, setObjects] = useState<PaletteObject[]>([]);
+  useEffect(() => {
+    if (!here) {
+      setObjects([]);
+      return;
+    }
+    const provider = OBJECT_PROVIDERS[here.tech];
+    if (!provider || !open) {
+      setObjects([]);
+      return;
+    }
+    const t = setTimeout(() => {
+      void provider(here.id, query, { pathname: pathname ?? "" }).then(
+        setObjects,
+      );
+    }, 150);
+    return () => clearTimeout(t);
+  }, [here, query, open, pathname]);
+
   return (
     <CommandDialog open={open} onOpenChange={setOpen}>
-      <CommandInput placeholder="Jump to a connection, section, or action…" />
+      <CommandInput
+        value={query}
+        onValueChange={setQuery}
+        placeholder="Jump to a connection, section, or action…"
+      />
       <CommandList>
         <CommandEmpty>No results.</CommandEmpty>
+
+        {objects.length > 0 ? (
+          <CommandGroup heading="In this connection">
+            {objects.map((o) => (
+              <CommandItem
+                key={o.href}
+                value={`obj ${o.label} ${o.sublabel ?? ""}`}
+                onSelect={() => go(o.href)}
+              >
+                <Icon name={o.icon ?? "Circle"} />
+                <span className="flex-1 truncate">{o.label}</span>
+                {o.sublabel ? (
+                  <span className="text-[11px] text-muted-foreground truncate max-w-[40%]">
+                    {o.sublabel}
+                  </span>
+                ) : null}
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        ) : null}
 
         {here && sections.length > 0 ? (
           <CommandGroup heading="Go to">
