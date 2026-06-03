@@ -4,7 +4,6 @@ import { requireConnection } from "@/lib/connections/server";
 import type { MysqlConfig } from "@/lib/connections/types";
 import { MysqlSidebar } from "./mysql-sidebar";
 import { MysqlTabs } from "./mysql-tabs";
-import { CommandPaletteHost } from "./command-palette-host";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +26,7 @@ export default async function MysqlWorkspaceLayout({
     <WorkspaceShell
       tech={tech}
       connectionName={record.name}
+      connectionId={connectionId}
       subtitle={subtitle}
       sidebar={
         <MysqlSidebar
@@ -42,10 +42,6 @@ export default async function MysqlWorkspaceLayout({
         />
         <div className="flex-1 min-h-0">{children}</div>
       </div>
-      <CommandPaletteHost
-        connectionId={connectionId}
-        defaultDatabase={cfg.database}
-      />
     </WorkspaceShell>
   );
 }

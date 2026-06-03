@@ -21,7 +21,7 @@ export default async function R2WorkspaceLayout({ params, children }: LayoutProp
   const result = await probe(r2ClientFor(connectionId, record.config)).catch(() => null);
   const subtitle = result ? `${result.buckets} bucket(s)` : "unreachable";
   return (
-    <WorkspaceShell tech={tech} connectionName={record.name} subtitle={subtitle}
+    <WorkspaceShell tech={tech} connectionName={record.name} connectionId={connectionId} subtitle={subtitle}
       sidebar={<BucketSidebar tech="r2" connectionId={connectionId} defaultBucket={record.config.bucket ?? ""} />}>
       <div className="flex flex-col h-full min-h-0">
         <BucketTabs tech="r2" connectionId={connectionId} />

@@ -4,7 +4,6 @@ import { requireConnection } from "@/lib/connections/server";
 import type { PostgresConfig } from "@/lib/connections/types";
 import { PostgresSidebar } from "./postgres-sidebar";
 import { PostgresTabs } from "./postgres-tabs";
-import { CommandPaletteHost } from "./command-palette-host";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +26,7 @@ export default async function PostgresWorkspaceLayout({
     <WorkspaceShell
       tech={tech}
       connectionName={record.name}
+      connectionId={connectionId}
       subtitle={subtitle}
       sidebar={
         <PostgresSidebar
@@ -42,10 +42,6 @@ export default async function PostgresWorkspaceLayout({
         />
         <div className="flex-1 min-h-0">{children}</div>
       </div>
-      <CommandPaletteHost
-        connectionId={connectionId}
-        defaultDatabase={cfg.database}
-      />
     </WorkspaceShell>
   );
 }

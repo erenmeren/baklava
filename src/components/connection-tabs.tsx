@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Plus, X, ArrowUpRight } from "lucide-react";
-import type { ConnectionRecord, TechId } from "@/lib/connections/types";
+import type { ConnectionRecord } from "@/lib/connections/types";
 import { TECH_CATALOG, techIconUrl } from "@/lib/tech-catalog";
 import {
   DropdownMenu,
@@ -12,27 +12,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-
-const FIRST_PAGE: Record<TechId, string> = {
-  docker: "containers",
-  postgres: "",
-  mysql: "",
-  kafka: "",
-  sqlserver: "",
-  kubernetes: "pods",
-  redis: "keys",
-  mongo: "databases",
-  r2: "",
-  minio: "",
-  s3: "",
-};
+import { workspaceHref } from "@/lib/connections/first-page";
 
 const STORAGE_KEY = "baklava:open-tabs";
-
-function workspaceHref(tech: TechId, id: string) {
-  const seg = FIRST_PAGE[tech];
-  return seg ? `/${tech}/${id}/${seg}` : `/${tech}/${id}`;
-}
 
 interface ConnectionsResponse {
   connections: ConnectionRecord[];

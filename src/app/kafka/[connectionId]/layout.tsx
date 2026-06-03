@@ -28,6 +28,7 @@ export default async function KafkaWorkspaceLayout({
     <WorkspaceShell
       tech={tech}
       connectionName={record.name}
+      connectionId={connectionId}
       subtitle={subtitle}
       sidebar={
         <SidebarSection>

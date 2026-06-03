@@ -44,6 +44,7 @@ export default async function KubernetesWorkspaceLayout({
     <WorkspaceShell
       tech={tech}
       connectionName={record.name}
+      connectionId={connectionId}
       subtitle={subtitle}
       sidebar={
         <K8sSidebar

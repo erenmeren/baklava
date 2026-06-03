@@ -32,6 +32,7 @@ export default async function RedisWorkspaceLayout({
     <WorkspaceShell
       tech={tech}
       connectionName={record.name}
+      connectionId={connectionId}
       subtitle={subtitle}
       sidebar={
         <RedisSidebar
