@@ -1,6 +1,17 @@
 # Baklava
 
-Open-source unified ops console for **Docker, Postgres, Kafka, and SQL Server** — modeled on the dedicated tools you already know (Docker Desktop, pgAdmin, kafka-ui, SSMS) so you can stop juggling tabs.
+Open-source unified ops console — modeled on the dedicated tools you already know (Docker Desktop, pgAdmin, kafka-ui, SSMS, RedisInsight, Compass, k9s, an S3 browser) so you can stop juggling tabs.
+
+Integrated technologies, by category:
+
+- **Runtime** — Docker
+- **Database** — PostgreSQL · MySQL · SQL Server · MongoDB
+- **Streaming** — Kafka
+- **Orchestration** — Kubernetes
+- **Cache** — Redis
+- **Storage** — Cloudflare R2 · MinIO · Amazon S3 (S3-compatible object storage)
+
+A global **⌘K command palette** jumps you to any connection, section, or object from anywhere.
 
 ## What it does
 
@@ -51,6 +62,42 @@ Tree sidebar: connection → databases → schemas → tables / views / procedur
 - **Activity / Locks / Top queries / Query Store / Index maintenance / Security / Backup** as dedicated server-level pages off the sidebar.
 - Each database has its own **SQL editor** with MSSQL dialect, curated keywords + types, schema-aware autocomplete, `GO` batch splits, and `STATISTICS IO/TIME` toggle.
 
+### MySQL (phpMyAdmin-style)
+
+Databases → tables, a CodeMirror SQL editor, row-level CRUD, indexes, and a live process list with KILL.
+
+### MongoDB (Compass-style)
+
+Databases → collections, a document browser with EJSON filtering, an aggregation-pipeline runner, indexes, and server / replica-set / current-op pages.
+
+### Kubernetes (k9s-style)
+
+Terminal-style browser for pods, deployments, services, configmaps, secrets and namespaces, with a `:`-triggered command runner, pod logs, exec, and an in-browser shell.
+
+### Redis (RedisInsight-style)
+
+Typed key viewer, CLI, pub/sub, streams, `MONITOR`, cluster topology, ACL, and server info — single-node or cluster.
+
+### Object storage — Cloudflare R2 · MinIO · Amazon S3 (S3-compatible)
+
+All three are S3-compatible and share **one object-storage workspace** (a file manager), built on a single shared S3 core so each backend is just a small connection adapter.
+
+- **Connect**: R2 (account ID + access key ID + secret), MinIO (endpoint as `host:port` or full URL + a Use-SSL toggle + access/secret + region), Amazon S3 (region + access key ID + secret + optional session token for temporary STS credentials). Each form **Tests** by listing buckets before saving; secrets are stored redacted and never returned over the API.
+- **Buckets**: sidebar lists buckets with create / delete.
+- **File manager** (per bucket): breadcrumb prefix/folder navigation, object table (name · size · last-modified · storage class), **upload** (file picker, streaming multipart), **download** (presigned redirect), **copy presigned link**, **copy / rename / move**, multi-select **bulk delete**, **new folder**, and an **object detail drawer** (size, content-type, ETag, custom metadata, HTTP headers).
+- **Settings** (per bucket): **CORS** and **lifecycle** rule editors (R2 + S3; MinIO shows a note because it doesn't implement the per-bucket CORS API and configures CORS at the server level). A read-only **public-access** panel links out to the provider's dashboard (Cloudflare for R2, the AWS console for S3).
+
+## Command palette
+
+Press **⌘K / Ctrl+K** (or the **⌘K** pill in the header) from anywhere to:
+
+- jump to any saved connection's workspace (recent-first),
+- jump to a section of the connection you're currently in (Tables, Topics, Buckets, Pods, …),
+- search objects in the active connection (tables on PostgreSQL / MySQL / SQL Server),
+- run quick actions (new connection, go home, toggle theme).
+
+(Kubernetes keeps its own `:`-triggered k9s-style command runner alongside the global palette.)
+
 ## Stack
 
 - Next.js 16 (App Router) + React 19
@@ -58,7 +105,7 @@ Tree sidebar: connection → databases → schemas → tables / views / procedur
 - Tailwind CSS v4
 - shadcn/ui (Base UI primitives) + Lucide icons + Sonner toasts
 - CodeMirror (`@uiw/react-codemirror` + `@codemirror/lang-sql`) for SQL editors; xterm.js for the Docker terminal
-- Drivers: `dockerode`, `kafkajs`, `pg`, `mssql`
+- Drivers: `dockerode`, `kafkajs`, `pg`, `mysql2`, `mssql`, `mongodb`, `ioredis`, `@kubernetes/client-node`, and `@aws-sdk/client-s3` (+ `s3-request-presigner` / `lib-storage`) for the S3-compatible object stores
 
 ## Run
 
@@ -167,7 +214,7 @@ src/
 2. Drop a driver helper in `src/lib/connections/<tech>.ts` (probe + per-object operations).
 3. If the driver is a native package, add it to `serverExternalPackages` in `next.config.ts`.
 4. Add API routes under `src/app/api/<tech>/`.
-5. Add the connection form at `src/app/<tech>/<tech>-form.tsx` (reused by `ConnectionSheet` and the standalone `/<tech>` page).
+5. Add the connection form at `src/app/<tech>/<tech>-form.tsx` (reused by `ConnectionSheet`; connection management lives in the home-screen sheet, not a standalone `/<tech>` page).
 6. Add a workspace at `src/app/<tech>/[connectionId]/` with a `layout.tsx` (uses `WorkspaceShell` + your sidebar) and one page per object kind.
 7. Add the tech to `FIRST_PAGE` in `src/components/connection-tabs.tsx` and the `FORMS` map in `src/components/connection-sheet.tsx`.
 
