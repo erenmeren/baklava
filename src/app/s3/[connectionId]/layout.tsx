@@ -18,7 +18,7 @@ export default async function S3WorkspaceLayout({ params, children }: LayoutProp
   const result = await probe(s3AwsClientFor(connectionId, record.config)).catch(() => null);
   const subtitle = result ? `${result.buckets} bucket(s)` : "unreachable";
   return (
-    <WorkspaceShell tech={tech} connectionName={record.name} subtitle={subtitle}
+    <WorkspaceShell tech={tech} connectionName={record.name} connectionId={connectionId} subtitle={subtitle}
       sidebar={<BucketSidebar tech="s3" connectionId={connectionId} defaultBucket={record.config.bucket ?? ""} />}>
       <div className="flex flex-col h-full min-h-0">
         <BucketTabs tech="s3" connectionId={connectionId} />

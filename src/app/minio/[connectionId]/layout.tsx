@@ -18,7 +18,7 @@ export default async function MinioWorkspaceLayout({ params, children }: LayoutP
   const result = await probe(minioClientFor(connectionId, record.config)).catch(() => null);
   const subtitle = result ? `${result.buckets} bucket(s)` : "unreachable";
   return (
-    <WorkspaceShell tech={tech} connectionName={record.name} subtitle={subtitle}
+    <WorkspaceShell tech={tech} connectionName={record.name} connectionId={connectionId} subtitle={subtitle}
       sidebar={<BucketSidebar tech="minio" connectionId={connectionId} defaultBucket={record.config.bucket ?? ""} />}>
       <div className="flex flex-col h-full min-h-0">
         <BucketTabs tech="minio" connectionId={connectionId} />

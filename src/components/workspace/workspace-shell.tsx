@@ -1,8 +1,10 @@
 import { techIconUrl, type TechMeta } from "@/lib/tech-catalog";
+import { RecordVisit } from "@/components/command-palette/record-visit";
 
 interface WorkspaceShellProps {
   tech: TechMeta;
   connectionName: string;
+  connectionId: string;
   subtitle?: string;
   sidebar: React.ReactNode;
   children: React.ReactNode;
@@ -11,12 +13,14 @@ interface WorkspaceShellProps {
 export function WorkspaceShell({
   tech,
   connectionName,
+  connectionId,
   subtitle,
   sidebar,
   children,
 }: WorkspaceShellProps) {
   return (
     <div className="flex h-[calc(100vh-3rem)] w-full">
+      <RecordVisit connectionId={connectionId} />
       <aside className="w-64 shrink-0 border-r border-border/60 flex flex-col bg-sidebar">
         <div className="px-4 py-3.5 border-b border-border/60">
           <div className="flex items-center gap-2.5">

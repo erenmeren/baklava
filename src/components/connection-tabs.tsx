@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Plus, X, ArrowUpRight } from "lucide-react";
-import type { ConnectionRecord, TechId } from "@/lib/connections/types";
+import type { ConnectionRecord } from "@/lib/connections/types";
 import { TECH_CATALOG, techIconUrl } from "@/lib/tech-catalog";
 import {
   DropdownMenu,
@@ -12,7 +12,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import { FIRST_PAGE, workspaceHref } from "@/lib/connections/first-page";
+import { workspaceHref } from "@/lib/connections/first-page";
 
 const STORAGE_KEY = "baklava:open-tabs";
 

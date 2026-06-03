@@ -27,6 +27,7 @@ export default async function SqlServerWorkspaceLayout({
     <WorkspaceShell
       tech={tech}
       connectionName={record.name}
+      connectionId={connectionId}
       subtitle={subtitle}
       sidebar={
         <SqlServerSidebar

@@ -27,6 +27,7 @@ export default async function MysqlWorkspaceLayout({
     <WorkspaceShell
       tech={tech}
       connectionName={record.name}
+      connectionId={connectionId}
       subtitle={subtitle}
       sidebar={
         <MysqlSidebar
