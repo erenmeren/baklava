@@ -60,7 +60,7 @@ export function blobHandlers(tech: TechId) {
       const r = resolve(id); if (!r.ok) return r.res;
       let body: { name?: string };
       try { body = await req.json(); } catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
-      try { await s3.createBucket(r.client, body.name?.trim() ?? ""); return NextResponse.json({ ok: true, name: body.name?.trim() }); }
+      try { await s3.createBucket(r.client, body.name?.trim() ?? "", { lax: tech === "minio" }); return NextResponse.json({ ok: true, name: body.name?.trim() }); }
       catch (err) { return NextResponse.json({ error: formatError(err) }, { status: 400 }); }
     },
 

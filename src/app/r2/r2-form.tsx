@@ -6,8 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { toast } from "sonner";
 import { Loader2, PlugZap, Save } from "lucide-react";
+import { useBlobConnectionForm } from "@/components/blob/use-blob-connection-form";
 import type { ConnectionRecord, R2Config } from "@/lib/connections/types";
 
 interface Props {
@@ -21,18 +21,12 @@ interface Probe {
 }
 
 export function R2Form({ onSaved, initial }: Props) {
-  const editing = Boolean(initial);
   const init = initial?.config as R2Config | undefined;
 
-  const [name, setName] = useState(initial?.name ?? "Cloudflare R2");
   const [accountId, setAccountId] = useState(init?.accountId ?? "");
   const [accessKeyId, setAccessKeyId] = useState(init?.accessKeyId ?? "");
   const [secretAccessKey, setSecretAccessKey] = useState("");
   const [bucket, setBucket] = useState(init?.bucket ?? "");
-
-  const [testing, setTesting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [probe, setProbe] = useState<Probe | null>(null);
 
   const buildConfig = (): Record<string, unknown> => {
     const cfg: Record<string, unknown> = {
@@ -45,55 +39,15 @@ export function R2Form({ onSaved, initial }: Props) {
     return cfg;
   };
 
-  const test = async (save: boolean) => {
-    setTesting(true);
-    setError(null);
-    setProbe(null);
-    try {
-      if (save && editing && initial) {
-        const res = await fetch(`/api/connections/${initial.id}`, {
-          method: "PATCH",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ name, config: buildConfig() }),
-        });
-        const data = await res.json();
-        if (res.ok) {
-          toast.success("Connection updated");
-          onSaved?.();
-        } else {
-          setError(data.error || "Update failed");
-          toast.error("Update failed", { description: data.error });
-        }
-        return;
-      }
-      const res = await fetch("/api/r2/test", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name, config: buildConfig(), save }),
-      });
-      const data = await res.json();
-      if (data.ok) {
-        setProbe(data.probe);
-        if (save) {
-          toast.success("Connection saved");
-          onSaved?.();
-        } else {
-          toast.success("Connection works", {
-            description: `${data.probe.buckets} bucket(s)`,
-          });
-        }
-      } else {
-        setError(data.error || "Connection failed");
-        toast.error("Connection failed", { description: data.error });
-      }
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setError(msg);
-      toast.error("Request failed", { description: msg });
-    } finally {
-      setTesting(false);
-    }
-  };
+  const { editing, name, setName, testing, error, probe, test } =
+    useBlobConnectionForm<Probe>({
+      tech: "r2",
+      initial,
+      defaultName: "Cloudflare R2",
+      buildConfig,
+      onSaved,
+      okDescription: (p) => `${p.buckets} bucket(s)`,
+    });
 
   const missingSecret = editing ? false : !secretAccessKey;
   const testDisabled =

@@ -20,16 +20,31 @@ import {
 import { Upload } from "@aws-sdk/lib-storage";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import type { Readable } from "node:stream";
+import { cache } from "react";
 
 // ── Pure helpers ────────────────────────────────────────────────────────────
 
 const IP_RE = /^\d{1,3}(\.\d{1,3}){3}$/;
 
-export function validateBucketName(name: string): void {
+/**
+ * Validate a bucket name. AWS S3 and Cloudflare R2 enforce strict DNS-style
+ * names (the default). MinIO is more permissive (uppercase + underscores), so
+ * pass `{ lax: true }` for it to avoid rejecting names its server accepts.
+ */
+export function validateBucketName(
+  name: string,
+  { lax = false }: { lax?: boolean } = {},
+): void {
   if (name.length < 3 || name.length > 63) {
     throw new Error("Bucket name must be 3–63 characters.");
   }
-  if (!/^[a-z0-9][a-z0-9.-]*[a-z0-9]$/.test(name)) {
+  if (lax) {
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]*[A-Za-z0-9]$/.test(name)) {
+      throw new Error(
+        "Bucket name may contain only letters, digits, hyphens, underscores and dots, and must start and end alphanumeric.",
+      );
+    }
+  } else if (!/^[a-z0-9][a-z0-9.-]*[a-z0-9]$/.test(name)) {
     throw new Error(
       "Bucket name may contain only lowercase letters, digits, hyphens and dots, and must start and end alphanumeric.",
     );
@@ -37,7 +52,7 @@ export function validateBucketName(name: string): void {
   if (name.includes("..")) {
     throw new Error("Bucket name must not contain consecutive dots.");
   }
-  if (IP_RE.test(name)) {
+  if (!lax && IP_RE.test(name)) {
     throw new Error("Bucket name must not be formatted as an IP address.");
   }
 }
@@ -133,6 +148,14 @@ export async function probe(client: S3Client): Promise<{ buckets: number }> {
   return { buckets: out.Buckets?.length ?? 0 };
 }
 
+/**
+ * Request-deduplicated `probe`. The blob workspace layout and its overview page
+ * both need the bucket count; since they render in the same RSC pass and share
+ * the same cached `S3Client` instance, React's `cache` collapses the two
+ * ListBuckets calls into one.
+ */
+export const probeCached = cache(probe);
+
 export async function listBuckets(client: S3Client): Promise<BucketInfo[]> {
   const out = await client.send(new ListBucketsCommand({}));
   return (out.Buckets ?? []).map((b) => ({
@@ -141,8 +164,12 @@ export async function listBuckets(client: S3Client): Promise<BucketInfo[]> {
   }));
 }
 
-export async function createBucket(client: S3Client, name: string): Promise<void> {
-  validateBucketName(name);
+export async function createBucket(
+  client: S3Client,
+  name: string,
+  { lax = false }: { lax?: boolean } = {},
+): Promise<void> {
+  validateBucketName(name, { lax });
   // AWS S3 requires CreateBucketConfiguration.LocationConstraint for every
   // region except us-east-1. R2 ("auto") and MinIO (us-east-1 default) must
   // NOT receive a constraint, so only set it for a real, non-default region.
