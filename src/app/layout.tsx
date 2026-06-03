@@ -9,6 +9,8 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { THEME_COOKIE, readTheme } from "@/lib/theme";
 import { BrandMark } from "@/components/brand-mark";
 import { ConnectionTabs } from "@/components/connection-tabs";
+import { GlobalCommandPalette } from "@/components/command-palette/global-command-palette";
+import { PaletteTrigger } from "@/components/command-palette/palette-trigger";
 import Link from "next/link";
 
 // Fonts are vendored into public/fonts/ so builds never reach out to
@@ -72,13 +74,15 @@ export default async function RootLayout({
                   aria-hidden
                 />
                 <ConnectionTabs />
-                <div className="flex items-center gap-1 pl-2 shrink-0">
+                <div className="flex items-center gap-1.5 pl-2 shrink-0">
+                  <PaletteTrigger />
                   <ThemeToggle />
                 </div>
               </div>
             </header>
             <main className="flex-1 w-full">{children}</main>
             <Toaster richColors position="top-right" />
+            <GlobalCommandPalette />
           </TooltipProvider>
         </ThemeProvider>
       </body>
