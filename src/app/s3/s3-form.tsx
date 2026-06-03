@@ -5,28 +5,24 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { toast } from "sonner";
 import { Loader2, PlugZap, Save } from "lucide-react";
+import { useBlobConnectionForm } from "@/components/blob/use-blob-connection-form";
 import type { ConnectionRecord, S3Config } from "@/lib/connections/types";
 
 interface Props { onSaved?: () => void; initial?: ConnectionRecord; }
 interface Probe { buckets: number; endpoint: string; }
 
 export function S3Form({ onSaved, initial }: Props) {
-  const editing = Boolean(initial);
   const init = initial?.config as S3Config | undefined;
 
-  const [name, setName] = useState(initial?.name ?? "Amazon S3");
   const [region, setRegion] = useState(init?.region ?? "us-east-1");
   const [accessKeyId, setAccessKeyId] = useState(init?.accessKeyId ?? "");
   const [secretAccessKey, setSecretAccessKey] = useState("");
   const [sessionToken, setSessionToken] = useState("");
+  const [clearToken, setClearToken] = useState(false);
   const [bucket, setBucket] = useState(init?.bucket ?? "");
-
-  const [testing, setTesting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [probe, setProbe] = useState<Probe | null>(null);
 
   const buildConfig = (): Record<string, unknown> => {
     const cfg: Record<string, unknown> = {
@@ -37,38 +33,20 @@ export function S3Form({ onSaved, initial }: Props) {
     if (secretAccessKey) cfg.secretAccessKey = secretAccessKey;
     else if (!editing) cfg.secretAccessKey = "";
     // sessionToken is optional; only send when provided (omit-on-blank keeps stored value when editing)
-    if (sessionToken) cfg.sessionToken = sessionToken;
+    if (sessionToken && !clearToken) cfg.sessionToken = sessionToken;
     return cfg;
   };
 
-  const test = async (save: boolean) => {
-    setTesting(true); setError(null); setProbe(null);
-    try {
-      if (save && editing && initial) {
-        const res = await fetch(`/api/connections/${initial.id}`, {
-          method: "PATCH", headers: { "content-type": "application/json" },
-          body: JSON.stringify({ name, config: buildConfig() }),
-        });
-        const data = await res.json();
-        if (res.ok) { toast.success("Connection updated"); onSaved?.(); }
-        else { setError(data.error || "Update failed"); toast.error("Update failed", { description: data.error }); }
-        return;
-      }
-      const res = await fetch("/api/s3/test", {
-        method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name, config: buildConfig(), save }),
-      });
-      const data = await res.json();
-      if (data.ok) {
-        setProbe(data.probe);
-        if (save) { toast.success("Connection saved"); onSaved?.(); }
-        else toast.success("Connection works", { description: `${data.probe.buckets} bucket(s)` });
-      } else { setError(data.error || "Connection failed"); toast.error("Connection failed", { description: data.error }); }
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setError(msg); toast.error("Request failed", { description: msg });
-    } finally { setTesting(false); }
-  };
+  const { editing, name, setName, testing, error, probe, test } =
+    useBlobConnectionForm<Probe>({
+      tech: "s3",
+      initial,
+      defaultName: "Amazon S3",
+      buildConfig,
+      onSaved,
+      okDescription: (p) => `${p.buckets} bucket(s)`,
+      patchExtra: () => (clearToken ? { unset: ["sessionToken"] } : {}),
+    });
 
   const missingSecret = editing ? false : !secretAccessKey;
   const testDisabled = testing || !region.trim() || !accessKeyId.trim() || missingSecret;
@@ -114,8 +92,17 @@ export function S3Form({ onSaved, initial }: Props) {
       <div className="space-y-2">
         <Label htmlFor="s3-token">Session Token (optional)</Label>
         <Input id="s3-token" type="password" value={sessionToken} onChange={(e) => setSessionToken(e.target.value)}
-          spellCheck={false} autoComplete="off"
+          spellCheck={false} autoComplete="off" disabled={clearToken}
           placeholder={editing && init?.sessionToken ? "(unchanged — leave blank to keep)" : "for temporary STS credentials"} />
+        {editing && Boolean(init?.sessionToken) ? (
+          <div className="flex items-center justify-between pt-1">
+            <div className="space-y-0.5">
+              <Label htmlFor="s3-clear-token">Remove the saved session token</Label>
+              <p className="text-[11px] text-muted-foreground">Clear the stored STS token (e.g. when it has expired).</p>
+            </div>
+            <Switch id="s3-clear-token" checked={clearToken} onCheckedChange={setClearToken} />
+          </div>
+        ) : null}
       </div>
 
       <div className="space-y-2">
