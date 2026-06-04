@@ -11,6 +11,8 @@ import { BrandMark } from "@/components/brand-mark";
 import { ConnectionTabs } from "@/components/connection-tabs";
 import { GlobalCommandPalette } from "@/components/command-palette/global-command-palette";
 import { PaletteTrigger } from "@/components/command-palette/palette-trigger";
+import { AssistantTrigger } from "@/components/ai/assistant-trigger";
+import { AssistantPanel } from "@/components/ai/assistant-panel";
 import Link from "next/link";
 
 // Fonts are vendored into public/fonts/ so builds never reach out to
@@ -76,6 +78,7 @@ export default async function RootLayout({
                 <ConnectionTabs />
                 <div className="flex items-center gap-1.5 pl-2 shrink-0">
                   <PaletteTrigger />
+                  <AssistantTrigger />
                   <ThemeToggle />
                 </div>
               </div>
@@ -83,6 +86,7 @@ export default async function RootLayout({
             <main className="flex-1 w-full">{children}</main>
             <Toaster richColors position="top-right" />
             <GlobalCommandPalette />
+            <AssistantPanel />
           </TooltipProvider>
         </ThemeProvider>
       </body>
