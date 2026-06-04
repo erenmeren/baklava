@@ -2038,6 +2038,37 @@ export async function runQuery(
   });
 }
 
+/**
+ * Run a SELECT/analytics statement enforced READ-ONLY at the database level.
+ * Wraps the user's SQL in `BEGIN TRANSACTION READ ONLY … ROLLBACK`, so Postgres
+ * itself rejects any write (INSERT/UPDATE/DELETE/DDL) with
+ * "cannot execute … in a read-only transaction" — even if the model is tricked
+ * into emitting one. Used by the AI `pg_run_sql` tool. Row output is capped.
+ */
+export async function runReadOnlyQuery(
+  config: PostgresConfig,
+  database: string,
+  sql: string,
+  maxRows = 1000,
+): Promise<QueryResult> {
+  return withClient(config, database, async (client) => {
+    const start = Date.now();
+    await client.query("BEGIN TRANSACTION READ ONLY");
+    try {
+      const res = await client.query({ text: sql, rowMode: "array" });
+      const rows = (res.rows as unknown[][]).slice(0, maxRows);
+      return {
+        fields: res.fields.map((f) => f.name),
+        rows,
+        rowCount: res.rowCount ?? rows.length,
+        durationMs: Date.now() - start,
+      };
+    } finally {
+      await client.query("ROLLBACK").catch(() => undefined);
+    }
+  });
+}
+
 export interface QueryStatementResult extends QueryResult {
   /** The statement text that produced this result (trimmed). */
   sql: string;
