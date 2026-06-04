@@ -13,6 +13,7 @@ import { dropMongoClient } from "@/lib/connections/mongo";
 import { dropR2Client } from "@/lib/connections/r2";
 import { dropMinioClient } from "@/lib/connections/minio";
 import { dropS3Client } from "@/lib/connections/s3-aws";
+import { deletePolicy } from "@/lib/ai/policy-store";
 
 export const runtime = "nodejs";
 
@@ -79,5 +80,6 @@ export async function DELETE(_req: Request, ctx: RouteContext) {
   dropR2Client(id);
   dropMinioClient(id);
   dropS3Client(id);
+  deletePolicy(id);
   return NextResponse.json({ ok: true });
 }

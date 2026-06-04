@@ -1,0 +1,27 @@
+import { describe, it, expect } from "vitest";
+import { buildTools } from "./registry";
+import { DEFAULT_POLICY } from "../permissions";
+
+const pgCfg = { host: "h", port: 5432, database: "app", user: "u", password: "p", ssl: false };
+
+describe("buildTools", () => {
+  it("with default (read-only) policy, exposes only read tools", () => {
+    const names = buildTools("postgres", "c1", pgCfg, DEFAULT_POLICY).map((t) => t.name);
+    expect(names).toContain("pg_run_sql");
+    expect(names).not.toContain("pg_create_table");
+    expect(names).not.toContain("pg_drop_table");
+  });
+
+  it("with write enabled, exposes write tools but not destructive", () => {
+    const names = buildTools("postgres", "c1", pgCfg, {
+      ...DEFAULT_POLICY,
+      write: true,
+    }).map((t) => t.name);
+    expect(names).toContain("pg_create_table");
+    expect(names).not.toContain("pg_drop_table");
+  });
+
+  it("returns [] for an unsupported tech in Phase 1", () => {
+    expect(buildTools("kafka", "c1", pgCfg, DEFAULT_POLICY)).toEqual([]);
+  });
+});
