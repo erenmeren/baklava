@@ -19,7 +19,7 @@ interface ChatBody {
   conversationId: string;
   sessionId: string;
   connections: { id: string; tech: TechId }[];
-  messages: ModelMessage[];
+  userMessage: { role: "user"; content: string };
 }
 
 export async function POST(req: Request) {
@@ -29,7 +29,7 @@ export async function POST(req: Request) {
   } catch {
     return new Response(JSON.stringify({ error: "Invalid JSON" }), { status: 400 });
   }
-  const { conversationId, sessionId, connections, messages } = body;
+  const { conversationId, sessionId, connections, userMessage } = body;
 
   const resolved: ConversationConnection[] = [];
   for (const c of connections ?? []) {
@@ -74,20 +74,24 @@ export async function POST(req: Request) {
         ? `Connections in this conversation: ${resolved.map((c) => `${c.name} (${c.tech})`).join(", ")}. You may only act on these.`
         : `No connections are in this conversation yet. Tell the user to add one with "/".`;
 
+      const stored = getConversation(conversationId);
+      const priorMessages = stored?.messages ?? [];
+      const turnMessages: ModelMessage[] = [...priorMessages, userMessage as ModelMessage];
+
       try {
         const { responseMessages } = await runAgent({
           model,
-          messages,
+          messages: turnMessages,
           tools,
           stepCap: settings.stepCap,
           emit,
           systemExtra,
           abortSignal: req.signal,
         });
-        if (getConversation(conversationId)) {
+        if (stored) {
           updateConversation(conversationId, {
             connectionIds: resolved.map((c) => c.id),
-            messages: [...messages, ...responseMessages],
+            messages: [...turnMessages, ...responseMessages],
           });
         }
       } catch (err) {

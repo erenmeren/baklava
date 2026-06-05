@@ -57,6 +57,8 @@ export function AssistantClient() {
   }, []);
 
   const newChat = useCallback(async () => {
+    abortRef.current?.abort();
+    setBusy(false);
     const res = await fetch("/api/ai/conversations", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ title: "New chat", connectionIds: [] }) });
     const d = await res.json();
     setActiveId(d.conversation.id);
@@ -66,6 +68,8 @@ export function AssistantClient() {
   }, [refreshList]);
 
   const selectChat = useCallback(async (id: string) => {
+    abortRef.current?.abort();
+    setBusy(false);
     const res = await fetch(`/api/ai/conversations/${id}`, { cache: "no-store" });
     const d = await res.json();
     const c = d.conversation;
@@ -80,7 +84,7 @@ export function AssistantClient() {
 
   const deleteChat = useCallback(async (id: string) => {
     await fetch(`/api/ai/conversations/${id}`, { method: "DELETE" });
-    if (id === activeId) { setActiveId(null); setMessages([]); setSetIds([]); }
+    if (id === activeId) { abortRef.current?.abort(); setBusy(false); setActiveId(null); setMessages([]); setSetIds([]); }
     refreshList();
   }, [activeId, refreshList]);
 
@@ -135,7 +139,7 @@ export function AssistantClient() {
           conversationId: convId,
           sessionId: sessionRef.current,
           connections: setConns.map((c) => ({ id: c.id, tech: c.tech })),
-          messages: history,
+          userMessage: { role: "user", content: userMsg.content },
         }),
         signal: ac.signal,
       });
