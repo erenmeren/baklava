@@ -5,19 +5,21 @@ import type { TechId } from "@/lib/connections/types";
 import { getSettings } from "@/lib/ai/settings";
 import { modelFor } from "@/lib/ai/providers";
 import { getPolicy } from "@/lib/ai/policy-store";
-import { buildTools, isAiSupported } from "@/lib/ai/tools/registry";
+import { isAiSupported } from "@/lib/ai/supported";
+import { buildConversationTools, type ConversationConnection } from "@/lib/ai/conversation-tools";
 import { runAgent } from "@/lib/ai/agent";
 import { createPending } from "@/lib/ai/pending";
+import { getConversation, updateConversation } from "@/lib/ai/conversation-store";
 import { formatError } from "@/lib/errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 interface ChatBody {
-  connectionId: string;
-  tech: TechId;
+  conversationId: string;
   sessionId: string;
-  messages: ModelMessage[];
+  connections: { id: string; tech: TechId }[];
+  userMessage: { role: "user"; content: string };
 }
 
 export async function POST(req: Request) {
@@ -27,15 +29,13 @@ export async function POST(req: Request) {
   } catch {
     return new Response(JSON.stringify({ error: "Invalid JSON" }), { status: 400 });
   }
+  const { conversationId, sessionId, connections, userMessage } = body;
 
-  const { connectionId, tech, sessionId, messages } = body;
-  if (!isAiSupported(tech)) {
-    return new Response(JSON.stringify({ error: `AI not supported for ${tech} yet` }), { status: 400 });
-  }
-
-  const record = getConnection(connectionId);
-  if (!record || record.tech !== tech) {
-    return new Response(JSON.stringify({ error: "Connection not found" }), { status: 404 });
+  const resolved: ConversationConnection[] = [];
+  for (const c of connections ?? []) {
+    const rec = getConnection(c.id);
+    if (!rec || rec.tech !== c.tech || !isAiSupported(rec.tech)) continue;
+    resolved.push({ id: rec.id, tech: rec.tech, name: rec.name, config: rec.config, policy: getPolicy(rec.id) });
   }
 
   const settings = getSettings();
@@ -44,9 +44,6 @@ export async function POST(req: Request) {
   if (!provider || !pcfg?.apiKey) {
     return new Response(JSON.stringify({ error: "No AI provider configured. Open AI Settings." }), { status: 400 });
   }
-
-  const policy = getPolicy(connectionId);
-  const tools = buildTools(tech, connectionId, record.config, policy);
   const model = modelFor(provider, pcfg.apiKey, pcfg.model);
 
   const encoder = new TextEncoder();
@@ -57,34 +54,46 @@ export async function POST(req: Request) {
       };
       const sse = (event: string, data: unknown) =>
         safeEnqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
-
       const heartbeat = setInterval(() => safeEnqueue(encoder.encode(": ping\n\n")), 15_000);
       req.signal.addEventListener("abort", () => {
         clearInterval(heartbeat);
         try { controller.close(); } catch {}
       });
-
       const emit = (event: string, data: unknown) => sse(event, data);
 
+      const tools = buildConversationTools(resolved, {
+        sessionId,
+        emit,
+        awaitApproval: async (toolCallId, tool, args, connection) => {
+          sse("approval-needed", { toolCallId, tool: tool.name, category: tool.category, args, connection });
+          return createPending(sessionId, toolCallId);
+        },
+      });
+
+      const systemExtra = resolved.length
+        ? `Connections in this conversation: ${resolved.map((c) => `${c.name} (${c.tech})`).join(", ")}. You may only act on these.`
+        : `No connections are in this conversation yet. Tell the user to add one with "/".`;
+
+      const stored = getConversation(conversationId);
+      const priorMessages = stored?.messages ?? [];
+      const turnMessages: ModelMessage[] = [...priorMessages, userMessage as ModelMessage];
+
       try {
-        await runAgent({
+        const { responseMessages } = await runAgent({
           model,
-          messages,
+          messages: turnMessages,
           tools,
           stepCap: settings.stepCap,
           emit,
-          gate: {
-            policy,
-            connectionId,
-            sessionId,
-            emit,
-            awaitApproval: async (toolCallId, tool, args) => {
-              sse("approval-needed", { toolCallId, tool: tool.name, category: tool.category, args });
-              return createPending(sessionId, toolCallId);
-            },
-          },
+          systemExtra,
           abortSignal: req.signal,
         });
+        if (stored) {
+          updateConversation(conversationId, {
+            connectionIds: resolved.map((c) => c.id),
+            messages: [...turnMessages, ...responseMessages],
+          });
+        }
       } catch (err) {
         sse("error", { error: formatError(err) });
       } finally {
