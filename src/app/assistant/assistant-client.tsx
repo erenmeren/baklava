@@ -10,6 +10,7 @@ import { SlashPicker } from "@/components/ai/slash-picker";
 import { MessageList, type ChatMessage, type ToolChip } from "@/components/ai/message-list";
 import { ApprovalCard, type PendingApproval } from "@/components/ai/approval-card";
 import { AiSettingsDialog } from "@/components/ai/ai-settings-dialog";
+import { ModelPicker } from "@/components/ai/model-picker";
 
 function genId() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -265,6 +266,9 @@ export function AssistantClient() {
             <button onClick={() => void send()} disabled={busy || !input.trim()} className="inline-flex items-center justify-center rounded-md bg-brand px-3 text-white disabled:opacity-50">
               <Send className="size-4" />
             </button>
+          </div>
+          <div className="mt-1.5">
+            <ModelPicker onConfigure={() => setSettingsOpen(true)} />
           </div>
         </div>
       </section>
