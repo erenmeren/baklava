@@ -6,6 +6,7 @@ export interface PendingApproval {
   tool: string;
   category: "read" | "write" | "destructive";
   args: unknown;
+  connection?: { id: string; name: string };
 }
 
 export function ApprovalCard({
@@ -23,7 +24,7 @@ export function ApprovalCard({
       }`}
     >
       <div className="text-xs font-mono uppercase tracking-wider text-muted-foreground mb-1">
-        {destructive ? "Destructive action" : "Action"} needs approval
+        {destructive ? "Destructive action" : "Action"} needs approval{pending.connection ? <> on <b>{pending.connection.name}</b></> : null}
       </div>
       <div className="font-mono text-sm font-medium">{pending.tool}</div>
       <pre className="mt-1 text-[11px] font-mono bg-muted/40 rounded p-2 overflow-x-auto">

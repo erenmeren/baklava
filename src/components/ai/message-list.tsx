@@ -7,6 +7,7 @@ export interface ChatMessage {
 export interface ToolChip {
   toolCallId: string;
   tool: string;
+  connection?: string;
 }
 
 export function MessageList({
@@ -33,7 +34,7 @@ export function MessageList({
         <div className="flex flex-wrap gap-1">
           {toolChips.map((c) => (
             <span key={c.toolCallId} className="text-[10px] font-mono rounded-full border border-border px-2 py-0.5 text-muted-foreground">
-              {c.tool}
+              {c.tool}{c.connection ? ` ·${c.connection}` : ""}
             </span>
           ))}
         </div>
