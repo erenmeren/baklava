@@ -5,13 +5,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-
-type Provider = "anthropic" | "openai" | "google";
+import type { ProviderId } from "@/lib/ai/settings";
+import { MODEL_CATALOG, PROVIDER_LABELS } from "@/lib/ai/model-catalog";
 
 export function AiSettingsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
-  const [provider, setProvider] = useState<Provider>("anthropic");
+  const [provider, setProvider] = useState<ProviderId>("anthropic");
   const [apiKey, setApiKey] = useState("");
-  const [model, setModel] = useState("claude-sonnet-4-6");
+  const [model, setModel] = useState(MODEL_CATALOG.anthropic[0].id);
   const [hasKey, setHasKey] = useState(false);
 
   useEffect(() => {
@@ -19,16 +19,21 @@ export function AiSettingsDialog({ open, onOpenChange }: { open: boolean; onOpen
     fetch("/api/ai/settings", { cache: "no-store" })
       .then((r) => r.json())
       .then((d) => {
-        const active = d.settings?.activeProvider as Provider | null;
+        const active = d.settings?.activeProvider as ProviderId | null;
         if (active) {
           setProvider(active);
-          setModel(d.settings.providers?.[active]?.model ?? model);
+          setModel(d.settings.providers?.[active]?.model ?? MODEL_CATALOG[active][0].id);
           setHasKey(Boolean(d.settings.providers?.[active]?.apiKey));
         }
       })
       .catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  const onProviderChange = (p: ProviderId) => {
+    setProvider(p);
+    if (!MODEL_CATALOG[p].some((m) => m.id === model)) setModel(MODEL_CATALOG[p][0].id);
+    setApiKey("");
+  };
 
   const save = async () => {
     const res = await fetch("/api/ai/settings", {
@@ -55,12 +60,12 @@ export function AiSettingsDialog({ open, onOpenChange }: { open: boolean; onOpen
             <Label>Provider</Label>
             <select
               value={provider}
-              onChange={(e) => setProvider(e.target.value as Provider)}
+              onChange={(e) => onProviderChange(e.target.value as ProviderId)}
               className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
             >
-              <option value="anthropic">Anthropic (Claude)</option>
-              <option value="openai">OpenAI (ChatGPT)</option>
-              <option value="google">Google (Gemini)</option>
+              {(Object.keys(PROVIDER_LABELS) as ProviderId[]).map((p) => (
+                <option key={p} value={p}>{PROVIDER_LABELS[p]}</option>
+              ))}
             </select>
           </div>
           <div className="space-y-1.5">
@@ -74,7 +79,15 @@ export function AiSettingsDialog({ open, onOpenChange }: { open: boolean; onOpen
           </div>
           <div className="space-y-1.5">
             <Label>Model</Label>
-            <Input value={model} onChange={(e) => setModel(e.target.value)} />
+            <select
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+            >
+              {MODEL_CATALOG[provider].map((m) => (
+                <option key={m.id} value={m.id}>{m.label}</option>
+              ))}
+            </select>
           </div>
         </div>
         <DialogFooter>
