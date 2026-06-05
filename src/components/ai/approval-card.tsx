@@ -7,6 +7,8 @@ export interface PendingApproval {
   category: "read" | "write" | "destructive";
   args: unknown;
   connection?: { id: string; name: string };
+  /** Session the approval belongs to — used to route the decision correctly. */
+  sessionId?: string;
 }
 
 export function ApprovalCard({

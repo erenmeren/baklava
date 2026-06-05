@@ -3,12 +3,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Settings2, Send } from "lucide-react";
 import type { ConnectionRecord } from "@/lib/connections/types";
 import { isAiSupported } from "@/lib/ai/supported";
-import { ConversationList, type ConversationRow } from "@/components/ai/conversation-list";
+import { toast } from "sonner";
+import { ConversationList, type ConversationListItem } from "@/components/ai/conversation-list";
 import { WorkingSet, type PolicyView } from "@/components/ai/working-set";
 import { SlashPicker } from "@/components/ai/slash-picker";
 import { MessageList, type ChatMessage, type ToolChip } from "@/components/ai/message-list";
 import { ApprovalCard, type PendingApproval } from "@/components/ai/approval-card";
 import { AiSettingsDialog } from "@/components/ai/ai-settings-dialog";
+import { ModelPicker } from "@/components/ai/model-picker";
 
 function genId() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -16,8 +18,9 @@ function genId() {
 
 export function AssistantClient() {
   const [allConns, setAllConns] = useState<ConnectionRecord[]>([]);
-  const [rows, setRows] = useState<ConversationRow[]>([]);
+  const [rows, setRows] = useState<ConversationListItem[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [loadingConv, setLoadingConv] = useState(false);
   const [setIds, setSetIds] = useState<string[]>([]);
   const [policies, setPolicies] = useState<Record<string, PolicyView>>({});
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -39,7 +42,7 @@ export function AssistantClient() {
   const refreshList = useCallback(() => {
     fetch("/api/ai/conversations", { cache: "no-store" })
       .then((r) => r.json())
-      .then((d: { conversations?: ConversationRow[] }) => setRows(d.conversations ?? []))
+      .then((d: { conversations?: ConversationListItem[] }) => setRows(d.conversations ?? []))
       .catch(() => {});
   }, []);
 
@@ -59,42 +62,67 @@ export function AssistantClient() {
   const newChat = useCallback(async () => {
     abortRef.current?.abort();
     setBusy(false);
-    const res = await fetch("/api/ai/conversations", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ title: "New chat", connectionIds: [] }) });
-    const d = await res.json();
-    setActiveId(d.conversation.id);
-    setSetIds([]); setMessages([]); setChips([]); setPending([]);
-    sessionRef.current = genId();
-    refreshList();
+    try {
+      const res = await fetch("/api/ai/conversations", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ title: "New chat", connectionIds: [] }) });
+      if (!res.ok) throw new Error();
+      const d = await res.json();
+      setActiveId(d.conversation.id);
+      setSetIds([]); setMessages([]); setChips([]); setPending([]);
+      sessionRef.current = genId();
+      refreshList();
+    } catch {
+      toast.error("Couldn't start a new chat");
+    }
   }, [refreshList]);
 
   const selectChat = useCallback(async (id: string) => {
     abortRef.current?.abort();
     setBusy(false);
-    const res = await fetch(`/api/ai/conversations/${id}`, { cache: "no-store" });
-    const d = await res.json();
-    const c = d.conversation;
     setActiveId(id);
-    setSetIds(c.connectionIds ?? []);
-    (c.connectionIds ?? []).forEach(loadPolicy);
-    // Render only role/text for display; tool steps are kept server-side for context.
-    setMessages((c.messages ?? []).filter((m: { role: string }) => m.role === "user" || m.role === "assistant").map((m: { role: "user" | "assistant"; content: unknown }) => ({ role: m.role, content: typeof m.content === "string" ? m.content : "" })));
-    setChips([]); setPending([]);
-    sessionRef.current = genId();
+    setLoadingConv(true);
+    try {
+      const res = await fetch(`/api/ai/conversations/${id}`, { cache: "no-store" });
+      if (!res.ok) throw new Error();
+      const d = await res.json();
+      const c = d.conversation;
+      setSetIds(c.connectionIds ?? []);
+      (c.connectionIds ?? []).forEach(loadPolicy);
+      // Render only role/text for display; tool steps are kept server-side for context.
+      setMessages((c.messages ?? []).filter((m: { role: string }) => m.role === "user" || m.role === "assistant").map((m: { role: "user" | "assistant"; content: unknown }) => ({ role: m.role, content: typeof m.content === "string" ? m.content : "" })));
+      setChips([]); setPending([]);
+      sessionRef.current = genId();
+    } catch {
+      toast.error("Couldn't load that conversation");
+    } finally {
+      setLoadingConv(false);
+    }
   }, [loadPolicy]);
 
   const deleteChat = useCallback(async (id: string) => {
-    await fetch(`/api/ai/conversations/${id}`, { method: "DELETE" });
+    try {
+      const res = await fetch(`/api/ai/conversations/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error();
+    } catch {
+      toast.error("Couldn't delete conversation");
+      return;
+    }
     if (id === activeId) { abortRef.current?.abort(); setBusy(false); setActiveId(null); setMessages([]); setSetIds([]); }
     refreshList();
   }, [activeId, refreshList]);
 
-  const ensureConversation = useCallback(async (): Promise<string> => {
+  const ensureConversation = useCallback(async (): Promise<string | null> => {
     if (activeId) return activeId;
-    const res = await fetch("/api/ai/conversations", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ title: input.trim().slice(0, 40) || "New chat", connectionIds: setIds }) });
-    const d = await res.json();
-    setActiveId(d.conversation.id);
-    refreshList();
-    return d.conversation.id as string;
+    try {
+      const res = await fetch("/api/ai/conversations", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ title: input.trim().slice(0, 40) || "New chat", connectionIds: setIds }) });
+      if (!res.ok) throw new Error();
+      const d = await res.json();
+      setActiveId(d.conversation.id);
+      refreshList();
+      return d.conversation.id as string;
+    } catch {
+      toast.error("Couldn't start the conversation");
+      return null;
+    }
   }, [activeId, input, setIds, refreshList]);
 
   const addConn = useCallback((c: ConnectionRecord) => {
@@ -112,9 +140,22 @@ export function AssistantClient() {
   }, []);
 
   const decide = useCallback(async (toolCallId: string, decision: "approve" | "reject") => {
+    const target = pending.find((x) => x.toolCallId === toolCallId);
     setPending((p) => p.filter((x) => x.toolCallId !== toolCallId));
-    await fetch("/api/ai/chat/approve", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ sessionId: sessionRef.current, toolCallId, decision }) }).catch(() => {});
-  }, []);
+    try {
+      const res = await fetch("/api/ai/chat/approve", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        // Use the session the approval belongs to (not the current one, which
+        // may have changed if the user switched chats while the card was open).
+        body: JSON.stringify({ sessionId: target?.sessionId ?? sessionRef.current, toolCallId, decision }),
+      });
+      const d = (await res.json().catch(() => ({ ok: false }))) as { ok?: boolean };
+      if (!d.ok) toast.error("Couldn't deliver your decision", { description: "That request may have already ended." });
+    } catch {
+      toast.error("Couldn't deliver your decision");
+    }
+  }, [pending]);
 
   const onInput = (v: string) => {
     setInput(v);
@@ -124,6 +165,7 @@ export function AssistantClient() {
   const send = useCallback(async () => {
     if (!input.trim() || busy) return;
     const convId = await ensureConversation();
+    if (!convId) return;
     const userMsg: ChatMessage = { role: "user", content: input.trim() };
     const history = [...messages, userMsg];
     setMessages([...history, { role: "assistant", content: "" }]);
@@ -190,8 +232,23 @@ export function AssistantClient() {
           </button>
         </header>
         <div className="flex-1 min-h-0 overflow-y-auto p-4">
-          <MessageList messages={messages} toolChips={chips} />
-          {pending.map((p) => (<ApprovalCard key={p.toolCallId} pending={p} onDecision={decide} />))}
+          {loadingConv ? (
+            <div className="h-full grid place-items-center text-sm text-muted-foreground">Loading…</div>
+          ) : messages.length === 0 ? (
+            <div className="h-full grid place-items-center text-center text-sm text-muted-foreground">
+              <div>
+                <p>Ask anything about your connections.</p>
+                <p className="mt-1 text-xs">
+                  Type <kbd className="font-mono rounded border border-border px-1">/</kbd> to add one to this conversation.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <>
+              <MessageList messages={messages} toolChips={chips} />
+              {pending.map((p) => (<ApprovalCard key={p.toolCallId} pending={p} onDecision={decide} />))}
+            </>
+          )}
         </div>
         <div className="relative border-t border-border/60 p-3">
           {picker ? (
@@ -209,6 +266,9 @@ export function AssistantClient() {
             <button onClick={() => void send()} disabled={busy || !input.trim()} className="inline-flex items-center justify-center rounded-md bg-brand px-3 text-white disabled:opacity-50">
               <Send className="size-4" />
             </button>
+          </div>
+          <div className="mt-1.5">
+            <ModelPicker onConfigure={() => setSettingsOpen(true)} />
           </div>
         </div>
       </section>

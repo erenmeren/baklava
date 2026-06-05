@@ -65,7 +65,7 @@ export async function POST(req: Request) {
         sessionId,
         emit,
         awaitApproval: async (toolCallId, tool, args, connection) => {
-          sse("approval-needed", { toolCallId, tool: tool.name, category: tool.category, args, connection });
+          sse("approval-needed", { toolCallId, tool: tool.name, category: tool.category, args, connection, sessionId });
           return createPending(sessionId, toolCallId);
         },
       });
