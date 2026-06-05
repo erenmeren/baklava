@@ -18,6 +18,13 @@ export const MODEL_CATALOG: Record<ProviderId, CatalogModel[]> = {
     { id: "claude-opus-4-8", label: "Claude Opus 4.8" },
     { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
     { id: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5" },
+    // Older Claude versions. The 4.x bare ids follow the same scheme as above;
+    // the 3.x entries use Anthropic's `-latest` aliases — pin exact dated ids if
+    // you need reproducibility.
+    { id: "claude-opus-4-7", label: "Claude Opus 4.7" },
+    { id: "claude-opus-4-6", label: "Claude Opus 4.6" },
+    { id: "claude-3-7-sonnet-latest", label: "Claude 3.7 Sonnet" },
+    { id: "claude-3-5-haiku-latest", label: "Claude 3.5 Haiku" },
   ],
   openai: [
     { id: "gpt-5.1", label: "GPT-5.1" },
