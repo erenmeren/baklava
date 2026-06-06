@@ -599,13 +599,16 @@ export async function streamPodLogs(
   };
 }
 
-/** One-shot, non-following pod logs (tail-bounded, byte-capped) for the AI tool. */
+/**
+ * One-shot, non-following pod logs (tail-bounded, byte-capped) for the AI tool.
+ * Returns at most ~200 KB of the most recent `tailLines` lines. Times out at 30s.
+ */
 export async function getPodLogs(
   connectionId: string,
   cfg: KubernetesConfig,
   namespace: string,
   podName: string,
-  opts: { tailLines?: number; container?: string } = {},
+  options: { tailLines?: number; container?: string } = {},
 ): Promise<string> {
   const b = bundleFor(connectionId, cfg);
   const log = new Log(b.kc);
@@ -614,19 +617,59 @@ export async function getPodLogs(
   const chunks: Buffer[] = [];
   let total = 0;
   return new Promise<string>((resolve, reject) => {
+    let settled = false;
+    let controller: { abort: () => void } | undefined;
+    const timer = setTimeout(
+      () => fail(new Error("Timed out reading pod logs")),
+      30_000,
+    );
+    const cleanup = () => {
+      clearTimeout(timer);
+      try {
+        controller?.abort();
+      } catch {
+        // ignore
+      }
+      try {
+        output.destroy();
+      } catch {
+        // ignore
+      }
+    };
+    function done(s: string) {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(s);
+    }
+    function fail(e: unknown) {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(e);
+    }
     output.on("data", (c: Buffer) => {
-      if (total < MAX_BYTES) { chunks.push(c); total += c.length; }
+      if (total < MAX_BYTES) {
+        chunks.push(c);
+        total += c.length;
+      }
     });
-    output.on("end", () => resolve(Buffer.concat(chunks).toString("utf8").slice(0, MAX_BYTES)));
-    output.on("error", reject);
+    output.on("end", () =>
+      done(Buffer.concat(chunks).toString("utf8").slice(0, MAX_BYTES)),
+    );
+    output.on("error", fail);
     log
-      .log(namespace, podName, opts.container ?? "", output, {
+      .log(namespace, podName, options.container ?? "", output, {
         follow: false,
-        tailLines: Math.min(Math.max(opts.tailLines ?? 200, 1), 2000),
+        tailLines: Math.min(Math.max(options.tailLines ?? 200, 1), 2000),
+        limitBytes: MAX_BYTES,
         timestamps: false,
         pretty: false,
       })
-      .catch(reject);
+      .then((c) => {
+        controller = c as { abort: () => void };
+      })
+      .catch(fail);
   });
 }
 
@@ -774,6 +817,13 @@ function sanitizeForEdit(obj: KubernetesObject): KubernetesObject {
   return o;
 }
 
+/**
+ * Fetch a Kubernetes resource and return it as a YAML string, with
+ * server-managed fields stripped so the buffer is clean for editing.
+ * When `opts.redactSecretValues` is set, a Secret's `data`/`stringData` are
+ * stripped — the result is for display only and MUST NOT be passed back to
+ * `replaceResourceYaml` (re-applying it would wipe the Secret's values).
+ */
 export async function readResourceYaml(
   connectionId: string,
   cfg: KubernetesConfig,
