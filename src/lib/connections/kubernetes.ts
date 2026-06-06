@@ -599,6 +599,37 @@ export async function streamPodLogs(
   };
 }
 
+/** One-shot, non-following pod logs (tail-bounded, byte-capped) for the AI tool. */
+export async function getPodLogs(
+  connectionId: string,
+  cfg: KubernetesConfig,
+  namespace: string,
+  podName: string,
+  opts: { tailLines?: number; container?: string } = {},
+): Promise<string> {
+  const b = bundleFor(connectionId, cfg);
+  const log = new Log(b.kc);
+  const output = new PassThrough();
+  const MAX_BYTES = 200_000;
+  const chunks: Buffer[] = [];
+  let total = 0;
+  return new Promise<string>((resolve, reject) => {
+    output.on("data", (c: Buffer) => {
+      if (total < MAX_BYTES) { chunks.push(c); total += c.length; }
+    });
+    output.on("end", () => resolve(Buffer.concat(chunks).toString("utf8").slice(0, MAX_BYTES)));
+    output.on("error", reject);
+    log
+      .log(namespace, podName, opts.container ?? "", output, {
+        follow: false,
+        tailLines: Math.min(Math.max(opts.tailLines ?? 200, 1), 2000),
+        timestamps: false,
+        pretty: false,
+      })
+      .catch(reject);
+  });
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Exec (interactive shell)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -749,6 +780,7 @@ export async function readResourceYaml(
   kind: string,
   namespace: string | undefined,
   name: string,
+  opts: { redactSecretValues?: boolean } = {},
 ): Promise<string> {
   const b = bundleFor(connectionId, cfg);
   const k = resolveKind(kind);
@@ -758,7 +790,12 @@ export async function readResourceYaml(
     metadata: { name, namespace: k.namespaced ? namespace : undefined },
   };
   const obj = await b.objects.read(spec);
-  return dumpYaml(sanitizeForEdit(obj));
+  const clean = sanitizeForEdit(obj) as Record<string, unknown>;
+  if (opts.redactSecretValues && k.kind === "Secret") {
+    delete clean.data;
+    delete clean.stringData;
+  }
+  return dumpYaml(clean);
 }
 
 export async function replaceResourceYaml(
@@ -789,4 +826,20 @@ export async function replaceResourceYaml(
     },
   };
   await b.objects.replace(merged);
+}
+
+export async function deleteResource(
+  connectionId: string,
+  cfg: KubernetesConfig,
+  kind: string,
+  namespace: string | undefined,
+  name: string,
+): Promise<void> {
+  const b = bundleFor(connectionId, cfg);
+  const k = resolveKind(kind);
+  await b.objects.delete({
+    apiVersion: k.apiVersion,
+    kind: k.kind,
+    metadata: { name, namespace: k.namespaced ? namespace : undefined },
+  });
 }
