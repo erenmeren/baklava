@@ -10,7 +10,7 @@ import { mssqlTools } from "./sqlserver";
 
 export { isAiSupported };
 
-type Builder = (connectionId: string, config: unknown) => AiTool[];
+type Builder = (connectionId: string, config: unknown, policy: PermissionPolicy) => AiTool[];
 
 const BUILDERS: Partial<Record<TechId, Builder>> = {
   postgres: (id, cfg) => pgTools(id, cfg as never),
@@ -28,5 +28,5 @@ export function buildTools(
 ): AiTool[] {
   const builder = BUILDERS[tech];
   if (!builder) return [];
-  return builder(connectionId, config).filter((t) => isAllowed(t.category, policy));
+  return builder(connectionId, config, policy).filter((t) => isAllowed(t.category, policy));
 }
