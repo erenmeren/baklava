@@ -43,16 +43,18 @@ describe("mongoTools", () => {
 
   it("mongo_aggregate rejects a $out stage without calling the driver", async () => {
     const t = tools().find((x) => x.name === "mongo_aggregate")!;
-    const out = await t.execute({ database: "app", collection: "orders", pipeline: '[{"$out":"dump"}]' });
+    await expect(
+      t.execute({ database: "app", collection: "orders", pipeline: '[{"$out":"dump"}]' }),
+    ).rejects.toThrow(/\$out|\$merge|read-only/i);
     expect(mo.runAggregate).not.toHaveBeenCalled();
-    expect(out).toMatchObject({ error: expect.stringMatching(/\$out|\$merge|read-only/i) });
   });
 
   it("mongo_aggregate rejects a $merge stage", async () => {
     const t = tools().find((x) => x.name === "mongo_aggregate")!;
-    const out = await t.execute({ database: "app", collection: "orders", pipeline: '[{"$merge":{"into":"x"}}]' });
+    await expect(
+      t.execute({ database: "app", collection: "orders", pipeline: '[{"$merge":{"into":"x"}}]' }),
+    ).rejects.toThrow(/\$out|\$merge|read-only/i);
     expect(mo.runAggregate).not.toHaveBeenCalled();
-    expect(out).toMatchObject({ error: expect.any(String) });
   });
 
   it("mongo_aggregate runs a normal pipeline", async () => {

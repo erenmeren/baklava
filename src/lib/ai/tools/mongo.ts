@@ -68,22 +68,24 @@ export function mongoTools(connectionId: string, config: MongoConfig): AiTool[] 
         try {
           stages = parseEjson<unknown>(pipeline as string);
         } catch (e) {
-          return {
-            error: `Invalid pipeline EJSON: ${e instanceof Error ? e.message : String(e)}`,
-          };
+          throw new Error(
+            `Invalid pipeline EJSON: ${e instanceof Error ? e.message : String(e)}`,
+          );
         }
-        if (!Array.isArray(stages))
-          return { error: "Pipeline must be a JSON array of stages." };
+        if (!Array.isArray(stages)) {
+          throw new Error("Pipeline must be a JSON array of stages.");
+        }
         const writes = stages.some(
           (s) =>
             s &&
             typeof s === "object" &&
             ("$out" in (s as object) || "$merge" in (s as object)),
         );
-        if (writes)
-          return {
-            error: "aggregate is read-only: $out / $merge stages are not allowed.",
-          };
+        if (writes) {
+          throw new Error(
+            "aggregate is read-only: $out / $merge stages are not allowed.",
+          );
+        }
         return runAggregate(
           connectionId,
           config,
