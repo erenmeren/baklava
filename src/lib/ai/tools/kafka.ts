@@ -98,7 +98,8 @@ export function kafkaTools(_connectionId: string, config: KafkaConfig): AiTool[]
     },
     {
       name: "kafka_create_topic",
-      description: "Create a topic.",
+      description:
+        "Create a topic with the given partition count and replication factor.",
       category: "write",
       inputSchema: z.object({
         name: z.string(),
@@ -176,7 +177,7 @@ export function kafkaTools(_connectionId: string, config: KafkaConfig): AiTool[]
     {
       name: "kafka_reset_group_offsets",
       description:
-        "Reset a consumer group's committed offsets for a topic to earliest or latest. DESTRUCTIVE (can skip or replay data).",
+        "Reset a consumer group's committed offsets for a topic to earliest or latest (timestamp/offset-based resets are not supported via this tool). DESTRUCTIVE (can skip or replay data).",
       category: "destructive",
       inputSchema: z.object({
         groupId: z.string(),
