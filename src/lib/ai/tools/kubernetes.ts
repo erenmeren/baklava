@@ -40,7 +40,13 @@ export function kubernetesTools(
     list("k8s_list_services", listServices, "services"),
     list("k8s_list_configmaps", listConfigMaps, "config maps"),
     list("k8s_list_secrets", listSecrets, "secrets (names + key counts only)"),
-    list("k8s_list_namespaces", listNamespaces, "namespaces"),
+    {
+      name: "k8s_list_namespaces",
+      description: "List all namespaces in the cluster.",
+      category: "read",
+      inputSchema: z.object({}),
+      execute: async () => listNamespaces(connectionId, config),
+    },
     {
       name: "k8s_pod_logs",
       description: "Read the last N lines of a pod's logs (one-shot, not following).",
@@ -69,7 +75,8 @@ export function kubernetesTools(
     },
     {
       name: "k8s_apply_yaml",
-      description: "Apply (replace) a resource from a full YAML manifest.",
+      description:
+        "Apply (full PUT replace) a resource from a complete YAML manifest. Do NOT submit a Secret manifest obtained from k8s_get_yaml when its values were redacted — it would erase the Secret's data.",
       category: "write",
       inputSchema: z.object({ yaml: z.string() }),
       execute: async ({ yaml }) => {
