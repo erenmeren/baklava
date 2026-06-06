@@ -953,6 +953,46 @@ export async function runQueryMulti(
   return { results, errors };
 }
 
+export interface ReadOnlyResult {
+  fields: string[];
+  rows: unknown[][];
+  rowCount: number;
+  durationMs: number;
+}
+
+/**
+ * Run a single read-only statement enforced by MySQL's READ ONLY transaction.
+ * Blocks ';' (no multi-statement injection); writes are rejected by the engine
+ * inside `START TRANSACTION READ ONLY`. Used by the AI `mysql_run_sql` tool.
+ */
+export async function runReadOnlyQuery(
+  config: MysqlConfig,
+  database: string,
+  sql: string,
+  maxRows = 1000,
+): Promise<ReadOnlyResult> {
+  const single = requireNoStatementTerminator(sql.trim().replace(/;+\s*$/g, ""), "Query");
+  return withConn(config, database, async (conn) => {
+    const start = Date.now();
+    await conn.query("START TRANSACTION READ ONLY");
+    try {
+      const [rows, fields] = (await conn.query({ sql: single, rowsAsArray: true })) as unknown as [
+        unknown[][],
+        { name: string }[],
+      ];
+      const capped = (rows ?? []).slice(0, maxRows);
+      return {
+        fields: (fields ?? []).map((f) => f.name),
+        rows: capped,
+        rowCount: capped.length,
+        durationMs: Date.now() - start,
+      };
+    } finally {
+      await conn.query("ROLLBACK").catch(() => undefined);
+    }
+  });
+}
+
 export interface ExplainResult {
   rows: Record<string, ColumnValue>[];
   columns: string[];

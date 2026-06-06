@@ -5,15 +5,18 @@ import { isAiSupported } from "../supported";
 import type { AiTool } from "./types";
 import { pgTools } from "./postgres";
 import { dockerTools } from "./docker";
+import { mysqlTools } from "./mysql";
+import { mssqlTools } from "./sqlserver";
 
 export { isAiSupported };
 
 type Builder = (connectionId: string, config: unknown) => AiTool[];
 
-// Phase 1: postgres + docker only. Add techs in Phase 2.
 const BUILDERS: Partial<Record<TechId, Builder>> = {
   postgres: (id, cfg) => pgTools(id, cfg as never),
   docker: (id, cfg) => dockerTools(id, cfg as never),
+  mysql: (id, cfg) => mysqlTools(id, cfg as never),
+  sqlserver: (id, cfg) => mssqlTools(id, cfg as never),
 };
 
 /** Build the tool set for a connection, filtered to categories the policy allows. */

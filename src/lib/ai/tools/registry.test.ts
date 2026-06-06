@@ -25,3 +25,18 @@ describe("buildTools", () => {
     expect(buildTools("kafka", "c1", pgCfg, DEFAULT_POLICY)).toEqual([]);
   });
 });
+
+describe("buildTools — sql family", () => {
+  const myCfg = { host: "h", port: 3306, database: "app", user: "u", password: "p", ssl: false };
+  const msCfg = { host: "h", port: 1433, database: "app", user: "u", password: "p", encrypt: false, trustServerCertificate: true };
+  it("exposes mysql read tools under default policy", () => {
+    const names = buildTools("mysql", "c1", myCfg, DEFAULT_POLICY).map((t) => t.name);
+    expect(names).toContain("mysql_run_sql");
+    expect(names).not.toContain("mysql_drop_table");
+  });
+  it("exposes sqlserver read tools under default policy", () => {
+    const names = buildTools("sqlserver", "c1", msCfg, DEFAULT_POLICY).map((t) => t.name);
+    expect(names).toContain("mssql_run_sql");
+    expect(names).not.toContain("mssql_drop_object");
+  });
+});
