@@ -1324,6 +1324,55 @@ export async function runSqlServerScript(
   );
 }
 
+// ─── Read-only query helper (AI tools path) ─────────────────────────────
+
+export interface ReadOnlyResult {
+  fields: string[];
+  rows: unknown[][];
+  rowCount: number;
+}
+
+// Defense-in-depth denylist for the read-only AI query path. The rollback wrap
+// below is the real backstop; this just rejects obvious writes early. `_` is a
+// word char so this won't trip on column names like `update_time`.
+const WRITE_KEYWORDS =
+  /\b(insert|update|delete|merge|drop|create|alter|truncate|exec|execute|grant|revoke|into|sp_|xp_)\b/i;
+
+/**
+ * Run a single read-only statement. SQL Server has no READ ONLY transaction, so
+ * we (1) block ';' (single statement), (2) reject write keywords, and (3) wrap in
+ * BEGIN TRAN … ROLLBACK so anything that slips past still never persists.
+ */
+export async function runReadOnlyQuery(
+  config: SqlServerConfig,
+  database: string,
+  sql: string,
+  maxRows = 1000,
+): Promise<ReadOnlyResult> {
+  const single = requireNoStatementTerminator(sql.trim().replace(/;+\s*$/g, ""), "Query");
+  const m = single.match(WRITE_KEYWORDS);
+  if (m) {
+    throw new Error(`Read-only query rejected: contains a write keyword ("${m[0]}").`);
+  }
+  return withPool(
+    config,
+    async (pool) => {
+      const res = await pool.request().batch(`BEGIN TRAN;\n${single};\nROLLBACK;`);
+      const rs = (res.recordset ?? []) as unknown as Array<Record<string, unknown>> & {
+        columns?: Record<string, unknown>;
+      };
+      const fields = rs.columns ? Object.keys(rs.columns) : rs[0] ? Object.keys(rs[0]) : [];
+      const capped = rs.slice(0, maxRows);
+      return {
+        fields,
+        rows: capped.map((row) => fields.map((f) => row[f] ?? null)),
+        rowCount: capped.length,
+      };
+    },
+    { database },
+  );
+}
+
 // ─── Activity / sessions ────────────────────────────────────────────────
 
 export interface SqlServerSession {
