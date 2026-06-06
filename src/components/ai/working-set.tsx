@@ -3,13 +3,14 @@ import { useState } from "react";
 import { X } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
-import type { ConnectionRecord } from "@/lib/connections/types";
+import type { ConnectionRecord, TechId } from "@/lib/connections/types";
 
 export interface PolicyView {
   mode: "confirm" | "autonomous";
   read: boolean;
   write: boolean;
   destructive: boolean;
+  allowK8sSecretValues?: boolean;
 }
 
 export function WorkingSet({
@@ -36,7 +37,7 @@ export function WorkingSet({
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={`/icons/${c.tech}.svg`} alt="" className="size-3 dark:invert opacity-80" />
             <span className="font-medium">{c.name}</span>
-            <PolicyChip id={c.id} policy={p} label={modeLabel} onChange={onPolicyChange} />
+            <PolicyChip id={c.id} tech={c.tech} policy={p} label={modeLabel} onChange={onPolicyChange} />
             <button onClick={() => onRemove(c.id)} title="Remove" className="text-muted-foreground hover:text-foreground">
               <X className="size-3" />
             </button>
@@ -48,8 +49,8 @@ export function WorkingSet({
 }
 
 function PolicyChip({
-  id, policy, label, onChange,
-}: { id: string; policy: PolicyView; label: string; onChange: (id: string, p: PolicyView) => void }) {
+  id, tech, policy, label, onChange,
+}: { id: string; tech: TechId; policy: PolicyView; label: string; onChange: (id: string, p: PolicyView) => void }) {
   const [open, setOpen] = useState(false);
   const row = (key: "read" | "write" | "destructive", text: string) => (
     <label className="flex items-center justify-between gap-3 py-1 text-xs">
@@ -67,6 +68,15 @@ function PolicyChip({
         {row("read", "Read")}
         {row("write", "Write")}
         {row("destructive", "Destructive")}
+        {tech === "kubernetes" ? (
+          <>
+            <div className="my-1 h-px bg-border/60" />
+            <label className="flex items-center justify-between gap-3 py-1 text-xs">
+              <span>Reveal secret values</span>
+              <Switch checked={Boolean(policy.allowK8sSecretValues)} onCheckedChange={(v: boolean) => onChange(id, { ...policy, allowK8sSecretValues: v })} />
+            </label>
+          </>
+        ) : null}
       </PopoverContent>
     </Popover>
   );

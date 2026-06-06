@@ -26,6 +26,7 @@ export async function PUT(req: Request, ctx: Ctx) {
       write: Boolean(body.write),
       destructive: Boolean(body.destructive),
       confirmDestructive: body.confirmDestructive,
+      allowK8sSecretValues: Boolean(body.allowK8sSecretValues),
     });
     return NextResponse.json({ policy: getPolicy(id) });
   } catch (err) {
