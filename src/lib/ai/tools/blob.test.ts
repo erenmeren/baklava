@@ -1,9 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const fakeClient = { __s3: true };
+// Toggle to simulate a tech with no registered blob client.
+const mockState = { noClient: false };
 
 vi.mock("@/lib/connections/blob-registry", () => ({
-  blobTech: () => ({ clientFor: () => fakeClient }),
+  blobTech: () => (mockState.noClient ? undefined : { clientFor: () => fakeClient }),
 }));
 
 vi.mock("@/lib/connections/s3", () => ({
@@ -38,7 +40,9 @@ describe("blobTools", () => {
     expect(cat["blob_get_cors"]).toBe("read");
     expect(cat["blob_upload_object"]).toBe("write");
     expect(cat["blob_copy_object"]).toBe("write");
-    expect(cat["blob_put_lifecycle"]).toBe("write");
+    expect(cat["blob_put_cors"]).toBe("write");
+    // Lifecycle is destructive: an Expiration rule can delete objects.
+    expect(cat["blob_put_lifecycle"]).toBe("destructive");
     expect(cat["blob_delete_objects"]).toBe("destructive");
     expect(cat["blob_delete_bucket"]).toBe("destructive");
     expect(cat["blob_move_object"]).toBe("destructive");
@@ -93,5 +97,46 @@ describe("blobTools", () => {
     expect(s3.copyObject).toHaveBeenCalledWith(fakeClient, "b", "a.txt", "b.txt");
     expect(s3.deleteObjects).toHaveBeenCalledWith(fakeClient, "b", ["a.txt"]);
     expect(order).toEqual(["copy", "delete"]);
+  });
+
+  it("blob_move_object reports a duplicate if the source delete fails after copy", async () => {
+    (s3.deleteObjects as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("access denied"));
+    await expect(
+      get("blob_move_object").execute({ bucket: "b", from: "a.txt", to: "b.txt" }),
+    ).rejects.toThrow(/duplicate now exists at "b\.txt"/i);
+    expect(s3.copyObject).toHaveBeenCalled();
+  });
+
+  it("blob_upload_object accepts a non-default text content-type (application/json)", async () => {
+    await get("blob_upload_object").execute({ bucket: "b", key: "c.json", content: "{}", contentType: "application/json" });
+    expect(s3.uploadObject).toHaveBeenCalledWith(fakeClient, "b", "c.json", expect.any(Buffer), "application/json");
+  });
+
+  it("read/write/destructive tools delegate to their s3 op", async () => {
+    await get("blob_list_buckets").execute({});
+    expect(s3.listBuckets).toHaveBeenCalledWith(fakeClient);
+    await get("blob_get_cors").execute({ bucket: "b" });
+    expect(s3.getBucketCors).toHaveBeenCalledWith(fakeClient, "b");
+    await get("blob_get_lifecycle").execute({ bucket: "b" });
+    expect(s3.getBucketLifecycle).toHaveBeenCalledWith(fakeClient, "b");
+    await get("blob_copy_object").execute({ bucket: "b", from: "a", to: "c" });
+    expect(s3.copyObject).toHaveBeenCalledWith(fakeClient, "b", "a", "c");
+    await get("blob_put_cors").execute({ bucket: "b", rules: [{ AllowedMethods: ["GET"] }] });
+    expect(s3.putBucketCors).toHaveBeenCalledWith(fakeClient, "b", [{ AllowedMethods: ["GET"] }]);
+    await get("blob_put_lifecycle").execute({ bucket: "b", rules: [{ ID: "x", Status: "Enabled" }] });
+    expect(s3.putBucketLifecycle).toHaveBeenCalledWith(fakeClient, "b", [{ ID: "x", Status: "Enabled" }]);
+    await get("blob_delete_objects").execute({ bucket: "b", keys: ["a", "c"] });
+    expect(s3.deleteObjects).toHaveBeenCalledWith(fakeClient, "b", ["a", "c"]);
+    await get("blob_delete_bucket").execute({ bucket: "b" });
+    expect(s3.deleteBucket).toHaveBeenCalledWith(fakeClient, "b");
+  });
+
+  it("throws a clear error when the tech has no blob client", async () => {
+    mockState.noClient = true;
+    try {
+      await expect(get("blob_list_buckets").execute({})).rejects.toThrow(/no blob client/i);
+    } finally {
+      mockState.noClient = false;
+    }
   });
 });

@@ -142,18 +142,21 @@ export function blobTools(tech: TechId, connectionId: string, config: unknown): 
         return { ok: true };
       },
     },
+
+    // ── destructive ───────────────────────────────────────────────────────
     {
       name: "blob_put_lifecycle",
-      description: "Replace the bucket's lifecycle rules with the supplied array of lifecycle rule objects.",
-      category: "write",
+      // Destructive, not write: a lifecycle rule with an Expiration can schedule
+      // deletion of every matching object, so it sits behind the destructive gate.
+      description:
+        "Replace the bucket's lifecycle rules. DESTRUCTIVE: rules with an Expiration schedule deletion of matching objects.",
+      category: "destructive",
       inputSchema: z.object({ bucket, rules: z.array(z.record(z.string(), z.unknown())) }),
       execute: async ({ bucket, rules }) => {
         await putBucketLifecycle(client(), bucket as string, rules as unknown as LifecycleRule[]);
         return { ok: true };
       },
     },
-
-    // ── destructive ───────────────────────────────────────────────────────
     {
       name: "blob_delete_objects",
       description: "Delete one or more objects by key (batch). Surfaces per-key failures.",
@@ -183,7 +186,15 @@ export function blobTools(tech: TechId, connectionId: string, config: unknown): 
       execute: async ({ bucket, from, to }) => {
         const c = client();
         await copyObject(c, bucket as string, from as string, to as string);
-        await deleteObjects(c, bucket as string, [from as string]);
+        try {
+          await deleteObjects(c, bucket as string, [from as string]);
+        } catch (e) {
+          // Copy landed but the source delete failed — make the duplicate explicit
+          // so the caller doesn't retry blindly and pile up copies.
+          throw new Error(
+            `Copied to "${to}" but could not delete source "${from}" — a duplicate now exists at "${to}". ${e instanceof Error ? e.message : String(e)}`,
+          );
+        }
         return { moved: { from, to } };
       },
     },
