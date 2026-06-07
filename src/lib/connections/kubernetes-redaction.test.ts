@@ -9,6 +9,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const mockRead = vi.fn();
 const mockDelete = vi.fn();
+const mockReplace = vi.fn();
 
 vi.mock("@kubernetes/client-node", async (importActual) => {
   const actual =
@@ -28,13 +29,18 @@ vi.mock("@kubernetes/client-node", async (importActual) => {
     AppsV1Api: class {},
     VersionApi: class {},
     KubernetesObjectApi: {
-      makeApiClient: () => ({ read: mockRead, delete: mockDelete }),
+      makeApiClient: () => ({
+        read: mockRead,
+        delete: mockDelete,
+        replace: mockReplace,
+      }),
     },
   } as unknown as typeof import("@kubernetes/client-node");
 });
 
 import {
   readResourceYaml,
+  replaceResourceYaml,
   deleteResource,
   dropKubernetesClient,
 } from "./kubernetes";
@@ -50,6 +56,12 @@ function secretObject() {
       namespace: "default",
       managedFields: [{}],
       uid: "abc",
+      annotations: {
+        // `kubectl apply` mirrors the full manifest (with base64 data) here.
+        "kubectl.kubernetes.io/last-applied-configuration":
+          '{"apiVersion":"v1","kind":"Secret","data":{"password":"c3VwZXJzZWNyZXQ="}}',
+        "app.example/owner": "team-a",
+      },
     },
     data: { password: "c3VwZXJzZWNyZXQ=" },
     stringData: { token: "plaintext-token" },
@@ -73,10 +85,14 @@ describe("readResourceYaml — Secret value redaction", () => {
       { redactSecretValues: true },
     );
     expect(yaml).toMatch(/kind: Secret/);
-    // The structural shell survives, the secret material does not.
+    // The structural shell survives, the secret material does not — including
+    // the copy smuggled in the last-applied-configuration annotation.
     expect(yaml).not.toMatch(/c3VwZXJzZWNyZXQ=/);
     expect(yaml).not.toMatch(/plaintext-token/);
     expect(yaml).not.toMatch(/stringData/);
+    expect(yaml).not.toMatch(/last-applied-configuration/);
+    // Non-secret annotations are preserved.
+    expect(yaml).toMatch(/app\.example\/owner/);
   });
 
   it("keeps Secret values when redaction is NOT requested (policy opt-in path)", async () => {
@@ -111,6 +127,50 @@ describe("readResourceYaml — Secret value redaction", () => {
       { redactSecretValues: true },
     );
     expect(yaml).toMatch(/value-not-secret/);
+  });
+});
+
+describe("replaceResourceYaml — redacted-Secret round-trip guard", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    dropKubernetesClient("c3");
+  });
+
+  it("refuses to apply a Secret with no data/stringData (would wipe it)", async () => {
+    const redacted = [
+      "apiVersion: v1",
+      "kind: Secret",
+      "metadata:",
+      "  name: db-creds",
+      "  namespace: default",
+      "",
+    ].join("\n");
+    await expect(
+      replaceResourceYaml("c3", cfg as never, redacted),
+    ).rejects.toThrow(/redacted view|wipe the Secret/i);
+    // Refusal happens before touching the cluster.
+    expect(mockRead).not.toHaveBeenCalled();
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it("allows a Secret that still carries data", async () => {
+    mockRead.mockResolvedValue({
+      apiVersion: "v1",
+      kind: "Secret",
+      metadata: { name: "db-creds", namespace: "default", resourceVersion: "42" },
+    });
+    const withData = [
+      "apiVersion: v1",
+      "kind: Secret",
+      "metadata:",
+      "  name: db-creds",
+      "  namespace: default",
+      "data:",
+      "  password: c3VwZXJzZWNyZXQ=",
+      "",
+    ].join("\n");
+    await replaceResourceYaml("c3", cfg as never, withData);
+    expect(mockReplace).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -844,6 +844,15 @@ export async function readResourceYaml(
   if (opts.redactSecretValues && k.kind === "Secret") {
     delete clean.data;
     delete clean.stringData;
+    // `kubectl apply` mirrors the entire manifest — including the base64
+    // `data` — into this annotation, so it must be stripped too or the
+    // redaction leaks the secret values it just removed.
+    const meta = clean.metadata as
+      | { annotations?: Record<string, unknown> }
+      | undefined;
+    if (meta?.annotations) {
+      delete meta.annotations["kubectl.kubernetes.io/last-applied-configuration"];
+    }
   }
   return dumpYaml(clean);
 }
@@ -857,6 +866,22 @@ export async function replaceResourceYaml(
   const parsed = loadYaml<KubernetesObject>(yaml);
   if (!parsed?.kind || !parsed?.apiVersion) {
     throw new Error("YAML missing kind/apiVersion");
+  }
+  // A full replace with no values would wipe the Secret. The redacted view
+  // from readResourceYaml has exactly this shape, so refuse it rather than
+  // silently erasing every key on apply.
+  if (parsed.kind === "Secret") {
+    const s = parsed as KubernetesObject & {
+      data?: Record<string, unknown>;
+      stringData?: Record<string, unknown>;
+    };
+    const hasData = s.data && Object.keys(s.data).length > 0;
+    const hasStringData = s.stringData && Object.keys(s.stringData).length > 0;
+    if (!hasData && !hasStringData) {
+      throw new Error(
+        "Refusing to replace a Secret that has no data/stringData — this looks like a redacted view, and applying it would wipe the Secret's values.",
+      );
+    }
   }
   // replace requires the latest resourceVersion — fetch it fresh so the
   // user doesn't have to keep it in their buffer.
