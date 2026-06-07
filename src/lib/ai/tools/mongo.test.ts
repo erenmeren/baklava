@@ -63,6 +63,22 @@ describe("mongoTools", () => {
     expect(mo.runAggregate).toHaveBeenCalledWith("c1", cfg, "app", "orders", '[{"$match":{"a":1}}]');
   });
 
+  it("mongo_aggregate rejects malformed EJSON without calling the driver", async () => {
+    const t = tools().find((x) => x.name === "mongo_aggregate")!;
+    await expect(
+      t.execute({ database: "app", collection: "orders", pipeline: "[{not json" }),
+    ).rejects.toThrow(/Invalid pipeline EJSON/i);
+    expect(mo.runAggregate).not.toHaveBeenCalled();
+  });
+
+  it("mongo_aggregate rejects a non-array pipeline without calling the driver", async () => {
+    const t = tools().find((x) => x.name === "mongo_aggregate")!;
+    await expect(
+      t.execute({ database: "app", collection: "orders", pipeline: '{"$match":{"a":1}}' }),
+    ).rejects.toThrow(/must be a JSON array/i);
+    expect(mo.runAggregate).not.toHaveBeenCalled();
+  });
+
   it("mongo_drop_collection delegates", async () => {
     const t = tools().find((x) => x.name === "mongo_drop_collection")!;
     await t.execute({ database: "app", collection: "orders" });
