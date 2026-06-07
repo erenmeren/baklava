@@ -21,7 +21,11 @@ export async function PUT(req: Request, ctx: Ctx) {
   if (!getConversation(id)) return NextResponse.json({ error: "Not found" }, { status: 404 });
   try {
     const body = (await req.json()) as { title?: string; connectionIds?: string[] };
-    const c = updateConversation(id, { title: body.title, connectionIds: body.connectionIds });
+    // Trim + cap server-side (the UI guards too, but a direct call shouldn't be
+    // able to store an empty or arbitrarily long title). Empty => keep existing.
+    const title =
+      typeof body.title === "string" ? body.title.trim().slice(0, 120) || undefined : undefined;
+    const c = updateConversation(id, { title, connectionIds: body.connectionIds });
     return NextResponse.json({ conversation: c });
   } catch (err) {
     return NextResponse.json({ error: formatError(err) }, { status: 400 });

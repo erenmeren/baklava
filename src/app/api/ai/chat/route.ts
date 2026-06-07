@@ -78,6 +78,15 @@ export async function POST(req: Request) {
       const priorMessages = stored?.messages ?? [];
       const turnMessages: ModelMessage[] = [...priorMessages, userMessage as ModelMessage];
 
+      // Persist the user's message up front so it survives even if this turn
+      // errors mid-stream — the assistant reply (if any) is folded in on success.
+      if (stored) {
+        updateConversation(conversationId, {
+          connectionIds: resolved.map((c) => c.id),
+          messages: turnMessages,
+        });
+      }
+
       try {
         const { responseMessages } = await runAgent({
           model,
@@ -86,11 +95,11 @@ export async function POST(req: Request) {
           stepCap: settings.stepCap,
           emit,
           systemExtra,
+          agentName: settings.agentName,
           abortSignal: req.signal,
         });
-        if (stored) {
+        if (stored && responseMessages.length) {
           updateConversation(conversationId, {
-            connectionIds: resolved.map((c) => c.id),
             messages: [...turnMessages, ...responseMessages],
           });
         }

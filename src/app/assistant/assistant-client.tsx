@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Settings2, Send } from "lucide-react";
 import type { ConnectionRecord } from "@/lib/connections/types";
 import { isAiSupported } from "@/lib/ai/supported";
+import { messageText } from "@/lib/ai/message-content";
 import { toast } from "sonner";
 import { ConversationList, type ConversationListItem } from "@/components/ai/conversation-list";
 import { WorkingSet, type PolicyView } from "@/components/ai/working-set";
@@ -30,8 +31,14 @@ export function AssistantClient() {
   const [busy, setBusy] = useState(false);
   const [picker, setPicker] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [agentName, setAgentName] = useState("");
   const sessionRef = useRef(genId());
   const abortRef = useRef<AbortController | null>(null);
+  const initedRef = useRef(false);
+  // Mirrors activeId so the async auto-open can tell if the user already picked
+  // a conversation before the initial fetch resolved.
+  const activeIdRef = useRef<string | null>(null);
+  const agentDisplay = agentName.trim() || "Baklava Assistant";
 
   const refreshConns = useCallback(() => {
     fetch("/api/connections", { cache: "no-store" })
@@ -45,8 +52,15 @@ export function AssistantClient() {
       .then((d: { conversations?: ConversationListItem[] }) => setRows(d.conversations ?? []))
       .catch(() => {});
   }, []);
+  const refreshAgentName = useCallback(() => {
+    fetch("/api/ai/settings", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d: { settings?: { agentName?: string } }) => setAgentName(d.settings?.agentName ?? ""))
+      .catch(() => {});
+  }, []);
 
-  useEffect(() => { refreshConns(); refreshList(); }, [refreshConns, refreshList]);
+  useEffect(() => { refreshConns(); refreshAgentName(); }, [refreshConns, refreshAgentName]);
+  useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
   useEffect(() => () => abortRef.current?.abort(), []);
 
   const setConns = setIds.map((id) => allConns.find((c) => c.id === id)).filter(Boolean) as ConnectionRecord[];
@@ -87,8 +101,15 @@ export function AssistantClient() {
       const c = d.conversation;
       setSetIds(c.connectionIds ?? []);
       (c.connectionIds ?? []).forEach(loadPolicy);
-      // Render only role/text for display; tool steps are kept server-side for context.
-      setMessages((c.messages ?? []).filter((m: { role: string }) => m.role === "user" || m.role === "assistant").map((m: { role: "user" | "assistant"; content: unknown }) => ({ role: m.role, content: typeof m.content === "string" ? m.content : "" })));
+      // Render only role/text for display; tool steps are kept server-side for
+      // context. Assistant content is an array of parts (text + tool-call), so
+      // extract the text and drop turns that have none (tool-call-only).
+      setMessages(
+        (c.messages ?? [])
+          .filter((m: { role: string }) => m.role === "user" || m.role === "assistant")
+          .map((m: { role: "user" | "assistant"; content: unknown }) => ({ role: m.role, content: messageText(m.content) }))
+          .filter((m: ChatMessage) => m.content.trim().length > 0),
+      );
       setChips([]); setPending([]);
       sessionRef.current = genId();
     } catch {
@@ -97,6 +118,22 @@ export function AssistantClient() {
       setLoadingConv(false);
     }
   }, [loadPolicy]);
+
+  // On first load, reopen the most recent conversation instead of a blank pane
+  // so history is right there. Runs once; never fights a user's later selection.
+  useEffect(() => {
+    if (initedRef.current) return;
+    initedRef.current = true;
+    fetch("/api/ai/conversations", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d: { conversations?: ConversationListItem[] }) => {
+        const list = d.conversations ?? [];
+        setRows(list);
+        // Don't override a conversation the user clicked while this was loading.
+        if (list.length > 0 && !activeIdRef.current) void selectChat(list[0].id);
+      })
+      .catch(() => {});
+  }, [selectChat]);
 
   const deleteChat = useCallback(async (id: string) => {
     try {
@@ -109,6 +146,22 @@ export function AssistantClient() {
     if (id === activeId) { abortRef.current?.abort(); setBusy(false); setActiveId(null); setMessages([]); setSetIds([]); }
     refreshList();
   }, [activeId, refreshList]);
+
+  const renameChat = useCallback(async (id: string, title: string) => {
+    // Optimistic: update the row immediately, roll back on failure.
+    setRows((rs) => rs.map((r) => (r.id === id ? { ...r, title } : r)));
+    try {
+      const res = await fetch(`/api/ai/conversations/${id}`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ title }),
+      });
+      if (!res.ok) throw new Error();
+    } catch {
+      toast.error("Couldn't rename the conversation");
+      refreshList();
+    }
+  }, [refreshList]);
 
   const ensureConversation = useCallback(async (): Promise<string | null> => {
     if (activeId) return activeId;
@@ -222,7 +275,7 @@ export function AssistantClient() {
   return (
     <div className="flex h-[calc(100vh-3rem)]">
       <aside className="w-60 shrink-0 border-r border-border/60 bg-sidebar">
-        <ConversationList rows={rows} activeId={activeId} onSelect={selectChat} onNew={newChat} onDelete={deleteChat} />
+        <ConversationList rows={rows} activeId={activeId} onSelect={selectChat} onNew={newChat} onDelete={deleteChat} onRename={renameChat} />
       </aside>
       <section className="flex-1 min-w-0 flex flex-col">
         <header className="flex items-center justify-between gap-2 border-b border-border/60 px-4 py-2">
@@ -237,7 +290,8 @@ export function AssistantClient() {
           ) : messages.length === 0 ? (
             <div className="h-full grid place-items-center text-center text-sm text-muted-foreground">
               <div>
-                <p>Ask anything about your connections.</p>
+                <p className="text-foreground font-medium">{agentDisplay}</p>
+                <p className="mt-1">Ask anything about your connections.</p>
                 <p className="mt-1 text-xs">
                   Type <kbd className="font-mono rounded border border-border px-1">/</kbd> to add one to this conversation.
                 </p>
@@ -272,7 +326,7 @@ export function AssistantClient() {
           </div>
         </div>
       </section>
-      <AiSettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <AiSettingsDialog open={settingsOpen} onOpenChange={(v) => { setSettingsOpen(v); if (!v) refreshAgentName(); }} />
     </div>
   );
 }
