@@ -11,6 +11,7 @@ import { mongoTools } from "./mongo";
 import { redisTools } from "./redis";
 import { kafkaTools } from "./kafka";
 import { kubernetesTools } from "./kubernetes";
+import { blobTools } from "./blob";
 
 export { isAiSupported };
 
@@ -25,6 +26,9 @@ const BUILDERS: Partial<Record<TechId, Builder>> = {
   redis: (id, cfg) => redisTools(id, cfg as never),
   kafka: (id, cfg) => kafkaTools(id, cfg as never),
   kubernetes: (id, cfg, policy) => kubernetesTools(id, cfg as never, policy),
+  r2: (id, cfg) => blobTools("r2", id, cfg),
+  minio: (id, cfg) => blobTools("minio", id, cfg),
+  s3: (id, cfg) => blobTools("s3", id, cfg),
 };
 
 /** Build the tool set for a connection, filtered to categories the policy allows. */

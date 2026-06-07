@@ -59,3 +59,24 @@ describe("buildTools — phase 2", () => {
     expect(names).not.toContain("k8s_delete_resource");
   });
 });
+
+describe("buildTools — phase 3 (blob)", () => {
+  const r2 = { accountId: "a", accessKeyId: "k", secretAccessKey: "s" };
+  const minio = { endpoint: "h:9000", useSSL: false, accessKey: "k", secretKey: "s", region: "us-east-1" };
+  const s3 = { region: "us-east-1", accessKeyId: "k", secretAccessKey: "s" };
+
+  it("exposes blob read tools and hides write/destructive under default policy", () => {
+    const names = buildTools("r2", "c1", r2, DEFAULT_POLICY).map((t) => t.name);
+    expect(names).toContain("blob_list_buckets");
+    expect(names).toContain("blob_list_objects");
+    expect(names).not.toContain("blob_upload_object");
+    expect(names).not.toContain("blob_delete_bucket");
+  });
+
+  it("serves the same blob_* tool set for minio and s3", () => {
+    for (const [tech, cfg] of [["minio", minio], ["s3", s3]] as const) {
+      const names = buildTools(tech, "c1", cfg, DEFAULT_POLICY).map((t) => t.name);
+      expect(names).toContain("blob_list_buckets");
+    }
+  });
+});
