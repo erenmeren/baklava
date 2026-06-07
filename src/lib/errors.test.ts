@@ -53,6 +53,36 @@ describe("formatError", () => {
     expect(formatError(err)).toBe("Unknown error");
   });
 
+  it("surfaces HTTP status + response body for APICallError-shaped errors", () => {
+    const err = Object.assign(new Error("Bad Gateway"), {
+      statusCode: 502,
+      responseBody: '{"type":"error","error":{"message":"upstream unavailable"}}',
+    });
+    expect(formatError(err)).toBe(
+      'HTTP 502: {"type":"error","error":{"message":"upstream unavailable"}}',
+    );
+  });
+
+  it("falls back to the message when an HTTP error has no response body", () => {
+    const err = Object.assign(new Error("not found"), { statusCode: 404 });
+    expect(formatError(err)).toBe("HTTP 404: not found");
+  });
+
+  it("falls back to the error name when an HTTP error has no body or message", () => {
+    const err = Object.assign(new Error(""), { name: "GatewayError", statusCode: 502 });
+    expect(formatError(err)).toBe("HTTP 502: GatewayError");
+  });
+
+  it("falls back to 'request failed' when an HTTP error has no body, message, or name", () => {
+    const err = Object.assign(new Error(""), { name: "", statusCode: 500 });
+    expect(formatError(err)).toBe("HTTP 500: request failed");
+  });
+
+  it("ignores a non-string response body and uses the message", () => {
+    const err = Object.assign(new Error("boom"), { statusCode: 500, responseBody: { not: "a string" } });
+    expect(formatError(err)).toBe("HTTP 500: boom");
+  });
+
   it("coerces non-Error values via String()", () => {
     expect(formatError("plain string")).toBe("plain string");
     expect(formatError(null)).toBe("null");

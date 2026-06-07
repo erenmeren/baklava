@@ -9,7 +9,12 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import type { ProviderId } from "@/lib/ai/settings";
-import { MODEL_CATALOG, PROVIDER_LABELS, labelFor } from "@/lib/ai/model-catalog";
+import {
+  MODEL_CATALOG,
+  PROVIDER_LABELS,
+  labelFor,
+  type CatalogModel,
+} from "@/lib/ai/model-catalog";
 
 interface ActiveModel {
   provider: ProviderId | null;
@@ -19,6 +24,9 @@ interface ActiveModel {
 export function ModelPicker({ onConfigure }: { onConfigure: () => void }) {
   const [active, setActive] = useState<ActiveModel>({ provider: null, model: "" });
   const [configured, setConfigured] = useState<Partial<Record<ProviderId, boolean>>>({});
+  // Live model lists keyed by provider, lazily fetched from /api/ai/models.
+  // Until a provider's list arrives we fall back to the static MODEL_CATALOG.
+  const [models, setModels] = useState<Partial<Record<ProviderId, CatalogModel[]>>>({});
   const [open, setOpen] = useState(false);
 
   const refresh = useCallback(() => {
@@ -33,6 +41,19 @@ export function ModelPicker({ onConfigure }: { onConfigure: () => void }) {
           cfg[p] = Boolean(s.providers?.[p]?.apiKey);
         }
         setConfigured(cfg);
+        // Pull the real model list for each configured provider so the menu
+        // shows exactly what the key can use (no stale ids → no 404 at chat).
+        for (const p of Object.keys(cfg) as ProviderId[]) {
+          if (!cfg[p]) continue;
+          fetch(`/api/ai/models?provider=${p}`, { cache: "no-store" })
+            .then((r) => r.json())
+            .then((md) => {
+              if (Array.isArray(md.models)) {
+                setModels((prev) => ({ ...prev, [p]: md.models as CatalogModel[] }));
+              }
+            })
+            .catch(() => {});
+        }
       })
       .catch(() => {});
   }, []);
@@ -64,7 +85,7 @@ export function ModelPicker({ onConfigure }: { onConfigure: () => void }) {
               {PROVIDER_LABELS[provider]}
             </div>
             {configured[provider] ? (
-              MODEL_CATALOG[provider].map((m) => {
+              (models[provider] ?? MODEL_CATALOG[provider]).map((m) => {
                 const isActive = active.provider === provider && active.model === m.id;
                 return (
                   <DropdownMenuItem key={m.id} onClick={() => pick(provider, m.id)} className="gap-2">
