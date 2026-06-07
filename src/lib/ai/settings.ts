@@ -15,6 +15,8 @@ export interface AiSettings {
   activeProvider: ProviderId | null;
   providers: Partial<Record<ProviderId, ProviderConfig>>;
   stepCap: number;
+  /** User-chosen display name for the assistant. Empty = use the default. */
+  agentName: string;
 }
 
 export const DEFAULT_MODELS: Record<ProviderId, string> = {
@@ -31,7 +33,7 @@ function file(): string {
 }
 
 function emptySettings(): AiSettings {
-  return { activeProvider: null, providers: {}, stepCap: 12 };
+  return { activeProvider: null, providers: {}, stepCap: 12, agentName: "" };
 }
 
 const globalKey = Symbol.for("baklava.aiSettings");
@@ -43,6 +45,7 @@ function loadFromDisk(): AiSettings {
       activeProvider: raw.activeProvider ?? null,
       providers: raw.providers ?? {},
       stepCap: typeof raw.stepCap === "number" ? raw.stepCap : 12,
+      agentName: typeof raw.agentName === "string" ? raw.agentName : "",
     };
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
@@ -87,6 +90,13 @@ export function setActiveProvider(id: ProviderId | null): void {
 
 export function setStepCap(n: number): void {
   getStore().settings.stepCap = Math.min(Math.max(Math.floor(n), 1), 50);
+  persist();
+}
+
+export function setAgentName(name: string): void {
+  // Collapse whitespace (incl. newlines) and cap, so a name can't smuggle
+  // extra lines into the system prompt or bloat it.
+  getStore().settings.agentName = name.replace(/\s+/g, " ").trim().slice(0, 60);
   persist();
 }
 

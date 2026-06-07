@@ -6,6 +6,7 @@ import {
   saveProvider,
   setActiveProvider,
   setStepCap,
+  setAgentName,
   type ProviderId,
 } from "@/lib/ai/settings";
 
@@ -23,12 +24,14 @@ export async function POST(req: Request) {
       model?: string;
       activeProvider?: ProviderId | null;
       stepCap?: number;
+      agentName?: string;
     };
     if (body.provider) {
       saveProvider(body.provider, { apiKey: body.apiKey ?? "", model: body.model ?? "" });
     }
     if (body.activeProvider !== undefined) setActiveProvider(body.activeProvider);
     if (typeof body.stepCap === "number") setStepCap(body.stepCap);
+    if (typeof body.agentName === "string") setAgentName(body.agentName);
     return NextResponse.json({ settings: publicSettings() });
   } catch (err) {
     return NextResponse.json({ error: formatError(err) }, { status: 400 });

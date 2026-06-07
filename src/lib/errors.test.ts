@@ -53,6 +53,21 @@ describe("formatError", () => {
     expect(formatError(err)).toBe("Unknown error");
   });
 
+  it("surfaces HTTP status + response body for APICallError-shaped errors", () => {
+    const err = Object.assign(new Error("Bad Gateway"), {
+      statusCode: 502,
+      responseBody: '{"type":"error","error":{"message":"upstream unavailable"}}',
+    });
+    expect(formatError(err)).toBe(
+      'HTTP 502: {"type":"error","error":{"message":"upstream unavailable"}}',
+    );
+  });
+
+  it("falls back to the message when an HTTP error has no response body", () => {
+    const err = Object.assign(new Error("not found"), { statusCode: 404 });
+    expect(formatError(err)).toBe("HTTP 404: not found");
+  });
+
   it("coerces non-Error values via String()", () => {
     expect(formatError("plain string")).toBe("plain string");
     expect(formatError(null)).toBe("null");
