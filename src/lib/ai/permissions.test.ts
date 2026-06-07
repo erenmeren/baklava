@@ -53,3 +53,13 @@ describe("permissions", () => {
     ).toBe(false);
   });
 });
+
+describe("allowK8sSecretValues", () => {
+  it("is absent (falsy) on the default policy", () => {
+    expect(DEFAULT_POLICY.allowK8sSecretValues).toBeUndefined();
+  });
+  it("is an accepted optional field", () => {
+    const p: PermissionPolicy = { ...DEFAULT_POLICY, allowK8sSecretValues: true };
+    expect(p.allowK8sSecretValues).toBe(true);
+  });
+});

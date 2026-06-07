@@ -21,8 +21,8 @@ describe("buildTools", () => {
     expect(names).not.toContain("pg_drop_table");
   });
 
-  it("returns [] for an unsupported tech in Phase 1", () => {
-    expect(buildTools("kafka", "c1", pgCfg, DEFAULT_POLICY)).toEqual([]);
+  it("returns [] for an unsupported tech", () => {
+    expect(buildTools("clickhouse" as never, "c1", pgCfg, DEFAULT_POLICY)).toEqual([]);
   });
 });
 
@@ -38,5 +38,24 @@ describe("buildTools — sql family", () => {
     const names = buildTools("sqlserver", "c1", msCfg, DEFAULT_POLICY).map((t) => t.name);
     expect(names).toContain("mssql_run_sql");
     expect(names).not.toContain("mssql_drop_object");
+  });
+});
+
+describe("buildTools — phase 2", () => {
+  const k8sCfg = { source: "path", kubeconfigPath: "~/.kube/config" };
+  it("exposes mongo read tools under default policy", () => {
+    const names = buildTools("mongo", "c1", { uri: "mongodb://h" }, DEFAULT_POLICY).map((t) => t.name);
+    expect(names).toContain("mongo_find");
+    expect(names).not.toContain("mongo_drop_collection");
+  });
+  it("exposes kafka read tools and hides destructive under default policy", () => {
+    const names = buildTools("kafka", "c1", { clientId: "b", brokers: ["x"], ssl: false }, DEFAULT_POLICY).map((t) => t.name);
+    expect(names).toContain("kafka_list_topics");
+    expect(names).not.toContain("kafka_delete_topic");
+  });
+  it("exposes kubernetes read tools (incl get_yaml) under default policy", () => {
+    const names = buildTools("kubernetes", "c1", k8sCfg, DEFAULT_POLICY).map((t) => t.name);
+    expect(names).toContain("k8s_get_yaml");
+    expect(names).not.toContain("k8s_delete_resource");
   });
 });

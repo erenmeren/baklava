@@ -599,6 +599,80 @@ export async function streamPodLogs(
   };
 }
 
+/**
+ * One-shot, non-following pod logs (tail-bounded, byte-capped) for the AI tool.
+ * Returns at most ~200 KB of the most recent `tailLines` lines. Times out at 30s.
+ */
+export async function getPodLogs(
+  connectionId: string,
+  cfg: KubernetesConfig,
+  namespace: string,
+  podName: string,
+  options: { tailLines?: number; container?: string } = {},
+): Promise<string> {
+  const b = bundleFor(connectionId, cfg);
+  const log = new Log(b.kc);
+  const output = new PassThrough();
+  const MAX_BYTES = 200_000;
+  const chunks: Buffer[] = [];
+  let total = 0;
+  return new Promise<string>((resolve, reject) => {
+    let settled = false;
+    let controller: { abort: () => void } | undefined;
+    const timer = setTimeout(
+      () => fail(new Error("Timed out reading pod logs")),
+      30_000,
+    );
+    const cleanup = () => {
+      clearTimeout(timer);
+      try {
+        controller?.abort();
+      } catch {
+        // ignore
+      }
+      try {
+        output.destroy();
+      } catch {
+        // ignore
+      }
+    };
+    function done(s: string) {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(s);
+    }
+    function fail(e: unknown) {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(e);
+    }
+    output.on("data", (c: Buffer) => {
+      if (total < MAX_BYTES) {
+        chunks.push(c);
+        total += c.length;
+      }
+    });
+    output.on("end", () =>
+      done(Buffer.concat(chunks).toString("utf8").slice(0, MAX_BYTES)),
+    );
+    output.on("error", fail);
+    log
+      .log(namespace, podName, options.container ?? "", output, {
+        follow: false,
+        tailLines: Math.min(Math.max(options.tailLines ?? 200, 1), 2000),
+        limitBytes: MAX_BYTES,
+        timestamps: false,
+        pretty: false,
+      })
+      .then((c) => {
+        controller = c as { abort: () => void };
+      })
+      .catch(fail);
+  });
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Exec (interactive shell)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -743,12 +817,20 @@ function sanitizeForEdit(obj: KubernetesObject): KubernetesObject {
   return o;
 }
 
+/**
+ * Fetch a Kubernetes resource and return it as a YAML string, with
+ * server-managed fields stripped so the buffer is clean for editing.
+ * When `opts.redactSecretValues` is set, a Secret's `data`/`stringData` are
+ * stripped — the result is for display only and MUST NOT be passed back to
+ * `replaceResourceYaml` (re-applying it would wipe the Secret's values).
+ */
 export async function readResourceYaml(
   connectionId: string,
   cfg: KubernetesConfig,
   kind: string,
   namespace: string | undefined,
   name: string,
+  opts: { redactSecretValues?: boolean } = {},
 ): Promise<string> {
   const b = bundleFor(connectionId, cfg);
   const k = resolveKind(kind);
@@ -758,7 +840,21 @@ export async function readResourceYaml(
     metadata: { name, namespace: k.namespaced ? namespace : undefined },
   };
   const obj = await b.objects.read(spec);
-  return dumpYaml(sanitizeForEdit(obj));
+  const clean = sanitizeForEdit(obj) as Record<string, unknown>;
+  if (opts.redactSecretValues && k.kind === "Secret") {
+    delete clean.data;
+    delete clean.stringData;
+    // `kubectl apply` mirrors the entire manifest — including the base64
+    // `data` — into this annotation, so it must be stripped too or the
+    // redaction leaks the secret values it just removed.
+    const meta = clean.metadata as
+      | { annotations?: Record<string, unknown> }
+      | undefined;
+    if (meta?.annotations) {
+      delete meta.annotations["kubectl.kubernetes.io/last-applied-configuration"];
+    }
+  }
+  return dumpYaml(clean);
 }
 
 export async function replaceResourceYaml(
@@ -770,6 +866,22 @@ export async function replaceResourceYaml(
   const parsed = loadYaml<KubernetesObject>(yaml);
   if (!parsed?.kind || !parsed?.apiVersion) {
     throw new Error("YAML missing kind/apiVersion");
+  }
+  // A full replace with no values would wipe the Secret. The redacted view
+  // from readResourceYaml has exactly this shape, so refuse it rather than
+  // silently erasing every key on apply.
+  if (parsed.kind === "Secret") {
+    const s = parsed as KubernetesObject & {
+      data?: Record<string, unknown>;
+      stringData?: Record<string, unknown>;
+    };
+    const hasData = s.data && Object.keys(s.data).length > 0;
+    const hasStringData = s.stringData && Object.keys(s.stringData).length > 0;
+    if (!hasData && !hasStringData) {
+      throw new Error(
+        "Refusing to replace a Secret that has no data/stringData — this looks like a redacted view, and applying it would wipe the Secret's values.",
+      );
+    }
   }
   // replace requires the latest resourceVersion — fetch it fresh so the
   // user doesn't have to keep it in their buffer.
@@ -789,4 +901,20 @@ export async function replaceResourceYaml(
     },
   };
   await b.objects.replace(merged);
+}
+
+export async function deleteResource(
+  connectionId: string,
+  cfg: KubernetesConfig,
+  kind: string,
+  namespace: string | undefined,
+  name: string,
+): Promise<void> {
+  const b = bundleFor(connectionId, cfg);
+  const k = resolveKind(kind);
+  await b.objects.delete({
+    apiVersion: k.apiVersion,
+    kind: k.kind,
+    metadata: { name, namespace: k.namespaced ? namespace : undefined },
+  });
 }
