@@ -1,5 +1,5 @@
 /**
- * Dogfood: drives the actual AI `blob_*` tools (the exact code the assistant
+ * Integration test: drives the actual AI `blob_*` tools (the exact code the assistant
  * calls) against a REAL MinIO. Gated by BAKLAVA_INTEGRATION=1; skips itself if
  * MinIO isn't reachable on localhost:9000.
  *
@@ -24,7 +24,7 @@ const cfg = {
   region: "us-east-1",
 };
 
-const tools = blobTools("minio", "dogfood-conn", cfg);
+const tools = blobTools("minio", "integration-conn", cfg);
 const tool = (name: string): AiTool => {
   const t = tools.find((x) => x.name === name);
   if (!t) throw new Error(`no tool ${name}`);
@@ -42,7 +42,7 @@ describe("blob tools against real MinIO", async () => {
   it.skipIf(!up)(
     "full object lifecycle: create → upload → head → list → copy → move → delete → drop bucket",
     async () => {
-      const bucket = `dogfood-${stamp}`;
+      const bucket = `integration-${stamp}`;
 
       await tool("blob_create_bucket").execute({ name: bucket });
 
@@ -52,7 +52,7 @@ describe("blob tools against real MinIO", async () => {
       const uploaded = await tool("blob_upload_object").execute({
         bucket,
         key: "notes/a.txt",
-        content: "hello dogfood",
+        content: "hello integration",
         contentType: "text/plain",
       });
       expect(uploaded).toMatchObject({ uploaded: { bucket, key: "notes/a.txt" } });
@@ -61,7 +61,7 @@ describe("blob tools against real MinIO", async () => {
         size: number;
         contentType: string | null;
       };
-      expect(meta.size).toBe(Buffer.byteLength("hello dogfood", "utf8"));
+      expect(meta.size).toBe(Buffer.byteLength("hello integration", "utf8"));
       expect(meta.contentType).toMatch(/text\/plain/);
 
       const listing = (await tool("blob_list_objects").execute({ bucket, prefix: "notes/" })) as {

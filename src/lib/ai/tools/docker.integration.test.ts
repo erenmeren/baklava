@@ -1,5 +1,5 @@
 /**
- * Dogfood: drives the actual AI `docker_*` tools against the real local Docker
+ * Integration test: drives the actual AI `docker_*` tools against the real local Docker
  * daemon. Read-only ops only (never stops/removes real containers). Gated by
  * BAKLAVA_INTEGRATION=1; self-skips if the daemon socket isn't reachable.
  *
@@ -13,7 +13,7 @@ const cfg = {
   mode: "socket" as const,
   socketPath: process.env.BAKLAVA_DOCKER_SOCKET ?? "/var/run/docker.sock",
 };
-const tools = dockerTools("dogfood-conn", cfg as never);
+const tools = dockerTools("integration-conn", cfg as never);
 const tool = (name: string): AiTool => tools.find((t) => t.name === name)!;
 
 // Probe the daemon by actually listing containers — works for the unix socket
@@ -36,7 +36,7 @@ describe("docker tools against the real daemon", async () => {
   it.skipIf(!up)("lists containers (read) including a known running service", async () => {
     const list = await tool("docker_list_containers").execute({ all: true });
     const blob = JSON.stringify(list);
-    // One of the dogfood services should be present.
+    // One of the integration services should be present.
     expect(/mongo|redis|minio|postgres/i.test(blob)).toBe(true);
   });
 

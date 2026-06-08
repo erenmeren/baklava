@@ -1,5 +1,5 @@
 /**
- * Dogfood: drives the actual AI `redis_*` tools against a real Redis.
+ * Integration test: drives the actual AI `redis_*` tools against a real Redis.
  * Gated by BAKLAVA_INTEGRATION=1; self-skips if Redis isn't on localhost:6379.
  *
  *   docker run -d --name redis -p 6379:6379 redis:7-alpine
@@ -16,10 +16,10 @@ const cfg = {
   port: 6379,
   tls: false,
 };
-const tools = redisTools("dogfood-conn", cfg as never);
+const tools = redisTools("integration-conn", cfg as never);
 const tool = (name: string): AiTool => tools.find((t) => t.name === name)!;
 
-const KEY = "dogfood:greeting";
+const KEY = "integration:greeting";
 
 describe("redis tools against real Redis", async () => {
   const up = await reachable("localhost", 6379);
@@ -35,7 +35,7 @@ describe("redis tools against real Redis", async () => {
 
     await tool("redis_set_ttl").execute({ key: KEY, ttlSeconds: 120, db: 0 });
 
-    const keys = await tool("redis_list_keys").execute({ pattern: "dogfood:*", db: 0 });
+    const keys = await tool("redis_list_keys").execute({ pattern: "integration:*", db: 0 });
     expect(JSON.stringify(keys)).toContain(KEY);
 
     await tool("redis_delete_key").execute({ key: KEY, db: 0 });

@@ -1,5 +1,5 @@
 /**
- * Dogfood: drives the actual AI `pg_*` tools against a real PostgreSQL. The
+ * Integration test: drives the actual AI `pg_*` tools against a real PostgreSQL. The
  * headline check is that pg_run_sql's read-only guard rejects a multi-statement
  * (`;`) injection against a live server. Gated by BAKLAVA_INTEGRATION=1.
  *
@@ -19,10 +19,10 @@ const cfg = {
   password: process.env.BAKLAVA_PG_PW ?? "Baklava123!",
   ssl: false,
 };
-const tools = pgTools("dogfood-conn", cfg as never);
+const tools = pgTools("integration-conn", cfg as never);
 const tool = (name: string): AiTool => tools.find((t) => t.name === name)!;
 
-const TABLE = "dogfood_ai_t";
+const TABLE = "integration_ai_t";
 
 describe("postgres tools against real PostgreSQL", async () => {
   const up = await reachable("localhost", 5432);
