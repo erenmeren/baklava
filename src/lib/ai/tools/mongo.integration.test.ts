@@ -1,5 +1,5 @@
 /**
- * Dogfood: drives the actual AI `mongo_*` tools against a real MongoDB.
+ * Integration test: drives the actual AI `mongo_*` tools against a real MongoDB.
  * Gated by BAKLAVA_INTEGRATION=1; self-skips if Mongo isn't on localhost:27017.
  *
  *   docker run -d --name mongo -p 27017:27017 mongo:7
@@ -11,10 +11,10 @@ import { mongoTools } from "./mongo";
 import type { AiTool } from "./types";
 
 const cfg = { uri: process.env.BAKLAVA_MONGO_URI ?? "mongodb://localhost:27017" };
-const tools = mongoTools("dogfood-conn", cfg as never);
+const tools = mongoTools("integration-conn", cfg as never);
 const tool = (name: string): AiTool => tools.find((t) => t.name === name)!;
 
-const DB = "dogfood_ai";
+const DB = "integration_ai";
 const COLL = "items";
 
 describe("mongo tools against real MongoDB", async () => {
