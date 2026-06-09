@@ -423,15 +423,3 @@
       0 18px 38px -14px oklch(0 0 0 / 0.55);
   }
 }
-
-/* Staggered entrance for the settings page sections. */
-@keyframes settings-rise {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
