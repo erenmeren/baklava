@@ -12,6 +12,7 @@ import { ConnectionTabs } from "@/components/connection-tabs";
 import { GlobalCommandPalette } from "@/components/command-palette/global-command-palette";
 import { PaletteTrigger } from "@/components/command-palette/palette-trigger";
 import { AssistantTrigger } from "@/components/ai/assistant-trigger";
+import { SettingsTrigger } from "@/components/settings-trigger";
 import Link from "next/link";
 
 // Fonts are vendored into public/fonts/ so builds never reach out to
@@ -78,6 +79,7 @@ export default async function RootLayout({
                 <div className="flex items-center gap-1.5 pl-2 shrink-0">
                   <PaletteTrigger />
                   <AssistantTrigger />
+                  <SettingsTrigger />
                   <ThemeToggle />
                 </div>
               </div>
