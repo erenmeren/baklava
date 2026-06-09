@@ -1,10 +1,19 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { KeyRound, Check, Loader2, Bot, Gauge } from "lucide-react";
+import { KeyRound, Check, Loader2, Bot } from "lucide-react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Slider } from "@/components/ui/slider";
 import {
   Select,
   SelectContent,
@@ -126,10 +135,10 @@ export function ProviderSettings() {
   };
 
   return (
-    <div className="space-y-8">
-      {/* ── Provider tiles ─────────────────────────────────────────── */}
-      <section>
-        <SectionLabel>Model provider</SectionLabel>
+    <div className="space-y-6">
+      {/* Provider tiles */}
+      <div className="space-y-2.5">
+        <Label className="text-muted-foreground">Model provider</Label>
         <div className="grid grid-cols-3 gap-2.5">
           {PROVIDERS.map((p) => {
             const configured = Boolean(settings?.providers[p]?.apiKey);
@@ -140,67 +149,72 @@ export function ProviderSettings() {
                 key={p}
                 onClick={() => selectProvider(p)}
                 className={cn(
-                  "group relative flex flex-col items-start gap-2 rounded-xl border px-3.5 py-3 text-left transition-all",
+                  "flex flex-col items-start gap-2 rounded-lg border bg-card px-3.5 py-3 text-left text-card-foreground transition-colors",
                   selected
-                    ? "border-brand/70 bg-brand/[0.06] shadow-[0_1px_0_0_var(--color-brand)_inset]"
-                    : "border-border bg-card hover:border-border hover:bg-foreground/[0.02]",
+                    ? "border-primary ring-1 ring-primary"
+                    : "border-border hover:bg-accent",
                 )}
               >
                 <span
                   className={cn(
-                    "flex size-7 items-center justify-center rounded-lg border transition-colors",
+                    "flex size-7 items-center justify-center rounded-md border",
                     configured
-                      ? "border-brand/40 bg-brand/10 text-brand"
-                      : "border-border bg-muted/60 text-muted-foreground",
+                      ? "border-primary/40 bg-primary/10 text-primary"
+                      : "border-border bg-muted text-muted-foreground",
                   )}
                 >
                   <KeyRound className="size-3.5" />
                 </span>
-                <span className="text-[13px] font-medium leading-tight text-foreground">
+                <span className="text-sm font-medium leading-tight">
                   {PROVIDER_LABELS[p].split(" (")[0]}
                 </span>
-                <span className="font-mono text-[10px] uppercase tracking-wider">
-                  {active ? (
-                    <span className="text-brand">● active</span>
-                  ) : configured ? (
-                    <span className="text-muted-foreground">key set</span>
-                  ) : (
-                    <span className="text-muted-foreground/60">not set</span>
-                  )}
-                </span>
+                {active ? (
+                  <Badge variant="default" className="gap-1">
+                    <span className="size-1.5 rounded-full bg-current" /> Active
+                  </Badge>
+                ) : configured ? (
+                  <Badge variant="secondary">Key set</Badge>
+                ) : (
+                  <Badge variant="outline" className="text-muted-foreground">
+                    Not set
+                  </Badge>
+                )}
               </button>
             );
           })}
         </div>
-      </section>
+      </div>
 
-      {/* ── Key + model editor ─────────────────────────────────────── */}
-      <section className="rounded-2xl border border-border bg-card p-5">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-foreground">
-            {PROVIDER_LABELS[editing]}
-          </h2>
-          <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-            {modelSource === "live" ? "live model list" : "default model list"}
-          </span>
-        </div>
-
-        <div className="space-y-4">
-          <Field label="API key" hint="Stored on the server, never returned to the browser.">
+      {/* Key + model editor */}
+      <Card>
+        <CardHeader className="flex-row items-center justify-between space-y-0">
+          <CardTitle>{PROVIDER_LABELS[editing]}</CardTitle>
+          <CardDescription>
+            {modelSource === "live" ? "Live model list" : "Default model list"}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="api-key">API key</Label>
             <div className="relative">
               <KeyRound className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
               <Input
+                id="api-key"
                 type="password"
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
-                placeholder={hasKey ? "•••••••••••••  saved — leave blank to keep" : "sk-…"}
+                placeholder={hasKey ? "(unchanged — leave blank to keep)" : "sk-…"}
                 className="pl-8 font-mono"
                 autoComplete="off"
               />
             </div>
-          </Field>
+            <p className="text-xs text-muted-foreground">
+              Stored on the server, never returned to the browser.
+            </p>
+          </div>
 
-          <Field label="Model">
+          <div className="space-y-2">
+            <Label>Model</Label>
             <Select value={model} onValueChange={(v) => setModel(v ?? "")}>
               <SelectTrigger className="w-full">
                 <SelectValue placeholder="Pick a model" />
@@ -213,88 +227,68 @@ export function ProviderSettings() {
                 ))}
               </SelectContent>
             </Select>
-          </Field>
+          </div>
 
           <div className="flex items-center justify-end gap-3 pt-1">
             {activeProvider === editing && hasKey ? (
-              <span className="inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider text-brand">
-                <Check className="size-3" /> active
-              </span>
+              <Badge variant="secondary" className="gap-1">
+                <Check className="size-3" /> Active
+              </Badge>
             ) : null}
             <Button onClick={saveKey} disabled={savingKey} className="min-w-[8.5rem]">
               {savingKey ? <Loader2 className="size-4 animate-spin" /> : "Save & activate"}
             </Button>
           </div>
-        </div>
-      </section>
+        </CardContent>
+      </Card>
 
-      {/* ── Global assistant settings ──────────────────────────────── */}
-      <section className="rounded-2xl border border-border bg-card p-5">
-        <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold text-foreground">
-          <Bot className="size-4 text-brand" /> Assistant
-        </h2>
-        <div className="space-y-4">
-          <Field label="Name" hint="What the assistant calls itself.">
+      {/* Global assistant settings */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Bot className="size-4 text-muted-foreground" /> Assistant
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="agent-name">Name</Label>
             <Input
+              id="agent-name"
               value={agentName}
               onChange={(e) => setAgentName(e.target.value)}
               maxLength={60}
               placeholder="Baklava Assistant"
             />
-          </Field>
+            <p className="text-xs text-muted-foreground">
+              What the assistant calls itself.
+            </p>
+          </div>
 
-          <Field label="Step limit" hint="Max tool calls the assistant may chain in one turn.">
-            <div className="flex items-center gap-3">
-              <Gauge className="size-4 shrink-0 text-muted-foreground" />
-              <input
-                type="range"
-                min={1}
-                max={50}
-                value={stepCap}
-                onChange={(e) => setStepCap(Number(e.target.value))}
-                className="h-1.5 flex-1 cursor-pointer appearance-none rounded-full bg-input accent-[var(--color-brand)]"
-              />
-              <span className="w-8 text-right font-mono text-sm tabular-nums text-foreground">
-                {stepCap}
-              </span>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label>Step limit</Label>
+              <span className="text-sm font-medium tabular-nums">{stepCap}</span>
             </div>
-          </Field>
+            <Slider
+              min={1}
+              max={50}
+              value={[stepCap]}
+              onValueChange={(v) =>
+                setStepCap(Array.isArray(v) ? v[0] : v)
+              }
+            />
+            <p className="text-xs text-muted-foreground">
+              Max tool calls the assistant may chain in one turn.
+            </p>
+          </div>
 
           <div className="flex justify-end pt-1">
             <Button variant="outline" onClick={saveAssistant} disabled={savingAssistant}>
               {savingAssistant ? <Loader2 className="size-4 animate-spin" /> : "Save assistant"}
             </Button>
           </div>
-        </div>
-      </section>
-    </div>
-  );
-}
-
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="mb-2.5 font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-      {children}
-    </p>
-  );
-}
-
-function Field({
-  label,
-  hint,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <div className="flex items-baseline justify-between gap-3">
-        <Label className="text-[13px]">{label}</Label>
-        {hint ? <span className="text-[11px] text-muted-foreground">{hint}</span> : null}
-      </div>
-      {children}
+        </CardContent>
+      </Card>
     </div>
   );
 }
