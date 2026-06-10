@@ -57,8 +57,10 @@ export function HealthCard({
         }
         setSnap(data);
         onStatus(conn.id, data.status);
-      } catch {
-        if (!active) return;
+      } catch (err) {
+        // A self-abort (the next tick cancelling a slow in-flight probe) or an
+        // unmount isn't a real failure — don't flash the card "down".
+        if (!active || (err instanceof DOMException && err.name === "AbortError")) return;
         onStatus(conn.id, "down");
         setSnap((s) => (s ? { ...s, status: "down" } : s));
       }

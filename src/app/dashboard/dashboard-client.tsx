@@ -48,7 +48,7 @@ export function DashboardClient() {
             Live health across every connection. Click a card to open its workspace.
           </p>
         </div>
-        {conns?.length ? (
+        {values.length ? (
           <div className="flex shrink-0 items-center gap-4 font-mono text-xs tabular-nums">
             <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-emerald-500" />{healthy}</span>
             <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-amber-500" />{degraded}</span>
