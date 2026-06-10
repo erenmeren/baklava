@@ -2,6 +2,8 @@ import "server-only";
 import { formatError } from "@/lib/errors";
 import type {
   ConnectionRecord,
+  DockerConfig,
+  KafkaConfig,
   PostgresConfig,
   RedisConfig,
 } from "./types";
@@ -76,6 +78,8 @@ function probeFor(conn: ConnectionRecord): Promise<ProbeBody> {
   switch (conn.tech) {
     case "postgres": return postgresBody(conn);
     case "redis": return redisBody(conn);
+    case "docker": return dockerBody(conn);
+    case "kafka": return kafkaBody(conn);
     default: return reachabilityOnly();
   }
 }
@@ -117,5 +121,46 @@ async function redisBody(conn: ConnectionRecord): Promise<ProbeBody> {
     ],
     primary: max > 0 ? { label: "Memory", value: used, max } : { label: "Ops/sec", value: ops },
     warn: max > 0 && pct > 0.85,
+  };
+}
+
+// ── Docker ──────────────────────────────────────────────────────────────────
+import { pingDocker, listContainers, readContainerStats } from "./docker";
+async function dockerBody(conn: ConnectionRecord): Promise<ProbeBody> {
+  const cfg = conn.config as DockerConfig;
+  await pingDocker(cfg); // reachability
+  const containers = await listContainers(cfg, true);
+  const running = containers.filter((c) => c.state === "running");
+  const stats = await Promise.allSettled(running.map((c) => readContainerStats(cfg, c.id)));
+  let cpu = 0, mem = 0;
+  for (const s of stats) {
+    if (s.status === "fulfilled") { cpu += s.value.cpuPercent; mem += s.value.memoryUsage; }
+  }
+  return {
+    summary: `${running.length}/${containers.length} container${containers.length === 1 ? "" : "s"} running`,
+    metrics: [
+      { label: "CPU", value: `${cpu.toFixed(0)}%` },
+      { label: "Memory", value: formatBytes(mem) },
+    ],
+    primary: { label: "CPU", value: Math.round(cpu), unit: "%" },
+  };
+}
+
+// ── Kafka ───────────────────────────────────────────────────────────────────
+import { probeKafka, listConsumerGroups } from "./kafka";
+async function kafkaBody(conn: ConnectionRecord): Promise<ProbeBody> {
+  const cfg = conn.config as KafkaConfig;
+  const [probe, groups] = await Promise.all([
+    probeKafka(cfg),
+    listConsumerGroups(cfg),
+  ]);
+  return {
+    summary: `${plural(probe.topics.length, "topic")} · ${plural(probe.brokerCount, "broker")}`,
+    metrics: [
+      { label: "Topics", value: String(probe.topics.length) },
+      { label: "Brokers", value: String(probe.brokerCount) },
+      { label: "Groups", value: String(groups.length) },
+    ],
+    primary: { label: "Groups", value: groups.length },
   };
 }

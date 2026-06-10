@@ -18,6 +18,8 @@ vi.mock("./s3", () => ({ probe: vi.fn() }));
 
 import * as pg from "./postgres";
 import * as redis from "./redis";
+import * as docker from "./docker";
+import * as kafka from "./kafka";
 import { probeHealth } from "./health";
 
 const rec = (tech: string, config: unknown = {}) =>
@@ -77,5 +79,37 @@ describe("probeHealth — redis", () => {
     const snap = await probeHealth(rec("redis"));
     expect(snap.status).toBe("ok");
     expect(snap.primary).toEqual({ label: "Ops/sec", value: 5 });
+  });
+});
+
+describe("probeHealth — docker", () => {
+  beforeEach(() => vi.clearAllMocks());
+  it("aggregates cpu/mem across running containers", async () => {
+    vi.mocked(docker.pingDocker).mockResolvedValue({} as never);
+    vi.mocked(docker.listContainers).mockResolvedValue([
+      { id: "a", state: "running" }, { id: "b", state: "exited" },
+      { id: "c", state: "running" },
+    ] as never);
+    vi.mocked(docker.readContainerStats).mockImplementation(
+      async (_cfg, id) => ({ cpuPercent: id === "a" ? 30 : 12, memoryUsage: 100 }) as never,
+    );
+    const snap = await probeHealth(rec("docker"));
+    expect(snap.status).toBe("ok");
+    expect(snap.primary).toEqual({ label: "CPU", value: 42, unit: "%" });
+    expect(snap.summary).toBe("2/3 containers running");
+  });
+});
+
+describe("probeHealth — kafka", () => {
+  beforeEach(() => vi.clearAllMocks());
+  it("reports topics/brokers/groups and never queries lag", async () => {
+    vi.mocked(kafka.probeKafka).mockResolvedValue({
+      topics: [{}, {}, {}], brokerCount: 1,
+    } as never);
+    vi.mocked(kafka.listConsumerGroups).mockResolvedValue([{}, {}] as never);
+    const snap = await probeHealth(rec("kafka"));
+    expect(snap.status).toBe("ok");
+    expect(snap.primary).toEqual({ label: "Groups", value: 2 });
+    expect(snap.metrics.map((m) => m.label)).toEqual(["Topics", "Brokers", "Groups"]);
   });
 });
