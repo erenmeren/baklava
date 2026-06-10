@@ -34,12 +34,11 @@ export const PROBE_TIMEOUT_MS = 6000;
 export const DEGRADED_LATENCY_MS = 500;
 
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
-  return Promise.race([
-    p,
-    new Promise<T>((_, reject) =>
-      setTimeout(() => reject(new Error(`health probe timed out after ${ms}ms`)), ms),
-    ),
-  ]);
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<T>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`health probe timed out after ${ms}ms`)), ms);
+  });
+  return Promise.race([p, timeout]).finally(() => clearTimeout(timer));
 }
 
 export function formatBytes(n: number): string {
@@ -77,11 +76,11 @@ function probeFor(conn: ConnectionRecord): Promise<ProbeBody> {
   switch (conn.tech) {
     case "postgres": return postgresBody(conn);
     case "redis": return redisBody(conn);
-    default: return reachabilityOnly(conn);
+    default: return reachabilityOnly();
   }
 }
 
-async function reachabilityOnly(_conn: ConnectionRecord): Promise<ProbeBody> {
+async function reachabilityOnly(): Promise<ProbeBody> {
   return { summary: "Reachable", metrics: [] };
 }
 
