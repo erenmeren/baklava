@@ -4,8 +4,12 @@ import type {
   ConnectionRecord,
   DockerConfig,
   KafkaConfig,
+  KubernetesConfig,
+  MongoConfig,
+  MysqlConfig,
   PostgresConfig,
   RedisConfig,
+  SqlServerConfig,
 } from "./types";
 
 export type HealthStatus = "ok" | "degraded" | "down";
@@ -80,6 +84,13 @@ function probeFor(conn: ConnectionRecord): Promise<ProbeBody> {
     case "redis": return redisBody(conn);
     case "docker": return dockerBody(conn);
     case "kafka": return kafkaBody(conn);
+    case "mysql": return mysqlBody(conn);
+    case "sqlserver": return sqlserverBody(conn);
+    case "mongo": return mongoBody(conn);
+    case "kubernetes": return kubernetesBody(conn);
+    case "r2":
+    case "minio":
+    case "s3": return blobBody(conn);
     default: return reachabilityOnly();
   }
 }
@@ -162,5 +173,60 @@ async function kafkaBody(conn: ConnectionRecord): Promise<ProbeBody> {
       { label: "Groups", value: String(groups.length) },
     ],
     primary: { label: "Groups", value: groups.length },
+  };
+}
+
+// ── MySQL ───────────────────────────────────────────────────────────────────
+import { probeMysql } from "./mysql";
+async function mysqlBody(conn: ConnectionRecord): Promise<ProbeBody> {
+  const p = await probeMysql(conn.config as MysqlConfig);
+  return { summary: `MySQL ${p.serverVersion.split("-")[0]}`, metrics: [] };
+}
+
+// ── SQL Server ──────────────────────────────────────────────────────────────
+import { probeSqlServer } from "./sqlserver";
+async function sqlserverBody(conn: ConnectionRecord): Promise<ProbeBody> {
+  const p = await probeSqlServer(conn.config as SqlServerConfig);
+  return {
+    summary: plural(p.databaseCount, "database"),
+    metrics: [{ label: "Databases", value: String(p.databaseCount) }],
+    primary: { label: "Databases", value: p.databaseCount },
+  };
+}
+
+// ── Mongo ───────────────────────────────────────────────────────────────────
+import { probe as mongoProbe } from "./mongo";
+async function mongoBody(conn: ConnectionRecord): Promise<ProbeBody> {
+  const p = await mongoProbe(conn.id, conn.config as MongoConfig);
+  return {
+    summary: `${plural(p.databases, "database")} · ${formatBytes(p.totalSize)}`,
+    metrics: [{ label: "Databases", value: String(p.databases) }],
+    primary: { label: "Databases", value: p.databases },
+  };
+}
+
+// ── Kubernetes ──────────────────────────────────────────────────────────────
+import { probe as k8sProbe } from "./kubernetes";
+async function kubernetesBody(conn: ConnectionRecord): Promise<ProbeBody> {
+  const p = await k8sProbe(conn.id, conn.config as KubernetesConfig);
+  return {
+    summary: `${plural(p.nodeCount, "node")} · ${p.context}`,
+    metrics: [{ label: "Nodes", value: String(p.nodeCount) }],
+    primary: { label: "Nodes", value: p.nodeCount },
+  };
+}
+
+// ── Blob (r2 / minio / s3) ──────────────────────────────────────────────────
+import { blobTech } from "./blob-registry";
+import { probe as s3Probe } from "./s3";
+async function blobBody(conn: ConnectionRecord): Promise<ProbeBody> {
+  const bt = blobTech(conn.tech);
+  if (!bt) throw new Error(`no blob handler for ${conn.tech}`);
+  const client = bt.clientFor(conn.id, conn.config);
+  const { buckets } = await s3Probe(client);
+  return {
+    summary: plural(buckets, "bucket"),
+    metrics: [{ label: "Buckets", value: String(buckets) }],
+    primary: { label: "Buckets", value: buckets },
   };
 }

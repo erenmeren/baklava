@@ -20,6 +20,10 @@ import * as pg from "./postgres";
 import * as redis from "./redis";
 import * as docker from "./docker";
 import * as kafka from "./kafka";
+import * as mongo from "./mongo";
+import * as k8s from "./kubernetes";
+import * as blobRegistry from "./blob-registry";
+import * as s3 from "./s3";
 import { probeHealth } from "./health";
 
 const rec = (tech: string, config: unknown = {}) =>
@@ -111,5 +115,39 @@ describe("probeHealth — kafka", () => {
     expect(snap.status).toBe("ok");
     expect(snap.primary).toEqual({ label: "Groups", value: 2 });
     expect(snap.metrics.map((m) => m.label)).toEqual(["Topics", "Brokers", "Groups"]);
+  });
+});
+
+describe("probeHealth — remaining techs", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("mongo reports databases + size", async () => {
+    vi.mocked(mongo.probe).mockResolvedValue({
+      ok: true, version: "7.0", topology: "standalone", databases: 4, totalSize: 1024,
+    } as never);
+    const snap = await probeHealth(rec("mongo"));
+    expect(snap.status).toBe("ok");
+    expect(snap.summary).toBe("4 databases · 1.0 KB");
+    expect(snap.primary).toEqual({ label: "Databases", value: 4 });
+  });
+
+  it("kubernetes reports node count", async () => {
+    vi.mocked(k8s.probe).mockResolvedValue({
+      context: "minikube", serverVersion: "v1.30", nodeCount: 3,
+    } as never);
+    const snap = await probeHealth(rec("kubernetes"));
+    expect(snap.summary).toBe("3 nodes · minikube");
+    expect(snap.primary).toEqual({ label: "Nodes", value: 3 });
+  });
+
+  it("blob (minio) reports bucket count via the registry client", async () => {
+    const fakeClient = {};
+    vi.mocked(blobRegistry.blobTech).mockReturnValue({
+      clientFor: () => fakeClient,
+    } as never);
+    vi.mocked(s3.probe).mockResolvedValue({ buckets: 9 } as never);
+    const snap = await probeHealth(rec("minio"));
+    expect(snap.summary).toBe("9 buckets");
+    expect(snap.primary).toEqual({ label: "Buckets", value: 9 });
   });
 });
