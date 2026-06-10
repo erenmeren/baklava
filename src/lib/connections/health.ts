@@ -1,4 +1,5 @@
 import "server-only";
+import net from "node:net";
 import { formatError } from "@/lib/errors";
 import type {
   ConnectionRecord,
@@ -91,12 +92,83 @@ function probeFor(conn: ConnectionRecord): Promise<ProbeBody> {
     case "r2":
     case "minio":
     case "s3": return blobBody(conn);
-    default: return reachabilityOnly();
+    default: return reachabilityOnly(conn);
   }
 }
 
-async function reachabilityOnly(): Promise<ProbeBody> {
-  return { summary: "Reachable", metrics: [] };
+const PROTO_PORT: Record<string, number> = {
+  "http:": 80, "https:": 443, "redis:": 6379, "mongodb:": 27017,
+  "amqp:": 5672, "amqps:": 5671, "nats:": 4222, "bolt:": 7687, "neo4j:": 7687,
+};
+
+/**
+ * Best-effort host/port extraction for techs that have no dedicated probe
+ * (e.g. connections persisted by a larger build of the app). Covers the common
+ * `{host, port}` shape, kafka-style `brokers: ["host:port"]`, and URL configs.
+ */
+export function endpointOf(config: unknown): { host: string; port: number } | null {
+  const c = (config ?? {}) as Record<string, unknown>;
+  if (typeof c.host === "string" && c.host && Number(c.port) > 0) {
+    return { host: c.host, port: Number(c.port) };
+  }
+  // Array-of-endpoint fields: kafka `brokers`, ES `nodes`, NATS `servers`,
+  // etcd `hosts`, etc. Each element is a "host:port" or a URL.
+  for (const key of ["brokers", "nodes", "servers", "hosts", "endpoints"]) {
+    const arr = c[key];
+    if (Array.isArray(arr) && typeof arr[0] === "string") {
+      const e = parseEndpoint(arr[0]);
+      if (e) return e;
+    }
+  }
+  // Single string URL/host:port fields.
+  for (const key of ["url", "uri", "endpoint", "connectionString"]) {
+    if (typeof c[key] === "string") {
+      const e = parseEndpoint(c[key] as string);
+      if (e) return e;
+    }
+  }
+  return null;
+}
+
+/** Parse a "host:port" or a URL ("scheme://host[:port]") into host + port. */
+function parseEndpoint(s: string): { host: string; port: number } | null {
+  try {
+    const u = new URL(s);
+    const port = Number(u.port) || PROTO_PORT[u.protocol] || 0;
+    if (u.hostname && port) return { host: u.hostname, port };
+  } catch {
+    /* not a URL — fall through to host:port */
+  }
+  const m = s.match(/^([^:/]+):(\d+)$/);
+  return m ? { host: m[1], port: Number(m[2]) } : null;
+}
+
+function tcpProbe(host: string, port: number, ms: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const socket = new net.Socket();
+    const done = (err?: Error) => {
+      socket.destroy();
+      if (err) reject(err);
+      else resolve();
+    };
+    socket.setTimeout(ms);
+    socket.once("connect", () => done());
+    socket.once("timeout", () => done(new Error(`connect timed out after ${ms}ms`)));
+    socket.once("error", (e) => done(e));
+    socket.connect(port, host);
+  });
+}
+
+/**
+ * Reachability for any tech without a richer probe: a real TCP connect to the
+ * configured endpoint. Throwing (refused/timeout) surfaces as `down` upstream —
+ * so this never reports a healthy status it didn't actually verify.
+ */
+async function reachabilityOnly(conn: ConnectionRecord): Promise<ProbeBody> {
+  const ep = endpointOf(conn.config);
+  if (!ep) return { summary: "No endpoint to probe", metrics: [] };
+  await tcpProbe(ep.host, ep.port, PROBE_TIMEOUT_MS);
+  return { summary: `Reachable · ${ep.host}:${ep.port}`, metrics: [] };
 }
 
 // ── Postgres ────────────────────────────────────────────────────────────────

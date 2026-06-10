@@ -24,7 +24,7 @@ import * as mongo from "./mongo";
 import * as k8s from "./kubernetes";
 import * as blobRegistry from "./blob-registry";
 import * as s3 from "./s3";
-import { probeHealth } from "./health";
+import { probeHealth, endpointOf } from "./health";
 
 const rec = (tech: string, config: unknown = {}) =>
   ({ id: "c1", tech, name: "Local", config }) as never;
@@ -149,5 +149,27 @@ describe("probeHealth — remaining techs", () => {
     const snap = await probeHealth(rec("minio"));
     expect(snap.summary).toBe("9 buckets");
     expect(snap.primary).toEqual({ label: "Buckets", value: 9 });
+  });
+});
+
+describe("endpointOf — generic reachability extraction", () => {
+  it("reads {host, port}", () => {
+    expect(endpointOf({ host: "h", port: 5672 })).toEqual({ host: "h", port: 5672 });
+  });
+  it("reads kafka-style brokers", () => {
+    expect(endpointOf({ brokers: ["broker:9092", "b2:9092"] })).toEqual({ host: "broker", port: 9092 });
+  });
+  it("reads array-of-URL fields (nodes/servers/hosts)", () => {
+    expect(endpointOf({ nodes: ["http://es.local:9200"] })).toEqual({ host: "es.local", port: 9200 });
+    expect(endpointOf({ servers: ["nats://q.local:4222"] })).toEqual({ host: "q.local", port: 4222 });
+    expect(endpointOf({ hosts: ["http://etcd.local:2379"] })).toEqual({ host: "etcd.local", port: 2379 });
+  });
+  it("parses a url config, falling back to the protocol's default port", () => {
+    expect(endpointOf({ url: "https://es.local" })).toEqual({ host: "es.local", port: 443 });
+    expect(endpointOf({ uri: "neo4j://graph:7000" })).toEqual({ host: "graph", port: 7000 });
+  });
+  it("returns null when no endpoint can be derived", () => {
+    expect(endpointOf({ file: "/tmp/x.db" })).toBeNull();
+    expect(endpointOf(undefined)).toBeNull();
   });
 });
