@@ -205,6 +205,10 @@ export function GlobalCommandPalette() {
         </CommandGroup>
 
         <CommandGroup heading="Actions">
+          <CommandItem value="action dashboard" onSelect={() => go("/dashboard")}>
+            <Icon name="LayoutDashboard" />
+            <span>Go to dashboard</span>
+          </CommandItem>
           <CommandItem value="action new connection" onSelect={() => go("/")}>
             <Icon name="Plus" />
             <span>New connection…</span>
