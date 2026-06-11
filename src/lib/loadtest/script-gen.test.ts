@@ -39,6 +39,45 @@ describe("profileToScenario", () => {
       stages: [{ target: 400, duration: "2m" }],
     });
   });
+
+  it("maps ramping -> ramping-vus", () => {
+    expect(
+      profileToScenario({ type: "ramping", startVUs: 0, stages: [{ target: 20, duration: "30s" }] }),
+    ).toEqual({
+      executor: "ramping-vus",
+      startVUs: 0,
+      stages: [{ target: 20, duration: "30s" }],
+    });
+  });
+
+  it("maps constantRate -> constant-arrival-rate", () => {
+    expect(
+      profileToScenario({ type: "constantRate", rate: 100, duration: "1m", preAllocatedVUs: 50 }),
+    ).toEqual({
+      executor: "constant-arrival-rate",
+      rate: 100,
+      timeUnit: "1s",
+      duration: "1m",
+      preAllocatedVUs: 50,
+    });
+  });
+
+  it("maps rampingRate -> ramping-arrival-rate", () => {
+    expect(
+      profileToScenario({
+        type: "rampingRate",
+        startRate: 0,
+        preAllocatedVUs: 100,
+        stages: [{ target: 200, duration: "2m" }],
+      }),
+    ).toEqual({
+      executor: "ramping-arrival-rate",
+      startRate: 0,
+      timeUnit: "1s",
+      preAllocatedVUs: 100,
+      stages: [{ target: 200, duration: "2m" }],
+    });
+  });
 });
 
 describe("thresholdsToK6", () => {
@@ -85,7 +124,7 @@ describe("generateK6Script", () => {
   });
 
   it("references the bearer token via __ENV (never hardcoded)", () => {
-    expect(script).toContain("__ENV.API_TOKEN");
+    expect(script).toContain('__ENV["API_TOKEN"]');
     expect(script).not.toContain("API_TOKEN=");
   });
 

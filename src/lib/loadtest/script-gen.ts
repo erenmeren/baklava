@@ -81,23 +81,23 @@ function buildHeaderExpr(headers: Record<string, string>, auth: Auth): string {
   }
   switch (auth.type) {
     case "bearer":
-      entries.push('"Authorization": "Bearer " + __ENV.' + auth.tokenEnv);
+      entries.push('"Authorization": "Bearer " + __ENV[' + JSON.stringify(auth.tokenEnv) + "]");
       break;
     case "basic":
       entries.push(
-        '"Authorization": "Basic " + encoding.b64encode(__ENV.' +
-          auth.usernameEnv +
-          ' + ":" + __ENV.' +
-          auth.passwordEnv +
-          ")",
+        '"Authorization": "Basic " + encoding.b64encode(__ENV[' +
+          JSON.stringify(auth.usernameEnv) +
+          '] + ":" + __ENV[' +
+          JSON.stringify(auth.passwordEnv) +
+          "])",
       );
       break;
     case "apiKey":
-      entries.push(`${JSON.stringify(auth.header)}: __ENV.${auth.valueEnv}`);
+      entries.push(`${JSON.stringify(auth.header)}: __ENV[${JSON.stringify(auth.valueEnv)}]`);
       break;
     case "customHeaders":
       for (const [h, env] of Object.entries(auth.headersEnv)) {
-        entries.push(`${JSON.stringify(h)}: __ENV.${env}`);
+        entries.push(`${JSON.stringify(h)}: __ENV[${JSON.stringify(env)}]`);
       }
       break;
     case "none":
