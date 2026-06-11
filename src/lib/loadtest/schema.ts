@@ -92,7 +92,7 @@ export const thresholdsSchema = z
 export const loadTestConfigSchema = z.object({
   name: z.string().default("loadtest"),
   target: z.object({
-    baseUrl: z.string().url(),
+    baseUrl: z.url(),
     headers: z.record(z.string(), z.string()).optional(),
   }),
   requests: z.array(requestStepSchema).min(1),
