@@ -76,4 +76,23 @@ describe("parseSummary", () => {
     expect(r.thresholds).toEqual([]);
     expect(r.passed).toBe(true);
   });
+
+  it("does not throw on null/undefined/empty summary and returns zeroed stats", () => {
+    for (const input of [null, undefined, {}]) {
+      const r = parseSummary(input, config);
+      expect(r.name).toBe("demo");
+      expect(r.totalRequests).toBe(0);
+      expect(r.rps).toBe(0);
+      expect(r.errorRate).toBe(0);
+      expect(r.latency).toEqual({ avg: 0, min: 0, p50: 0, max: 0, p90: 0, p95: 0, p99: 0 });
+      expect(r.passed).toBe(true); // no thresholds present -> passed
+    }
+  });
+
+  it("zeroes per-request latency when the request metric is absent", () => {
+    const r = parseSummary({ metrics: {} }, config);
+    expect(r.requests).toHaveLength(1);
+    expect(r.requests[0].name).toBe("list");
+    expect(r.requests[0].latency).toEqual({ avg: 0, min: 0, p50: 0, max: 0, p90: 0, p95: 0, p99: 0 });
+  });
 });

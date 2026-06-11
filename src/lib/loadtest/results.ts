@@ -18,7 +18,7 @@ export interface ThresholdResult {
 
 export interface RequestStat {
   name: string;
-  latency: Partial<LatencyStats>;
+  latency: LatencyStats;
 }
 
 export interface LoadTestResult {
