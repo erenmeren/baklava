@@ -1,4 +1,4 @@
-import type { Writable } from "node:stream";
+import type { Duplex, Writable } from "node:stream";
 import { PassThrough } from "node:stream";
 import { createDockerClient } from "@/lib/connections/docker";
 import type { DockerConfig } from "@/lib/connections/types";
@@ -38,7 +38,11 @@ function extractSummary(stdout: string): unknown {
     throw new Error("k6 produced no parseable summary (did the run start?)");
   }
   const json = stdout.slice(start + SUMMARY_START.length, end);
-  return JSON.parse(json);
+  try {
+    return JSON.parse(json);
+  } catch (e) {
+    throw new Error(`k6 summary JSON parse failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
 }
 
 export class K6DockerExecutor implements Executor {
@@ -56,55 +60,77 @@ export class K6DockerExecutor implements Executor {
 
     const envArr = Object.entries(opts.env).map(([k, v]) => `${k}=${v}`);
 
-    const container = await client.createContainer({
-      Image: K6_IMAGE,
-      Cmd: ["run", "--quiet", "-"], // read script from stdin
-      Env: envArr,
-      OpenStdin: true,
-      StdinOnce: true,
-      AttachStdin: true,
-      AttachStdout: true,
-      AttachStderr: true,
-      Tty: false,
-      HostConfig: {
-        ExtraHosts: ["host.docker.internal:host-gateway"],
-      },
-    });
-
-    let stdout = "";
-    const outStream = new PassThrough();
-    const errStream = new PassThrough();
-    outStream.on("data", (c: Buffer) => {
-      stdout += c.toString("utf8");
-    });
-    errStream.on("data", (c: Buffer) => {
-      for (const line of c.toString("utf8").split("\n")) {
-        if (line.trim()) onProgress({ line: line.trimEnd() });
-      }
-    });
-
-    const stream = await container.attach({
-      stream: true,
-      hijack: true,
-      stdin: true,
-      stdout: true,
-      stderr: true,
-    });
-    container.modem.demuxStream(stream, outStream as Writable, errStream as Writable);
-
-    const onAbort = () => {
-      void container.remove({ force: true }).catch(() => undefined);
-    };
-    opts.signal?.addEventListener("abort", onAbort, { once: true });
+    let container:
+      | Awaited<ReturnType<ReturnType<typeof createDockerClient>["createContainer"]>>
+      | undefined;
+    let onAbort: (() => void) | undefined;
 
     try {
+      container = await client.createContainer({
+        Image: K6_IMAGE,
+        Cmd: ["run", "--quiet", "-"], // read script from stdin
+        Env: envArr,
+        OpenStdin: true,
+        StdinOnce: true,
+        AttachStdin: true,
+        AttachStdout: true,
+        AttachStderr: true,
+        Tty: false,
+        HostConfig: {
+          ExtraHosts: ["host.docker.internal:host-gateway"],
+        },
+      });
+
+      let stdout = "";
+      const outStream = new PassThrough();
+      const errStream = new PassThrough();
+      outStream.on("data", (c: Buffer) => {
+        stdout += c.toString("utf8");
+      });
+      errStream.on("data", (c: Buffer) => {
+        for (const line of c.toString("utf8").split("\n")) {
+          if (line.trim()) onProgress({ line: line.trimEnd() });
+        }
+      });
+
+      const stream = (await container.attach({
+        stream: true,
+        hijack: true,
+        stdin: true,
+        stdout: true,
+        stderr: true,
+      })) as Duplex;
+      container.modem.demuxStream(stream, outStream as Writable, errStream as Writable);
+
+      const c = container;
+      onAbort = () => {
+        stream.destroy();
+        void c.remove({ force: true }).catch(() => undefined);
+      };
+      opts.signal?.addEventListener("abort", onAbort, { once: true });
+
       await container.start();
       // Feed the generated script via stdin, then signal EOF.
       stream.write(script);
       stream.end();
 
-      const status = await container.wait();
+      const status = await container.wait({ abortSignal: opts.signal });
       const exitCode = status.StatusCode as number;
+
+      // container.wait() and the hijacked attach socket are separate
+      // connections; the daemon can signal exit before Node has dispatched
+      // the final attach data chunks. Wait for the attach stream to close so
+      // demuxStream has flushed the complete summary into `stdout`.
+      await new Promise<void>((resolve) => {
+        if (stream.readableEnded || stream.destroyed) {
+          resolve();
+          return;
+        }
+        stream.once("end", resolve);
+        stream.once("close", resolve);
+      });
+      outStream.end();
+      errStream.end();
 
       if (exitCode !== PASS_EXIT && exitCode !== THRESHOLD_FAIL_EXIT) {
         throw new Error(`k6 exited with code ${exitCode}`);
@@ -112,8 +138,8 @@ export class K6DockerExecutor implements Executor {
       const summary = extractSummary(stdout);
       return { summary, exitCode };
     } finally {
-      opts.signal?.removeEventListener("abort", onAbort);
-      await container.remove({ force: true }).catch(() => undefined);
+      if (onAbort) opts.signal?.removeEventListener("abort", onAbort);
+      await container?.remove({ force: true }).catch(() => undefined);
     }
   }
 }
