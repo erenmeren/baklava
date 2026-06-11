@@ -1,0 +1,9 @@
+{
+  "name": "httpbin-baseline",
+  "target": { "baseUrl": "https://httpbin.org" },
+  "requests": [
+    { "name": "get", "method": "GET", "path": "/get", "checks": { "status": 200 } }
+  ],
+  "profile": { "type": "baseline", "rate": 5, "duration": "10s", "preAllocatedVUs": 5 },
+  "thresholds": { "p95": 2000, "errorRate": 0.05 }
+}
