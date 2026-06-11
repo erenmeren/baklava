@@ -5,6 +5,7 @@ import { LayoutDashboard } from "lucide-react";
 import type { ConnectionRecord } from "@/lib/connections/types";
 import type { HealthStatus } from "@/lib/connections/health";
 import { Card } from "@/components/ui/card";
+import { getTech } from "@/lib/tech-catalog";
 import { HealthCard } from "./health-card";
 
 export function DashboardClient() {
@@ -14,7 +15,12 @@ export function DashboardClient() {
   useEffect(() => {
     fetch("/api/connections", { cache: "no-store" })
       .then((r) => r.json())
-      .then((d: { connections?: ConnectionRecord[] }) => setConns(d.connections ?? []))
+      // Only show techs this build actually implements (a real workspace +
+      // health probe). Stored data can include techs from a larger build
+      // (rabbitmq, elasticsearch, …) that getTech() doesn't know about.
+      .then((d: { connections?: ConnectionRecord[] }) =>
+        setConns((d.connections ?? []).filter((c) => getTech(c.tech))),
+      )
       .catch(() => setConns([]));
   }, []);
 
