@@ -120,7 +120,7 @@ describe("generateK6Script", () => {
   const script = generateK6Script(cfg);
 
   it("rewrites localhost in BASE", () => {
-    expect(script).toContain('const BASE = "http://host.docker.internal:3000/"');
+    expect(script).toContain('const BASE = "http://host.docker.internal:3000"');
   });
 
   it("references the bearer token via __ENV (never hardcoded)", () => {
@@ -146,5 +146,26 @@ describe("generateK6Script", () => {
   it("embeds the scenario and thresholds in options", () => {
     expect(script).toContain('"executor": "constant-vus"');
     expect(script).toContain('"p(95)<800"');
+  });
+
+  it("joins remote base + path with exactly one slash", () => {
+    const remote = loadTestConfigSchema.parse({
+      target: { baseUrl: "https://api.example.com" },
+      requests: [{ name: "get", method: "GET", path: "/get" }],
+      profile: { type: "constant", vus: 1, duration: "1s" },
+    });
+    const s = generateK6Script(remote);
+    expect(s).toContain('const BASE = "https://api.example.com"');
+    expect(s).toContain('BASE + "/get"');
+    expect(s).not.toContain("api.example.comget");
+  });
+
+  it("normalizes a path missing its leading slash", () => {
+    const cfg2 = loadTestConfigSchema.parse({
+      target: { baseUrl: "https://api.example.com" },
+      requests: [{ name: "x", method: "GET", path: "items" }],
+      profile: { type: "constant", vus: 1, duration: "1s" },
+    });
+    expect(generateK6Script(cfg2)).toContain('BASE + "/items"');
   });
 });

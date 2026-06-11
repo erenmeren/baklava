@@ -113,7 +113,8 @@ function requestStepCode(
 ): string {
   const headers = { ...baseHeaders, ...(r.headers ?? {}) };
   const headerExpr = buildHeaderExpr(headers, auth);
-  const urlExpr = "BASE + " + JSON.stringify(r.path.replace(/^\//, ""));
+  const path = r.path.startsWith("/") ? r.path : "/" + r.path;
+  const urlExpr = "BASE + " + JSON.stringify(path);
   const bodyArg = r.body != null ? JSON.stringify(r.body) : "null";
   const params = `{ headers: ${headerExpr}, tags: { name: ${JSON.stringify(r.name)} } }`;
 
@@ -146,6 +147,7 @@ function requestStepCode(
 
 export function generateK6Script(config: LoadTestConfig): string {
   const { url } = rewriteLocalhostForDocker(config.target.baseUrl);
+  const base = url.replace(/\/+$/, "");
   const options = {
     scenarios: { default: profileToScenario(config.profile) },
     thresholds: thresholdsToK6(config.thresholds),
@@ -170,7 +172,7 @@ import encoding from 'k6/encoding';
 
 export const options = ${JSON.stringify(options, null, 2)};
 
-const BASE = ${JSON.stringify(url)};
+const BASE = ${JSON.stringify(base)};
 ${trendDecls}
 
 export default function () {
