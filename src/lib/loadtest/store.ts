@@ -59,7 +59,10 @@ function loadFromDisk(): LoadTest[] {
   try {
     const raw = fs.readFileSync(FILE, "utf8");
     const data = JSON.parse(raw) as Partial<PersistedShape>;
-    if (!Array.isArray(data?.loadtests)) return [];
+    if (!Array.isArray(data?.loadtests)) {
+      console.warn(`[baklava] ${FILE} has unexpected shape, ignoring (starting empty)`);
+      return [];
+    }
     for (const t of data.loadtests) {
       for (const r of t.runs ?? []) {
         if (r.status === "running") {
@@ -249,13 +252,13 @@ export function appendRun(
   test.runs.push(run);
   if (test.runs.length > MAX_RUNS) test.runs.splice(0, test.runs.length - MAX_RUNS);
   flush();
-  return run;
+  return { ...run };
 }
 
 export function updateRun(
   testId: string,
   runId: string,
-  patch: Partial<Omit<LoadTestRun, "id">>,
+  patch: Partial<Pick<LoadTestRun, "status" | "finishedAt" | "result" | "error">>,
 ): LoadTestRun | undefined {
   const test = getStore().byId.get(testId);
   if (!test) return undefined;
@@ -263,7 +266,7 @@ export function updateRun(
   if (!run) return undefined;
   Object.assign(run, patch);
   flush();
-  return run;
+  return { ...run };
 }
 
 export function listRuns(testId: string): LoadTestRun[] {
