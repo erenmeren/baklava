@@ -77,7 +77,7 @@ export class K6DockerExecutor implements Executor {
     try {
       container = await client.createContainer({
         Image: K6_IMAGE,
-        Cmd: ["run", "--quiet", "/work/script.js"],
+        Cmd: ["run", "/work/script.js"],
         Env: envArr,
         AttachStdout: true,
         AttachStderr: true,
