@@ -10,6 +10,7 @@ import {
 } from "@/lib/tech-catalog";
 import type { ConnectionRecord } from "@/lib/connections/types";
 import { ConnectionSheet } from "@/components/connection-sheet";
+import { LoadTestSheet } from "@/components/loadtest-sheet";
 import { cn } from "@/lib/utils";
 
 interface ConnectionsResponse {
@@ -20,6 +21,7 @@ export function TechGrid() {
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [filter, setFilter] = useState<TechCategoryFilter>("All");
   const [openTech, setOpenTech] = useState<TechMeta | null>(null);
+  const [loadtestOpen, setLoadtestOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -32,6 +34,15 @@ export function TechGrid() {
         const next: Record<string, number> = {};
         for (const c of data.connections) {
           next[c.tech] = (next[c.tech] ?? 0) + 1;
+        }
+        try {
+          const ltRes = await fetch("/api/loadtest", { cache: "no-store" });
+          if (ltRes.ok) {
+            const ltData = (await ltRes.json()) as { loadtests: unknown[] };
+            next.loadtest = ltData.loadtests.length;
+          }
+        } catch {
+          // ignore
         }
         setCounts(next);
       } catch {
@@ -164,7 +175,7 @@ export function TechGrid() {
             <button
               key={tech.id}
               type="button"
-              onClick={() => setOpenTech(tech)}
+              onClick={() => (tech.id === "loadtest" ? setLoadtestOpen(true) : setOpenTech(tech))}
               aria-label={`Open ${tech.name} connections`}
               className="rounded-xl text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
             >
@@ -189,6 +200,7 @@ export function TechGrid() {
           if (!o) setOpenTech(null);
         }}
       />
+      <LoadTestSheet open={loadtestOpen} onOpenChange={setLoadtestOpen} />
     </div>
   );
 }

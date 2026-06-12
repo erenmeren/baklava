@@ -1,12 +1,13 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Duplex, Writable } from "node:stream";
-import { PassThrough } from "node:stream";
+import type { Duplex } from "node:stream";
 import { createDockerClient } from "@/lib/connections/docker";
 import type { DockerConfig } from "@/lib/connections/types";
 import type { Executor, Progress, RawRunOutput, RunOpts } from "../executor";
 import { SUMMARY_END, SUMMARY_START } from "../script-gen";
+
+const ANSI_RE = /\x1B\[[0-9;?]*[A-Za-z]/g;
 
 const K6_IMAGE = "grafana/k6:latest";
 const PASS_EXIT = 0;
@@ -40,7 +41,7 @@ function extractSummary(stdout: string): unknown {
   if (start === -1 || end === -1 || end < start) {
     throw new Error("k6 produced no parseable summary (did the run start?)");
   }
-  const json = stdout.slice(start + SUMMARY_START.length, end);
+  const json = stdout.slice(start + SUMMARY_START.length, end).replace(ANSI_RE, "");
   try {
     return JSON.parse(json);
   } catch (e) {
@@ -77,39 +78,46 @@ export class K6DockerExecutor implements Executor {
     try {
       container = await client.createContainer({
         Image: K6_IMAGE,
-        Cmd: ["run", "--quiet", "/work/script.js"],
+        Cmd: ["run", "/work/script.js"],
         Env: envArr,
         AttachStdout: true,
         AttachStderr: true,
-        Tty: false,
+        Tty: true,
         HostConfig: {
           ExtraHosts: ["host.docker.internal:host-gateway"],
           Binds: [`${workDir}:/work:ro`],
         },
       });
 
-      let stdout = "";
-      const outStream = new PassThrough();
-      const errStream = new PassThrough();
-      outStream.on("data", (c: Buffer) => {
-        stdout += c.toString("utf8");
-      });
-      errStream.on("data", (c: Buffer) => {
-        for (const line of c.toString("utf8").split("\n")) {
-          if (line.trim()) onProgress({ line: line.trimEnd() });
+      let output = "";
+      let lineBuf = "";
+      const emitLines = (text: string) => {
+        lineBuf += text;
+        const parts = lineBuf.split(/\r\n|\r|\n/);
+        lineBuf = parts.pop() ?? "";
+        for (const raw of parts) {
+          const clean = raw.replace(ANSI_RE, "").trim();
+          // Skip the handleSummary marker line (a big JSON blob) — it's parsed
+          // from `output`, not meant for the user-facing progress log.
+          if (clean && !clean.includes(SUMMARY_START)) onProgress({ line: clean });
         }
-      });
+      };
 
       // Attach before start so no output is missed.
       // Cast to Duplex: the @types/dockerode overload always returns
       // ReadWriteStream, but the runtime object is a net.Socket / Duplex and
       // has destroy / readableEnded / destroyed — needed for the drain below.
+      // With Tty:true the stream is a single combined channel — no demuxing needed.
       const stream = (await container.attach({
         stream: true,
         stdout: true,
         stderr: true,
       })) as Duplex;
-      container.modem.demuxStream(stream, outStream as Writable, errStream as Writable);
+      stream.on("data", (c: Buffer) => {
+        const text = c.toString("utf8");
+        output += text;
+        emitLines(text);
+      });
       // A closed socket (container exited early) would otherwise emit an
       // unhandled 'error' and crash the process; swallow it so the real
       // failure surfaces via the exit code / missing-summary path.
@@ -139,13 +147,11 @@ export class K6DockerExecutor implements Executor {
         stream.once("end", resolve);
         stream.once("close", resolve);
       });
-      outStream.end();
-      errStream.end();
 
       if (exitCode !== PASS_EXIT && exitCode !== THRESHOLD_FAIL_EXIT) {
         throw new Error(`k6 exited with code ${exitCode}`);
       }
-      const summary = extractSummary(stdout);
+      const summary = extractSummary(output);
       return { summary, exitCode };
     } finally {
       if (onAbort) opts.signal?.removeEventListener("abort", onAbort);

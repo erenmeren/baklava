@@ -77,7 +77,7 @@ export default defineConfig({
           include: [
             "src/test/**/*.test.ts",
             "src/lib/**/*.test.ts",
-            "src/app/api/**/*.test.ts",
+            "src/app/**/*.test.ts",
           ],
           exclude: ["**/*.dom.test.*", "**/*.integration.test.*"],
         },

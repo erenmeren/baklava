@@ -21,16 +21,21 @@ describe("K6DockerExecutor (integration)", () => {
   });
 
   it("runs k6 against a local server and returns structured results", async () => {
-    const result = await runLoadTest({
-      name: "integration",
-      target: { baseUrl: `http://localhost:${port}` },
-      requests: [{ name: "list", path: "/", checks: { status: 200, bodyContains: "items" } }],
-      profile: { type: "constant", vus: 2, duration: "3s" },
-      thresholds: { p95: 2000, errorRate: 0.1 },
-    });
+    const lines: string[] = [];
+    const result = await runLoadTest(
+      {
+        name: "integration",
+        target: { baseUrl: `http://localhost:${port}` },
+        requests: [{ name: "list", path: "/", checks: { status: 200, bodyContains: "items" } }],
+        profile: { type: "constant", vus: 2, duration: "3s" },
+        thresholds: { p95: 2000, errorRate: 0.1 },
+      },
+      { onProgress: (p) => lines.push(p.line) },
+    );
 
     expect(result.totalRequests).toBeGreaterThan(0);
     expect(result.requests[0].name).toBe("list");
     expect(result.passed).toBe(true);
+    expect(lines.length).toBeGreaterThan(0);
   });
 });
