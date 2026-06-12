@@ -40,7 +40,7 @@ export function RequestCard({
   return (
     <Card className="p-3">
       <div className="flex items-center gap-2">
-        <button type="button" onClick={onToggle} className="text-muted-foreground hover:text-foreground">
+        <button type="button" onClick={onToggle} aria-label={expanded ? "Collapse request" : "Expand request"} className="text-muted-foreground hover:text-foreground">
           {expanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
         </button>
         <span className="font-mono text-xs font-medium">{req.method}</span>

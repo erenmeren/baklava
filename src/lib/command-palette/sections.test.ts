@@ -3,8 +3,11 @@ import { TECH_SECTIONS } from "./sections";
 import { TECH_CATALOG } from "@/lib/tech-catalog";
 
 describe("TECH_SECTIONS", () => {
-  it("has a non-empty entry for every available tech", () => {
-    for (const t of TECH_CATALOG.filter((t) => t.status === "available")) {
+  // `loadtest` is a non-connection tool (its workspace is /loadtest/[testId], not
+  // a /[tech]/[connectionId] connection), so it has no TECH_SECTIONS entry by design.
+  const TOOL_TECH_IDS = new Set(["loadtest"]);
+  it("has a non-empty entry for every available connection tech", () => {
+    for (const t of TECH_CATALOG.filter((t) => t.status === "available" && !TOOL_TECH_IDS.has(t.id))) {
       expect(TECH_SECTIONS[t.id as keyof typeof TECH_SECTIONS]?.length, t.id).toBeGreaterThan(0);
     }
   });
