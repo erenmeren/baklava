@@ -97,7 +97,9 @@ export class K6DockerExecutor implements Executor {
         lineBuf = parts.pop() ?? "";
         for (const raw of parts) {
           const clean = raw.replace(ANSI_RE, "").trim();
-          if (clean) onProgress({ line: clean });
+          // Skip the handleSummary marker line (a big JSON blob) — it's parsed
+          // from `output`, not meant for the user-facing progress log.
+          if (clean && !clean.includes(SUMMARY_START)) onProgress({ line: clean });
         }
       };
 
