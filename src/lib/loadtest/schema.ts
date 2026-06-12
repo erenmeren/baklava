@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { metricKey } from "./script-gen";
 
 export const httpMethodSchema = z.enum([
   "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS",
@@ -89,17 +90,33 @@ export const thresholdsSchema = z
   })
   .optional();
 
-export const loadTestConfigSchema = z.object({
-  name: z.string().default("loadtest"),
-  target: z.object({
-    baseUrl: z.url(),
-    headers: z.record(z.string(), z.string()).optional(),
-  }),
-  requests: z.array(requestStepSchema).min(1),
-  auth: authSchema.default({ type: "none" }),
-  profile: profileSchema,
-  thresholds: thresholdsSchema,
-});
+export const loadTestConfigSchema = z
+  .object({
+    name: z.string().default("loadtest"),
+    target: z.object({
+      baseUrl: z.url(),
+      headers: z.record(z.string(), z.string()).optional(),
+    }),
+    requests: z.array(requestStepSchema).min(1),
+    auth: authSchema.default({ type: "none" }),
+    profile: profileSchema,
+    thresholds: thresholdsSchema,
+  })
+  .superRefine((cfg, ctx) => {
+    const seen = new Map<string, number>();
+    cfg.requests.forEach((r, i) => {
+      const key = metricKey(r.name);
+      if (seen.has(key)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["requests", i, "name"],
+          message: `Request name "${r.name}" collides with "${cfg.requests[seen.get(key)!].name}" (both map to metric "${key}"). Use distinct names.`,
+        });
+      } else {
+        seen.set(key, i);
+      }
+    });
+  });
 
 export type LoadTestConfig = z.infer<typeof loadTestConfigSchema>;
 export type RequestStep = z.infer<typeof requestStepSchema>;

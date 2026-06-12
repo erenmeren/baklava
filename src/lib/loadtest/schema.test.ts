@@ -33,6 +33,32 @@ describe("loadTestConfigSchema", () => {
     ).toThrow();
   });
 
+  it("rejects requests whose names map to the same metric key", () => {
+    expect(() =>
+      loadTestConfigSchema.parse({
+        target: { baseUrl: "https://x.test" },
+        requests: [
+          { name: "Get Item", path: "/a" },
+          { name: "get-item", path: "/b" },
+        ],
+        profile: { type: "constant", vus: 1, duration: "1s" },
+      }),
+    ).toThrow(/collides|metric/i);
+  });
+
+  it("accepts distinct request names", () => {
+    expect(() =>
+      loadTestConfigSchema.parse({
+        target: { baseUrl: "https://x.test" },
+        requests: [
+          { name: "list", path: "/a" },
+          { name: "create", path: "/b" },
+        ],
+        profile: { type: "constant", vus: 1, duration: "1s" },
+      }),
+    ).not.toThrow();
+  });
+
   it("requiredEnvVars lists env names per auth type", () => {
     expect(requiredEnvVars({ type: "none" })).toEqual([]);
     expect(requiredEnvVars({ type: "bearer", tokenEnv: "TOK" })).toEqual(["TOK"]);

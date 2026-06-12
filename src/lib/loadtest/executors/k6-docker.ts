@@ -101,6 +101,10 @@ export class K6DockerExecutor implements Executor {
         stderr: true,
       })) as Duplex;
       container.modem.demuxStream(stream, outStream as Writable, errStream as Writable);
+      // A closed socket (container exited early) would otherwise emit an
+      // unhandled 'error' and crash the process; swallow it so the real
+      // failure surfaces via the exit code / missing-summary path.
+      stream.on("error", () => {});
 
       const c = container;
       onAbort = () => {

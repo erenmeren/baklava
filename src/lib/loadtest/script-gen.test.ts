@@ -169,3 +169,67 @@ describe("generateK6Script", () => {
     expect(generateK6Script(cfg2)).toContain('BASE + "/items"');
   });
 });
+
+describe("generateK6Script auth + multi-request", () => {
+  it("emits basic auth via encoding.b64encode with __ENV bracket refs", () => {
+    const cfg = loadTestConfigSchema.parse({
+      target: { baseUrl: "https://x.test" },
+      requests: [{ name: "a", path: "/a" }],
+      auth: { type: "basic", usernameEnv: "U", passwordEnv: "P" },
+      profile: { type: "constant", vus: 1, duration: "1s" },
+    });
+    const s = generateK6Script(cfg);
+    expect(s).toContain('encoding.b64encode(__ENV["U"]');
+    expect(s).toContain('__ENV["P"]');
+  });
+
+  it("emits apiKey header via __ENV bracket ref", () => {
+    const cfg = loadTestConfigSchema.parse({
+      target: { baseUrl: "https://x.test" },
+      requests: [{ name: "a", path: "/a" }],
+      auth: { type: "apiKey", header: "X-Api-Key", valueEnv: "K" },
+      profile: { type: "constant", vus: 1, duration: "1s" },
+    });
+    const s = generateK6Script(cfg);
+    expect(s).toContain('"X-Api-Key": __ENV["K"]');
+  });
+
+  it("emits customHeaders via __ENV bracket refs", () => {
+    const cfg = loadTestConfigSchema.parse({
+      target: { baseUrl: "https://x.test" },
+      requests: [{ name: "a", path: "/a" }],
+      auth: { type: "customHeaders", headersEnv: { "X-A": "AA", "X-B": "BB" } },
+      profile: { type: "constant", vus: 1, duration: "1s" },
+    });
+    const s = generateK6Script(cfg);
+    expect(s).toContain('"X-A": __ENV["AA"]');
+    expect(s).toContain('"X-B": __ENV["BB"]');
+  });
+
+  it("emits a POST body argument", () => {
+    const cfg = loadTestConfigSchema.parse({
+      target: { baseUrl: "https://x.test" },
+      requests: [{ name: "create", method: "POST", path: "/items", body: '{"a":1}' }],
+      profile: { type: "constant", vus: 1, duration: "1s" },
+    });
+    const s = generateK6Script(cfg);
+    expect(s).toContain('http.request("POST"');
+    expect(s).toContain('{\\\"a\\\":1}');
+  });
+
+  it("emits a Trend and request block per request for multi-request configs", () => {
+    const cfg = loadTestConfigSchema.parse({
+      target: { baseUrl: "https://x.test" },
+      requests: [
+        { name: "list", path: "/list" },
+        { name: "create", method: "POST", path: "/create", body: "x" },
+      ],
+      profile: { type: "constant", vus: 1, duration: "1s" },
+    });
+    const s = generateK6Script(cfg);
+    expect(s).toContain("req_list_duration");
+    expect(s).toContain("req_create_duration");
+    expect(s).toContain('BASE + "/list"');
+    expect(s).toContain('BASE + "/create"');
+  });
+});
