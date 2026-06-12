@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { Duplex, Writable } from "node:stream";
 import { PassThrough } from "node:stream";
 import { createDockerClient } from "@/lib/connections/docker";
@@ -60,6 +63,12 @@ export class K6DockerExecutor implements Executor {
 
     const envArr = Object.entries(opts.env).map(([k, v]) => `${k}=${v}`);
 
+    // Write the script to a temp dir before creating the container so the
+    // file is guaranteed present when k6 starts (eliminates the stdin-delivery
+    // race that caused exit 107 ~1-in-3 runs).
+    const workDir = mkdtempSync(join(tmpdir(), "baklava-loadtest-"));
+    writeFileSync(join(workDir, "script.js"), script, "utf8");
+
     let container:
       | Awaited<ReturnType<ReturnType<typeof createDockerClient>["createContainer"]>>
       | undefined;
@@ -68,16 +77,14 @@ export class K6DockerExecutor implements Executor {
     try {
       container = await client.createContainer({
         Image: K6_IMAGE,
-        Cmd: ["run", "--quiet", "-"], // read script from stdin
+        Cmd: ["run", "--quiet", "/work/script.js"],
         Env: envArr,
-        OpenStdin: true,
-        StdinOnce: true,
-        AttachStdin: true,
         AttachStdout: true,
         AttachStderr: true,
         Tty: false,
         HostConfig: {
           ExtraHosts: ["host.docker.internal:host-gateway"],
+          Binds: [`${workDir}:/work:ro`],
         },
       });
 
@@ -93,10 +100,12 @@ export class K6DockerExecutor implements Executor {
         }
       });
 
+      // Attach before start so no output is missed.
+      // Cast to Duplex: the @types/dockerode overload always returns
+      // ReadWriteStream, but the runtime object is a net.Socket / Duplex and
+      // has destroy / readableEnded / destroyed — needed for the drain below.
       const stream = (await container.attach({
         stream: true,
-        hijack: true,
-        stdin: true,
         stdout: true,
         stderr: true,
       })) as Duplex;
@@ -114,17 +123,14 @@ export class K6DockerExecutor implements Executor {
       opts.signal?.addEventListener("abort", onAbort, { once: true });
 
       await container.start();
-      // Feed the generated script via stdin, then signal EOF.
-      stream.write(script);
-      stream.end();
 
       const status = await container.wait({ abortSignal: opts.signal });
       const exitCode = status.StatusCode as number;
 
-      // container.wait() and the hijacked attach socket are separate
-      // connections; the daemon can signal exit before Node has dispatched
-      // the final attach data chunks. Wait for the attach stream to close so
-      // demuxStream has flushed the complete summary into `stdout`.
+      // container.wait() and the attach socket are separate connections; the
+      // daemon can signal exit before Node has dispatched the final data
+      // chunks. Wait for the attach stream to close so demuxStream has flushed
+      // the complete summary into `stdout`.
       await new Promise<void>((resolve) => {
         if (stream.readableEnded || stream.destroyed) {
           resolve();
@@ -144,6 +150,7 @@ export class K6DockerExecutor implements Executor {
     } finally {
       if (onAbort) opts.signal?.removeEventListener("abort", onAbort);
       await container?.remove({ force: true }).catch(() => undefined);
+      rmSync(workDir, { recursive: true, force: true });
     }
   }
 }
