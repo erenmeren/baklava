@@ -4,7 +4,8 @@ export type TechCategory =
   | "Streaming"
   | "Orchestration"
   | "Cache"
-  | "Storage";
+  | "Storage"
+  | "Testing";
 
 export const TECH_CATEGORIES = [
   "All",
@@ -14,6 +15,7 @@ export const TECH_CATEGORIES = [
   "Orchestration",
   "Cache",
   "Storage",
+  "Testing",
 ] as const;
 
 export type TechCategoryFilter = (typeof TECH_CATEGORIES)[number];
@@ -132,6 +134,15 @@ export const TECH_CATALOG: TechMeta[] = [
     description: "AWS S3 object browser: buckets, prefix navigation, upload/download, presigned links, CORS and lifecycle.",
     category: "Storage",
     color: "from-green-500 to-teal-600",
+    status: "available",
+  },
+  {
+    id: "loadtest",
+    name: "Load Testing",
+    tagline: "k6 load tests",
+    description: "Define, run, and track HTTP load tests against any REST API with k6.",
+    category: "Testing",
+    color: "from-amber-400 to-orange-600",
     status: "available",
   },
 ];
