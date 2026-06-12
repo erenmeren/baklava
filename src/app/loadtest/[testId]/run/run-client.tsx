@@ -21,6 +21,7 @@ export function RunClient({ testId }: { testId: string }) {
   const [result, setResult] = useState<LoadTestResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const hasRunRef = useRef(false);
   const startRef = useRef(0);
 
   // Load the latest run's result when idle.
@@ -34,7 +35,7 @@ export function RunClient({ testId }: { testId: string }) {
         if (!last) return;
         const rRes = await fetch(`/api/loadtest/${testId}/runs/${last.id}`, { cache: "no-store" });
         const rData = await rRes.json();
-        if (active && rRes.ok) setResult((rData.run as LoadTestRun).result ?? null);
+        if (active && !hasRunRef.current && rRes.ok) setResult((rData.run as LoadTestRun).result ?? null);
       } catch {
         /* ignore */
       }
@@ -52,6 +53,7 @@ export function RunClient({ testId }: { testId: string }) {
   useEffect(() => () => abortRef.current?.abort(), []);
 
   const run = async () => {
+    hasRunRef.current = true;
     setRunning(true);
     setLines([]);
     setVus(undefined);
@@ -63,10 +65,11 @@ export function RunClient({ testId }: { testId: string }) {
     const ac = new AbortController();
     abortRef.current = ac;
     const parser = new SseFrameParser();
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
     try {
       const res = await fetch(`/api/loadtest/${testId}/run`, { method: "POST", signal: ac.signal });
       if (!res.body) throw new Error("no response stream");
-      const reader = res.body.getReader();
+      reader = res.body.getReader();
       const decoder = new TextDecoder();
       for (;;) {
         const { done, value } = await reader.read();
@@ -88,6 +91,7 @@ export function RunClient({ testId }: { testId: string }) {
     } catch (e) {
       if (!ac.signal.aborted) setError(e instanceof Error ? e.message : String(e));
     } finally {
+      reader?.cancel().catch(() => undefined);
       setRunning(false);
       abortRef.current = null;
     }
