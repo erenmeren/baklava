@@ -2,7 +2,8 @@ import { z } from "zod";
 import { profileSchema, requestStepSchema, thresholdsSchema } from "./schema";
 import { metricKey } from "./script-gen";
 
-// UI-facing auth model: holds LITERAL secret values (stored encrypted at rest).
+// UI-facing auth model: holds LITERAL secret values (stored at rest in a 0600
+// file, redacted on API responses — not encrypted, matching connections.json).
 // Translated to the engine's env-name auth at run time by toEngineConfig().
 export const savedAuthSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("none") }),

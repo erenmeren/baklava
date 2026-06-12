@@ -18,7 +18,7 @@ metrics, and saves & reuses test configurations with a persisted run history.
 |---|---|---|
 | Domain model | **Own store / persistence / lifecycle**, reuse UI infrastructure | A saved load test is a reusable test definition, not a connection to a live backend. Don't pollute the connection/health-dashboard model; do reuse `WorkspaceShell`/`WorkspacePage`/Sheet/home-tile. |
 | Run history | **Persisted** per test | Enables trend/compare and sets up the later CI/regression goal. |
-| Secrets | **Stored encrypted**, reusing the connection password pattern | Best save-&-reuse UX; `SECRET_KEYS` + `0600` file + redact-on-API + "(unchanged — leave blank to keep)" already established. |
+| Secrets | **Stored at rest reusing the connection password pattern** | Best save-&-reuse UX. NB: that pattern is *not* encryption — it's a `0600` file + redact-on-API + "(unchanged — leave blank to keep)" merge (plaintext on disk, like `connections.json`). Matching the codebase's real posture, not adding new crypto. |
 | Run lifecycle | **Tied to the page (SSE)** | Closing/navigating aborts the run (k6 container removed). Matches existing streaming ops; no background run registry. |
 | Run transport (A) | **POST consumed via `fetch` + `ReadableStream` reader** (not `EventSource`) | Starting a run is a mutation; `fetch` gives clean `AbortController` cancellation. Deliberate deviation from the `EventSource` convention. |
 | Workspace layout (B) | **`WorkspaceShell` + sidebar sections** (Config / Run / History) | Consistent with every other Baklava workspace. |
@@ -46,7 +46,7 @@ Home tile "Load Testing"  →  LoadTestSheet (list saved tests + new form)
                  ▼
         API: /api/loadtest[...]  (CRUD + runs + POST run-and-stream)
                  ▼
-        store.ts (baklava.loadtestStore → ~/.baklava/loadtests.json, encrypted secrets)
+        store.ts (baklava.loadtestStore → ~/.baklava/loadtests.json, 0600, redact-on-API)
                  │  toEngineConfig() translator
                  ▼
         engine: runLoadTest()  (src/lib/loadtest, UNCHANGED)  → k6 Docker
@@ -65,11 +65,12 @@ Mirrors `src/lib/connections/store.ts`:
     `status ∈ { "running", "passed", "failed", "error", "cancelled" }`. Stored as a
     per-test array `runs: LoadTestRun[]`.
 - **History cap:** keep the most recent 50 runs per test; prune older on `appendRun`.
-- **Secrets:** `SavedLoadTestConfig.auth` holds literal secret values. Persisted encrypted
-  reusing the connection `SECRET_KEYS` machinery (or an analogous secret-key list for the
-  load-test auth shape). API responses go through `redactLoadTest`/`publicView` so secrets
-  never leave the server; PATCH preserves an existing secret when the field is blank
-  (the "(unchanged — leave blank to keep)" merge).
+- **Secrets:** `SavedLoadTestConfig.auth` holds literal secret values. Persisted at rest the
+  same way connections are — plaintext in a `0600` file (NOT encrypted; the cited connection
+  pattern does not encrypt either). A purpose-built redact/merge for the auth union: API
+  responses go through `redactLoadTest`/`publicView` so secrets never leave the server; PATCH
+  preserves an existing secret when the field is blank (the "(unchanged — leave blank to
+  keep)" merge).
 - **Functions:** `getLoadTest`, `listLoadTests`, `saveLoadTest`, `updateLoadTest`
   (secret-preserving merge), `deleteLoadTest`, `appendRun`, `listRuns`, `getRun`,
   `redactLoadTest`. A `requireLoadTest(id)` helper (server) for layouts (404 if missing).
