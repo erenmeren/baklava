@@ -108,7 +108,7 @@ export const loadTestConfigSchema = z
       const key = metricKey(r.name);
       if (seen.has(key)) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["requests", i, "name"],
           message: `Request name "${r.name}" collides with "${cfg.requests[seen.get(key)!].name}" (both map to metric "${key}"). Use distinct names.`,
         });
