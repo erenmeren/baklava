@@ -87,65 +87,69 @@ export function LoadTestForm({ initial, onSaved }: { initial?: PublicLoadTest; o
         </Alert>
       ) : null}
 
-      <Card className="p-5 space-y-4">
-        <div className="space-y-1">
-          <Label>Test name</Label>
-          <Input value={state.name} onChange={(e) => setState((s) => ({ ...s, name: e.target.value }))} placeholder="Checkout flow" />
-        </div>
-        <div className="space-y-1">
-          <Label>Base URL</Label>
-          <Input value={state.target.baseUrl} onChange={(e) => setState((s) => ({ ...s, target: { ...s.target, baseUrl: e.target.value } }))} placeholder="https://api.example.com" />
-        </div>
-        <div className="space-y-1">
-          <Label>Default headers</Label>
-          <HeaderRows rows={state.target.headers} onChange={(headers) => setState((s) => ({ ...s, target: { ...s.target, headers } }))} />
-        </div>
-      </Card>
+      <div className="grid gap-5 lg:grid-cols-3">
+        <div className="lg:col-span-2 space-y-5">
+          <Card className="p-5 space-y-4">
+            <div className="space-y-1">
+              <Label>Test name</Label>
+              <Input value={state.name} onChange={(e) => setState((s) => ({ ...s, name: e.target.value }))} placeholder="Checkout flow" />
+            </div>
+            <div className="space-y-1">
+              <Label>Base URL</Label>
+              <Input value={state.target.baseUrl} onChange={(e) => setState((s) => ({ ...s, target: { ...s.target, baseUrl: e.target.value } }))} placeholder="https://api.example.com" />
+            </div>
+            <div className="space-y-1">
+              <Label>Default headers</Label>
+              <HeaderRows rows={state.target.headers} onChange={(headers) => setState((s) => ({ ...s, target: { ...s.target, headers } }))} />
+            </div>
+          </Card>
 
-      <Card className="p-5 space-y-3">
-        <div className="flex items-center justify-between">
-          <h3 className="font-semibold text-sm">Requests</h3>
-          <Button type="button" size="sm" variant="outline" onClick={() => setState((s) => ({ ...s, requests: [...s.requests, emptyRequest()] }))}>
-            <Plus className="size-3.5" />
-            Add request
+          <Card className="p-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold text-sm">Requests</h3>
+              <Button type="button" size="sm" variant="outline" onClick={() => setState((s) => ({ ...s, requests: [...s.requests, emptyRequest()] }))}>
+                <Plus className="size-3.5" />
+                Add request
+              </Button>
+            </div>
+            <div className="space-y-2">
+              {state.requests.map((req, i) => (
+                <RequestCard
+                  key={i}
+                  req={req}
+                  index={i}
+                  expanded={expanded === i}
+                  onToggle={() => setExpanded((cur) => (cur === i ? -1 : i))}
+                  onChange={(patch) => patchRequest(i, patch)}
+                  onRemove={() => setState((s) => ({ ...s, requests: s.requests.filter((_, idx) => idx !== i) }))}
+                  onMove={(dir) => moveRequest(i, dir)}
+                  canRemove={state.requests.length > 1}
+                />
+              ))}
+            </div>
+          </Card>
+        </div>
+
+        <div className="space-y-5">
+          <Card className="p-5"><AuthFields auth={state.auth} editing={editing} onChange={(auth) => setState((s) => ({ ...s, auth }))} /></Card>
+
+          <Card className="p-5"><ProfileFields profile={state.profile} onChange={(profile) => setState((s) => ({ ...s, profile }))} /></Card>
+
+          <Card className="p-5 space-y-3">
+            <h3 className="font-semibold text-sm">Thresholds (optional)</h3>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1"><Label>p95 (ms)</Label><Input value={state.thresholds.p95} onChange={(e) => setState((s) => ({ ...s, thresholds: { ...s.thresholds, p95: e.target.value } }))} /></div>
+              <div className="space-y-1"><Label>p99 (ms)</Label><Input value={state.thresholds.p99} onChange={(e) => setState((s) => ({ ...s, thresholds: { ...s.thresholds, p99: e.target.value } }))} /></div>
+              <div className="space-y-1"><Label>Error rate (0–1)</Label><Input value={state.thresholds.errorRate} onChange={(e) => setState((s) => ({ ...s, thresholds: { ...s.thresholds, errorRate: e.target.value } }))} placeholder="0.01" /></div>
+              <div className="space-y-1"><Label>Min RPS</Label><Input value={state.thresholds.minRps} onChange={(e) => setState((s) => ({ ...s, thresholds: { ...s.thresholds, minRps: e.target.value } }))} /></div>
+            </div>
+          </Card>
+
+          <Button onClick={save} disabled={saving} className="w-full">
+            {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+            {editing ? "Save changes" : "Create test"}
           </Button>
         </div>
-        <div className="space-y-2">
-          {state.requests.map((req, i) => (
-            <RequestCard
-              key={i}
-              req={req}
-              index={i}
-              expanded={expanded === i}
-              onToggle={() => setExpanded((cur) => (cur === i ? -1 : i))}
-              onChange={(patch) => patchRequest(i, patch)}
-              onRemove={() => setState((s) => ({ ...s, requests: s.requests.filter((_, idx) => idx !== i) }))}
-              onMove={(dir) => moveRequest(i, dir)}
-              canRemove={state.requests.length > 1}
-            />
-          ))}
-        </div>
-      </Card>
-
-      <Card className="p-5"><AuthFields auth={state.auth} editing={editing} onChange={(auth) => setState((s) => ({ ...s, auth }))} /></Card>
-
-      <Card className="p-5"><ProfileFields profile={state.profile} onChange={(profile) => setState((s) => ({ ...s, profile }))} /></Card>
-
-      <Card className="p-5 space-y-3">
-        <h3 className="font-semibold text-sm">Thresholds (optional)</h3>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div className="space-y-1"><Label>p95 (ms)</Label><Input value={state.thresholds.p95} onChange={(e) => setState((s) => ({ ...s, thresholds: { ...s.thresholds, p95: e.target.value } }))} /></div>
-          <div className="space-y-1"><Label>p99 (ms)</Label><Input value={state.thresholds.p99} onChange={(e) => setState((s) => ({ ...s, thresholds: { ...s.thresholds, p99: e.target.value } }))} /></div>
-          <div className="space-y-1"><Label>Error rate (0–1)</Label><Input value={state.thresholds.errorRate} onChange={(e) => setState((s) => ({ ...s, thresholds: { ...s.thresholds, errorRate: e.target.value } }))} placeholder="0.01" /></div>
-          <div className="space-y-1"><Label>Min RPS</Label><Input value={state.thresholds.minRps} onChange={(e) => setState((s) => ({ ...s, thresholds: { ...s.thresholds, minRps: e.target.value } }))} /></div>
-        </div>
-      </Card>
-
-      <div className="flex justify-end">
-        <Button onClick={save} disabled={saving}>
-          {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
-          {editing ? "Save changes" : "Create test"}
-        </Button>
       </div>
     </div>
   );

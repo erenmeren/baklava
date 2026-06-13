@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   TECH_CATALOG,
   TECH_CATEGORIES,
@@ -10,7 +11,6 @@ import {
 } from "@/lib/tech-catalog";
 import type { ConnectionRecord } from "@/lib/connections/types";
 import { ConnectionSheet } from "@/components/connection-sheet";
-import { LoadTestSheet } from "@/components/loadtest-sheet";
 import { cn } from "@/lib/utils";
 
 interface ConnectionsResponse {
@@ -21,7 +21,7 @@ export function TechGrid() {
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [filter, setFilter] = useState<TechCategoryFilter>("All");
   const [openTech, setOpenTech] = useState<TechMeta | null>(null);
-  const [loadtestOpen, setLoadtestOpen] = useState(false);
+  const router = useRouter();
 
   useEffect(() => {
     let cancelled = false;
@@ -174,7 +174,7 @@ export function TechGrid() {
             <button
               key={tech.id}
               type="button"
-              onClick={() => (tech.kind === "tool" ? setLoadtestOpen(true) : setOpenTech(tech))}
+              onClick={() => (tech.kind === "tool" ? router.push("/loadtest") : setOpenTech(tech))}
               aria-label={`Open ${tech.name} connections`}
               className="rounded-xl text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
             >
@@ -199,7 +199,6 @@ export function TechGrid() {
           if (!o) setOpenTech(null);
         }}
       />
-      <LoadTestSheet open={loadtestOpen} onOpenChange={setLoadtestOpen} />
     </div>
   );
 }
