@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { emptyFormState, toFormState, buildSavedConfig, type HeaderRow } from "./form-serialize";
+import { emptyFormState, toFormState, buildSavedConfig, validateFormState, type HeaderRow } from "./form-serialize";
 
 describe("form-serialize", () => {
   it("emptyFormState has one request and none auth", () => {
@@ -43,6 +43,16 @@ describe("form-serialize", () => {
     const back = buildSavedConfig(toFormState({ name: "T", config: cfg } as never));
     expect(back.profile).toEqual({ type: "constant", vus: 3, duration: "10s" });
     expect(back.requests[0]).toMatchObject({ name: "a", path: "/a", method: "GET" });
+  });
+
+  it("validateFormState rejects blank required numbers and names", () => {
+    const s = emptyFormState();
+    s.name = "T"; s.target.baseUrl = "https://x.test"; s.requests[0].name = "a";
+    s.profile = { type: "constant", vus: "", duration: "10s" };
+    expect(validateFormState(s)).toMatch(/numeric/i);
+    const ok = emptyFormState();
+    ok.name = "T"; ok.target.baseUrl = "https://x.test"; ok.requests[0].name = "a";
+    expect(validateFormState(ok)).toBeNull();
   });
 
   it("blanks a secret in edit mode so the API preserves it", () => {

@@ -140,6 +140,9 @@ export function TopicSearchSheet({
     const ac = new AbortController();
     abortRef.current = ac;
     try {
+      // TODO: migrate to shared SseFrameParser (@/lib/sse-client)
+      // (this consumer dispatches on ev.kind inside the JSON payload, not on
+      // SSE event names, so it is not a mechanical drop-in for SseFrameParser)
       // Stream Server-Sent Events manually via fetch + reader because we
       // need POST (EventSource only supports GET).
       const res = await fetch(

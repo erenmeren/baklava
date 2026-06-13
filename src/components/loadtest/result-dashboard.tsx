@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import type { LoadTestResult } from "@/lib/loadtest/results";
+import { formatBytes } from "@/components/workspace/format";
 
 function Metric({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
@@ -18,12 +19,6 @@ function Metric({ label, value, sub }: { label: string; value: string; sub?: str
       {sub ? <div className="text-xs text-muted-foreground mt-0.5">{sub}</div> : null}
     </Card>
   );
-}
-
-function fmtBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 export function ResultDashboard({ result }: { result: LoadTestResult }) {
@@ -42,7 +37,7 @@ export function ResultDashboard({ result }: { result: LoadTestResult }) {
       </div>
 
       <div className="text-xs text-muted-foreground">
-        Data sent {fmtBytes(result.dataSent)} · received {fmtBytes(result.dataReceived)}
+        Data sent {formatBytes(result.dataSent)} · received {formatBytes(result.dataReceived)}
       </div>
 
       {result.requests.length ? (

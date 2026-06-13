@@ -20,7 +20,7 @@ export function WorkspaceShell({
 }: WorkspaceShellProps) {
   return (
     <div className="flex h-[calc(100vh-3rem)] w-full">
-      <RecordVisit connectionId={connectionId} />
+      {tech.kind !== "tool" ? <RecordVisit connectionId={connectionId} /> : null}
       <aside className="w-64 shrink-0 border-r border-border/60 flex flex-col bg-sidebar">
         <div className="px-4 py-3.5 border-b border-border/60">
           <div className="flex items-center gap-2.5">

@@ -34,8 +34,8 @@ export function HistoryClient({ testId }: { testId: string }) {
     if (res.ok) setSelected(data.run as LoadTestRun);
   };
 
-  // p95 trend, oldest→newest (runs come newest-first)
-  const trend = [...runs].reverse().map((r) => r.p95 ?? 0).filter((n) => n > 0);
+  // p95 trend, oldest→newest (runs come newest-first); include 0-values, exclude no-result runs
+  const trend = [...runs].reverse().filter((r) => r.p95 != null).map((r) => r.p95 as number);
 
   return (
     <WorkspacePage title="History" description="Past runs of this load test.">
@@ -65,10 +65,16 @@ export function HistoryClient({ testId }: { testId: string }) {
           ))}
         </div>
 
-        {selected?.result ? (
+        {selected ? (
           <div>
             <h3 className="text-sm font-semibold mb-2">Run detail</h3>
-            <ResultDashboard result={selected.result} />
+            {selected.result ? (
+              <ResultDashboard result={selected.result} />
+            ) : selected.status === "error" ? (
+              <p className="text-sm text-destructive whitespace-pre-wrap">{selected.error ?? "Run failed with no result."}</p>
+            ) : (
+              <p className="text-sm text-muted-foreground">This run produced no results ({selected.status}).</p>
+            )}
           </div>
         ) : null}
       </div>
