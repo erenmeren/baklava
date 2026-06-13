@@ -27,22 +27,21 @@ export function TechGrid() {
     let cancelled = false;
     const load = async () => {
       try {
-        const res = await fetch("/api/connections", { cache: "no-store" });
-        if (!res.ok) return;
-        const data = (await res.json()) as ConnectionsResponse;
+        const [connRes, ltRes] = await Promise.all([
+          fetch("/api/connections", { cache: "no-store" }).catch(() => null),
+          fetch("/api/loadtest", { cache: "no-store" }).catch(() => null),
+        ]);
         if (cancelled) return;
         const next: Record<string, number> = {};
-        for (const c of data.connections) {
-          next[c.tech] = (next[c.tech] ?? 0) + 1;
-        }
-        try {
-          const ltRes = await fetch("/api/loadtest", { cache: "no-store" });
-          if (ltRes.ok) {
-            const ltData = (await ltRes.json()) as { loadtests: unknown[] };
-            next.loadtest = ltData.loadtests.length;
+        if (connRes?.ok) {
+          const data = (await connRes.json()) as ConnectionsResponse;
+          for (const c of data.connections) {
+            next[c.tech] = (next[c.tech] ?? 0) + 1;
           }
-        } catch {
-          // ignore
+        }
+        if (ltRes?.ok) {
+          const ltData = (await ltRes.json()) as { loadtests: unknown[] };
+          next.loadtest = ltData.loadtests.length;
         }
         setCounts(next);
       } catch {
@@ -175,7 +174,7 @@ export function TechGrid() {
             <button
               key={tech.id}
               type="button"
-              onClick={() => (tech.id === "loadtest" ? setLoadtestOpen(true) : setOpenTech(tech))}
+              onClick={() => (tech.kind === "tool" ? setLoadtestOpen(true) : setOpenTech(tech))}
               aria-label={`Open ${tech.name} connections`}
               className="rounded-xl text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
             >

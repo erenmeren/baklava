@@ -29,6 +29,8 @@ export interface TechMeta {
   /** Tailwind gradient classes — used by tech page / workspace shells */
   color: string;
   status: "available" | "coming-soon";
+  /** "tool" entries are standalone tools (no connection record); absent means "connection" */
+  kind?: "connection" | "tool";
 }
 
 export const TECH_CATALOG: TechMeta[] = [
@@ -144,6 +146,7 @@ export const TECH_CATALOG: TechMeta[] = [
     category: "Testing",
     color: "from-amber-400 to-orange-600",
     status: "available",
+    kind: "tool",
   },
 ];
 

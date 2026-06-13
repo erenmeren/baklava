@@ -12,7 +12,8 @@ export function parseWorkspacePath(
   const m = pathname?.match(/^\/([^/]+)\/([^/]+)/);
   if (!m) return null;
   const [, seg, id] = m;
-  return getTech(seg) ? { tech: seg as TechId, id } : null;
+  const meta = getTech(seg);
+  return meta && meta.kind !== "tool" ? { tech: seg as TechId, id } : null;
 }
 
 /** The initial section a workspace tab opens at, per tech. Empty = the
