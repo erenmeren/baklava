@@ -16,6 +16,7 @@ import {
 import { toast } from "sonner";
 import { Loader2, Hammer } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { SseFrameParser } from "@/lib/sse-client";
 
 const SAMPLE_DOCKERFILE = `FROM alpine:3.20
 RUN apk add --no-cache curl
@@ -89,42 +90,26 @@ export function BuildImageDialog({
       }
       const reader = res.body.getReader();
       const dec = new TextDecoder();
-      let buf = "";
+      const parser = new SseFrameParser();
       while (true) {
         const { value, done: streamDone } = await reader.read();
         if (streamDone) break;
-        buf += dec.decode(value, { stream: true });
-        let sep: number;
-        while ((sep = buf.indexOf("\n\n")) >= 0) {
-          const block = buf.slice(0, sep);
-          buf = buf.slice(sep + 2);
-          const lines = block.split("\n");
-          let event = "message";
-          let data = "";
-          for (const ln of lines) {
-            if (ln.startsWith("event:")) event = ln.slice(6).trim();
-            else if (ln.startsWith("data:")) data = ln.slice(5).trim();
-          }
-          if (!data) continue;
-          try {
-            const parsed = JSON.parse(data);
-            if (event === "progress") {
-              const stream = parsed.stream || parsed.status;
-              if (stream) {
-                const text = String(stream).replace(/\n+$/, "");
-                if (text) setLogs((prev) => [...prev, text]);
-              }
-            } else if (event === "done") {
-              setDone(true);
-              setBuilding(false);
-              toast.success("Image built", { description: tag.trim() });
-              onBuilt();
-            } else if (event === "error") {
-              setError(parsed.message || "build failed");
-              setBuilding(false);
+        for (const frame of parser.push(dec.decode(value, { stream: true }))) {
+          const parsed = frame.data as Record<string, string>;
+          if (frame.event === "progress") {
+            const stream = parsed.stream || parsed.status;
+            if (stream) {
+              const text = String(stream).replace(/\n+$/, "");
+              if (text) setLogs((prev) => [...prev, text]);
             }
-          } catch {
-            // ignore
+          } else if (frame.event === "done") {
+            setDone(true);
+            setBuilding(false);
+            toast.success("Image built", { description: tag.trim() });
+            onBuilt();
+          } else if (frame.event === "error") {
+            setError(parsed.message || "build failed");
+            setBuilding(false);
           }
         }
       }

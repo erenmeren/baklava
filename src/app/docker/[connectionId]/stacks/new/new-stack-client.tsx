@@ -19,6 +19,7 @@ import {
   ShieldAlert,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { SseFrameParser } from "@/lib/sse-client";
 
 const SAMPLE_COMPOSE = `services:
   web:
@@ -161,64 +162,48 @@ export function NewStackClient({ connectionId }: Props) {
       }
       const reader = res.body.getReader();
       const dec = new TextDecoder();
-      let buf = "";
+      const parser = new SseFrameParser();
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
-        buf += dec.decode(value, { stream: true });
-        let sep: number;
-        while ((sep = buf.indexOf("\n\n")) >= 0) {
-          const block = buf.slice(0, sep);
-          buf = buf.slice(sep + 2);
-          const lines = block.split("\n");
-          let event = "message";
-          let data = "";
-          for (const ln of lines) {
-            if (ln.startsWith("event:")) event = ln.slice(6).trim();
-            else if (ln.startsWith("data:")) data = ln.slice(5).trim();
-          }
-          if (!data) continue;
-          try {
-            const parsed = JSON.parse(data);
-            if (event === "phase") {
-              setPhase(parsed.phase);
-              setLogs((prev) => [...prev, `· phase: ${parsed.phase}`]);
-              if (parsed.phase === "done") {
-                setDeployDone(true);
-                setDeploying(false);
-                toast.success(`Stack ${name.trim()} deployed`);
-              }
-            } else if (event === "log") {
-              setLogs((prev) => [
-                ...prev,
-                `${parsed.level === "warn" ? "! " : "  "}${parsed.message}`,
-              ]);
-            } else if (event === "service") {
-              setServiceStatuses((prev) => {
-                const others = prev.filter((s) => s.service !== parsed.service);
-                return [
-                  ...others,
-                  { service: parsed.service, status: parsed.status },
-                ];
-              });
-              setLogs((prev) => [
-                ...prev,
-                `  ${parsed.service}: ${parsed.status}`,
-              ]);
-            } else if (event === "error") {
-              setDeployError(parsed.message || "deploy failed");
+        for (const frame of parser.push(dec.decode(value, { stream: true }))) {
+          const parsed = frame.data as Record<string, string>;
+          if (frame.event === "phase") {
+            setPhase(parsed.phase);
+            setLogs((prev) => [...prev, `· phase: ${parsed.phase}`]);
+            if (parsed.phase === "done") {
+              setDeployDone(true);
               setDeploying(false);
-              setLogs((prev) => [...prev, `× ${parsed.message}`]);
+              toast.success(`Stack ${name.trim()} deployed`);
             }
-            // Auto-scroll log
-            requestAnimationFrame(() => {
-              if (logRef.current) {
-                logRef.current.scrollTop = logRef.current.scrollHeight;
-              }
+          } else if (frame.event === "log") {
+            setLogs((prev) => [
+              ...prev,
+              `${parsed.level === "warn" ? "! " : "  "}${parsed.message}`,
+            ]);
+          } else if (frame.event === "service") {
+            setServiceStatuses((prev) => {
+              const others = prev.filter((s) => s.service !== parsed.service);
+              return [
+                ...others,
+                { service: parsed.service, status: parsed.status },
+              ];
             });
-          } catch {
-            // ignore
+            setLogs((prev) => [
+              ...prev,
+              `  ${parsed.service}: ${parsed.status}`,
+            ]);
+          } else if (frame.event === "error") {
+            setDeployError(parsed.message || "deploy failed");
+            setDeploying(false);
+            setLogs((prev) => [...prev, `× ${parsed.message}`]);
           }
+          // Auto-scroll log
+          requestAnimationFrame(() => {
+            if (logRef.current) {
+              logRef.current.scrollTop = logRef.current.scrollHeight;
+            }
+          });
         }
       }
     } catch (e) {
