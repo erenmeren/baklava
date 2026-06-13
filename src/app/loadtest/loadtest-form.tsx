@@ -15,6 +15,7 @@ import {
   emptyFormState,
   emptyRequest,
   toFormState,
+  validateFormState,
   type FormState,
   type RequestForm,
 } from "./form-serialize";
@@ -42,6 +43,8 @@ export function LoadTestForm({ initial, onSaved }: { initial?: PublicLoadTest; o
     });
 
   const save = async () => {
+    const validationError = validateFormState(state);
+    if (validationError) { setError(validationError); return; }
     setSaving(true);
     setError(null);
     try {

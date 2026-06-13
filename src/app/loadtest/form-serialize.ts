@@ -126,6 +126,26 @@ export function buildSavedConfig(s: FormState): SavedLoadTestConfig {
   };
 }
 
+export function validateFormState(s: FormState): string | null {
+  if (!s.name.trim()) return "Test name is required.";
+  if (!s.target.baseUrl.trim()) return "Base URL is required.";
+  if (s.requests.some((r) => !r.name.trim())) return "Every request needs a name.";
+  const numOk = (v: string) => v.trim() !== "" && !Number.isNaN(Number(v));
+  const p = s.profile;
+  const reqNums: string[] =
+    p.type === "constant" ? [p.vus]
+    : p.type === "baseline" || p.type === "constantRate" ? [p.rate, p.preAllocatedVUs]
+    : p.type === "breakpoint" ? [p.maxRate, p.preAllocatedVUs]
+    : p.type === "ramping" ? [p.startVUs, ...p.stages.map((x) => x.target)]
+    : [p.startRate, p.preAllocatedVUs, ...p.stages.map((x) => x.target)];
+  if (reqNums.some((n) => !numOk(n))) return "All profile numeric fields must be valid numbers.";
+  const durs: string[] =
+    p.type === "constant" || p.type === "baseline" || p.type === "constantRate" || p.type === "breakpoint" ? [p.duration]
+    : p.stages.map((x) => x.duration);
+  if (durs.some((d) => !d.trim())) return "All durations are required.";
+  return null;
+}
+
 export function toFormState(initial: PublicLoadTest): FormState {
   const c = initial.config;
   // Secrets arrive masked from the API; clear them so edit mode submits blank
