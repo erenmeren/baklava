@@ -120,7 +120,7 @@ export function RequestCard({
             className="text-xs md:hidden"
           />
 
-          <Tabs value={tab} onValueChange={setTab}>
+          <Tabs value={bodyless && tab === "body" ? "headers" : tab} onValueChange={setTab}>
             <TabsList>
               <TabsTrigger value="headers">Headers</TabsTrigger>
               <TabsTrigger value="body" disabled={bodyless}>Body</TabsTrigger>

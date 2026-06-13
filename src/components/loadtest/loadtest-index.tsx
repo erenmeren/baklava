@@ -4,6 +4,16 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Card } from "@/components/ui/card";
 import { Button, buttonVariants } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Plus, Trash2, Play, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { StatusPill } from "@/components/loadtest/status-pill";
@@ -20,6 +30,8 @@ function methodMix(t: PublicLoadTest): string {
 export function LoadTestIndex() {
   const [tests, setTests] = useState<PublicLoadTest[]>([]);
   const [loading, setLoading] = useState(true);
+  const [confirm, setConfirm] = useState<PublicLoadTest | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -37,13 +49,20 @@ export function LoadTestIndex() {
     };
   }, []);
 
-  const remove = async (id: string) => {
-    const res = await fetch(`/api/loadtest/${id}`, { method: "DELETE" });
-    if (res.ok) {
-      setTests((t) => t.filter((x) => x.id !== id));
-      toast.success("Test deleted");
-    } else {
-      toast.error("Delete failed");
+  const remove = async () => {
+    if (!confirm) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/loadtest/${confirm.id}`, { method: "DELETE" });
+      if (res.ok) {
+        setTests((t) => t.filter((x) => x.id !== confirm.id));
+        toast.success("Test deleted");
+        setConfirm(null);
+      } else {
+        toast.error("Delete failed");
+      }
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -66,7 +85,7 @@ export function LoadTestIndex() {
         <p className="text-sm text-muted-foreground">Loading…</p>
       ) : tests.length === 0 ? (
         <Card className="p-10 text-center text-sm text-muted-foreground">
-          No saved tests yet —{" "}
+          No saved tests yet — click{" "}
           <span className="font-medium text-foreground">New test</span> to add one.
         </Card>
       ) : (
@@ -111,7 +130,7 @@ export function LoadTestIndex() {
                 <Button
                   size="icon"
                   variant="ghost"
-                  onClick={() => remove(t.id)}
+                  onClick={() => setConfirm(t)}
                   aria-label="Delete test"
                 >
                   <Trash2 className="size-3.5" />
@@ -121,6 +140,23 @@ export function LoadTestIndex() {
           ))}
         </div>
       )}
+
+      <AlertDialog open={!!confirm} onOpenChange={(o) => { if (!o) setConfirm(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this load test?</AlertDialogTitle>
+            <AlertDialogDescription>
+              <span className="font-medium text-foreground">{confirm?.name}</span> and its run history will be permanently removed.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={remove} disabled={deleting}>
+              {deleting ? "Deleting…" : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
