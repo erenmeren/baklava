@@ -91,6 +91,7 @@ export class K6DockerExecutor implements Executor {
 
       let output = "";
       let lineBuf = "";
+      let lastEmitted = "";
       const emitLines = (text: string) => {
         lineBuf += text;
         const parts = lineBuf.split(/\r\n|\r|\n/);
@@ -99,7 +100,11 @@ export class K6DockerExecutor implements Executor {
           const clean = raw.replace(ANSI_RE, "").trim();
           // Skip the handleSummary marker line (a big JSON blob) — it's parsed
           // from `output`, not meant for the user-facing progress log.
-          if (clean && !clean.includes(SUMMARY_START)) onProgress({ line: clean });
+          // Also skip consecutive duplicate redraws from k6's TTY progress bar.
+          if (clean && clean !== lastEmitted && !clean.includes(SUMMARY_START)) {
+            lastEmitted = clean;
+            onProgress({ line: clean });
+          }
         }
       };
 
