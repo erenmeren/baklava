@@ -16,15 +16,19 @@ export class DriverNotInstalledError extends Error {
   }
 }
 
-/** The only operation the contract guarantees. Tech-specific operations live as
- *  additional exports from the module's driver file and are imported directly. */
+/** Dashboard health probe — wraps the existing per-tech `*Body` functions. */
+export type HealthProbe = (conn: ConnectionRecord) => Promise<unknown>;
+
+/** Server-only driver surface. Touches Node-only driver packages, so it lives in
+ *  `<tech>/index.ts` (marked `server-only`) and is reached only via the server
+ *  `registry.ts` — never from client code. Tech-specific operations (runQuery,
+ *  listContainers…) are additional exports from the driver file, imported directly. */
 export interface TechDriver<C = unknown> {
   /** Probe the connection. Throws on failure; resolves with tech-specific probe info. */
   probe(config: C): Promise<unknown>;
+  /** Dashboard health probe (optional). Server-only. */
+  health?: HealthProbe;
 }
-
-/** Dashboard health probe — wraps the existing per-tech `*Body` functions. */
-export type HealthProbe = (conn: ConnectionRecord) => Promise<unknown>;
 
 /** Declarative feature flags so the UI can adapt generically instead of using
  *  per-tech conditionals. Absent flag = false. Forward-looking flags
@@ -47,7 +51,11 @@ export interface TechCapabilities {
   health?: boolean;
 }
 
-export interface TechModule<C = unknown> {
+/** Client-safe metadata for a technology. Contains NO driver code, so it is safe
+ *  to import from client components (home grid, command palette, connection
+ *  sheet…). Lives in `<tech>/meta.ts` and is collected by the client-safe
+ *  `meta-registry.ts`. */
+export interface TechModuleMeta<C = unknown> {
   id: TechId;
   catalog: TechMeta;
   config: {
@@ -55,12 +63,9 @@ export interface TechModule<C = unknown> {
     secretKeys: string[];
     defaults?: Partial<C>;
   };
-  driver: TechDriver<C>;
-  /** One-line connection summary for lists/cards. Becomes the source for
-   *  connectionSummaries in summaries.ts once the registry is wired. */
+  /** One-line connection summary for lists/cards. Source for connectionSummaries. */
   summary: (r: ConnectionRecord) => string;
-  /** Initial workspace section the tab opens at (""=workspace root). Becomes the
-   *  source for FIRST_PAGE in first-page.ts once the registry is wired. */
+  /** Initial workspace section the tab opens at (""=workspace root). Source for FIRST_PAGE. */
   firstPage: string;
   /** npm packages the driver lazy-imports and may be absent at runtime. When
    *  missing, the driver throws DriverNotInstalledError. A package can appear in
@@ -70,7 +75,14 @@ export interface TechModule<C = unknown> {
    *  (native/Node-only deps Turbopack must not bundle). The serverExternalPackages
    *  list is generated from the union of these across all modules. */
   serverPackages?: string[];
-  health?: HealthProbe;
+  /** Command-palette object provider (client-safe — does fetch()). */
   commandObjects?: ObjectProvider;
   capabilities?: TechCapabilities;
+}
+
+/** Full server-side module: client-safe metadata plus the server-only driver.
+ *  Lives in `<tech>/index.ts` (marked `server-only`) and is collected by the
+ *  server `registry.ts`. */
+export interface TechModule<C = unknown> extends TechModuleMeta<C> {
+  driver: TechDriver<C>;
 }
