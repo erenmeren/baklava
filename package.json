@@ -38,7 +38,6 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "fast-xml-parser": "^5.8.0",
-    "ioredis": "^5.11.0",
     "js-yaml": "^4.1.1",
     "kafkajs": "^2.2.4",
     "lucide-react": "^1.14.0",
@@ -57,6 +56,7 @@
   },
   "optionalDependencies": {
     "dockerode": "^5.0.0",
+    "ioredis": "^5.11.0",
     "mysql2": "^3.22.4",
     "pg": "^8.20.0"
   },

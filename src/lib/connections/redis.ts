@@ -1,7 +1,17 @@
 import "server-only";
 import { PassThrough } from "node:stream";
-import Redis, { Cluster } from "ioredis";
+import type { Redis, Cluster } from "ioredis"; // type-only — erased at build, safe when ioredis absent
 import type { RedisConfig } from "./types";
+import { DriverNotInstalledError } from "@/techs/contract";
+
+let _ioredisMod: typeof import("ioredis") | null = null;
+async function getIoredis(): Promise<typeof import("ioredis")> {
+  try {
+    return (_ioredisMod ??= await import("ioredis"));
+  } catch {
+    throw new DriverNotInstalledError("redis", "ioredis");
+  }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Client cache
@@ -55,13 +65,14 @@ function parseSeedNodes(spec: string): { host: string; port: number }[] {
     });
 }
 
-function buildClient(cfg: RedisConfig): { client: Client; isCluster: boolean } {
+async function buildClient(cfg: RedisConfig): Promise<{ client: Client; isCluster: boolean }> {
+  const { default: RedisConstructor, Cluster: ClusterConstructor } = await getIoredis();
   if (cfg.mode === "cluster") {
     const seeds = parseSeedNodes(cfg.nodes ?? "");
     if (seeds.length === 0) {
       throw new Error("Cluster mode requires at least one seed node");
     }
-    const client = new Cluster(seeds, {
+    const client = new ClusterConstructor(seeds, {
       redisOptions: {
         username: cfg.username || undefined,
         password: cfg.password || undefined,
@@ -75,7 +86,7 @@ function buildClient(cfg: RedisConfig): { client: Client; isCluster: boolean } {
     });
     return { client, isCluster: true };
   }
-  const client = new Redis({
+  const client = new RedisConstructor({
     host: cfg.host || "127.0.0.1",
     port: cfg.port ?? 6379,
     username: cfg.username || undefined,
@@ -89,7 +100,7 @@ function buildClient(cfg: RedisConfig): { client: Client; isCluster: boolean } {
   return { client, isCluster: false };
 }
 
-function bundleFor(connectionId: string, cfg: RedisConfig): ClientBundle {
+async function bundleFor(connectionId: string, cfg: RedisConfig): Promise<ClientBundle> {
   const cache = getCache();
   const hash = hashConfig(cfg);
   const cached = cache.get(connectionId);
@@ -101,7 +112,7 @@ function bundleFor(connectionId: string, cfg: RedisConfig): ClientBundle {
       // ignore
     }
   }
-  const { client, isCluster } = buildClient(cfg);
+  const { client, isCluster } = await buildClient(cfg);
   // Suppress unhandled error noise — every command handler already inspects
   // promise rejections and surfaces them through formatError.
   client.on("error", () => {});
@@ -198,7 +209,7 @@ export async function probe(
   connectionId: string,
   cfg: RedisConfig,
 ): Promise<ProbeResult> {
-  const b = bundleFor(connectionId, cfg);
+  const b = await bundleFor(connectionId, cfg);
   await ensureConnected(b.client);
   // Cluster proxies CLIENT/INFO/etc. across nodes; for probe we just hit the
   // first reachable node.
@@ -244,7 +255,7 @@ export async function info(
   cfg: RedisConfig,
   section?: string,
 ): Promise<Record<string, Record<string, string>>> {
-  const b = bundleFor(connectionId, cfg);
+  const b = await bundleFor(connectionId, cfg);
   await ensureConnected(b.client);
   const raw = section
     ? await (b.client as Redis).info(section)
@@ -261,7 +272,7 @@ export async function listKeys(
   cfg: RedisConfig,
   options: { pattern?: string; db?: number } = {},
 ): Promise<KeysPage> {
-  const b = bundleFor(connectionId, cfg);
+  const b = await bundleFor(connectionId, cfg);
   await ensureConnected(b.client);
   const pattern = options.pattern?.trim() || "*";
   const db = options.db ?? cfg.db ?? 0;
@@ -414,7 +425,7 @@ export async function getKey(
   rawKey: string,
   db?: number,
 ): Promise<KeyDetail> {
-  const b = bundleFor(connectionId, cfg);
+  const b = await bundleFor(connectionId, cfg);
   await ensureConnected(b.client);
   if (!b.isCluster && typeof db === "number") {
     await (b.client as Redis).select(db);
@@ -516,7 +527,7 @@ export async function delKey(
   key: string,
   db?: number,
 ): Promise<void> {
-  const b = bundleFor(connectionId, cfg);
+  const b = await bundleFor(connectionId, cfg);
   await ensureConnected(b.client);
   if (!b.isCluster && typeof db === "number") {
     await (b.client as Redis).select(db);
@@ -531,7 +542,7 @@ export async function setTtl(
   ttlSeconds: number,
   db?: number,
 ): Promise<void> {
-  const b = bundleFor(connectionId, cfg);
+  const b = await bundleFor(connectionId, cfg);
   await ensureConnected(b.client);
   if (!b.isCluster && typeof db === "number") {
     await (b.client as Redis).select(db);
@@ -550,7 +561,7 @@ export async function setStringValue(
   value: string,
   db?: number,
 ): Promise<void> {
-  const b = bundleFor(connectionId, cfg);
+  const b = await bundleFor(connectionId, cfg);
   await ensureConnected(b.client);
   if (!b.isCluster && typeof db === "number") {
     await (b.client as Redis).select(db);
@@ -576,7 +587,7 @@ export async function runCommand(
       `${head} blocks the connection — use the dedicated panel instead`,
     );
   }
-  const b = bundleFor(connectionId, cfg);
+  const b = await bundleFor(connectionId, cfg);
   await ensureConnected(b.client);
   return (b.client as Redis).call(head, ...args.slice(1));
 }
@@ -600,7 +611,7 @@ export async function listClients(
   connectionId: string,
   cfg: RedisConfig,
 ): Promise<ClientInfo[]> {
-  const b = bundleFor(connectionId, cfg);
+  const b = await bundleFor(connectionId, cfg);
   await ensureConnected(b.client);
   const raw = (await (b.client as Redis).call("CLIENT", "LIST")) as string;
   return raw
@@ -640,7 +651,7 @@ export async function getSlowlog(
   cfg: RedisConfig,
   count = 64,
 ): Promise<SlowEntry[]> {
-  const b = bundleFor(connectionId, cfg);
+  const b = await bundleFor(connectionId, cfg);
   await ensureConnected(b.client);
   const raw = (await (b.client as Redis).call("SLOWLOG", "GET", count)) as unknown[];
   return raw.map((entry) => {
@@ -678,7 +689,7 @@ export async function getClusterNodes(
   connectionId: string,
   cfg: RedisConfig,
 ): Promise<ClusterNode[]> {
-  const b = bundleFor(connectionId, cfg);
+  const b = await bundleFor(connectionId, cfg);
   if (!b.isCluster) return [];
   await ensureConnected(b.client);
   // Use one of the cluster nodes to issue CLUSTER NODES.
@@ -726,7 +737,7 @@ export async function getAcl(
   connectionId: string,
   cfg: RedisConfig,
 ): Promise<AclSummary> {
-  const b = bundleFor(connectionId, cfg);
+  const b = await bundleFor(connectionId, cfg);
   await ensureConnected(b.client);
   const whoami = ((await (b.client as Redis)
     .call("ACL", "WHOAMI")
@@ -755,17 +766,33 @@ export function subscribePubSub(
 ): PubSubStream {
   // Pub/sub is connection-blocking on ioredis, so we open a *dedicated*
   // client (NOT the cached one) and tear it down with the stream.
-  const { client } = buildClient(cfg);
   const output = new PassThrough({ objectMode: false });
-  client.on("error", (err: Error) => {
-    output.write(
-      JSON.stringify({ kind: "error", message: err.message }) + "\n",
-    );
-  });
   const channels = options.channels ?? [];
   const patterns = options.patterns ?? [];
+  // clientRef is set inside the IIFE once the module is loaded; close() uses it.
+  let clientRef: Client | null = null;
   (async () => {
     try {
+      const { client } = await buildClient(cfg);
+      clientRef = client;
+      client.on("error", (err: Error) => {
+        output.write(
+          JSON.stringify({ kind: "error", message: err.message }) + "\n",
+        );
+      });
+      client.on("message", (channel: string, message: string) => {
+        output.write(
+          JSON.stringify({ kind: "message", channel, message }) + "\n",
+        );
+      });
+      client.on(
+        "pmessage",
+        (pattern: string, channel: string, message: string) => {
+          output.write(
+            JSON.stringify({ kind: "pmessage", pattern, channel, message }) + "\n",
+          );
+        },
+      );
       await client.connect().catch((err: Error) => {
         if (!err.message?.includes("already")) throw err;
       });
@@ -784,24 +811,11 @@ export function subscribePubSub(
       );
     }
   })();
-  client.on("message", (channel: string, message: string) => {
-    output.write(
-      JSON.stringify({ kind: "message", channel, message }) + "\n",
-    );
-  });
-  client.on(
-    "pmessage",
-    (pattern: string, channel: string, message: string) => {
-      output.write(
-        JSON.stringify({ kind: "pmessage", pattern, channel, message }) + "\n",
-      );
-    },
-  );
   return {
     output,
     close: () => {
       try {
-        client.disconnect();
+        clientRef?.disconnect();
       } catch {
         // ignore
       }
@@ -824,7 +838,7 @@ export interface MonitorStream {
 }
 
 export async function startMonitor(cfg: RedisConfig): Promise<MonitorStream> {
-  const { client } = buildClient(cfg);
+  const { client } = await buildClient(cfg);
   const output = new PassThrough({ objectMode: false });
   client.on("error", (err: Error) => {
     output.write(
