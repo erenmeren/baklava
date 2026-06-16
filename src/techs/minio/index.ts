@@ -3,6 +3,7 @@ import type { TechModule } from "@/techs/contract";
 import type { MinioConfig } from "@/lib/connections/types";
 import { minioClientFor, dropMinioClient } from "@/lib/connections/minio";
 import { probe as s3Probe } from "@/lib/connections/s3";
+import { blobBody } from "@/lib/connections/health";
 import { minioMeta } from "./meta";
 
 export const minio: TechModule<MinioConfig> = {
@@ -17,5 +18,6 @@ export const minio: TechModule<MinioConfig> = {
         dropMinioClient(id);
       }
     },
+    health: blobBody,
   },
 };

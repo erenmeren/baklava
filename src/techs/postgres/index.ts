@@ -2,9 +2,10 @@
 import type { TechModule } from "@/techs/contract";
 import type { PostgresConfig } from "@/lib/connections/types";
 import { probePostgres } from "@/lib/connections/postgres";
+import { postgresBody } from "@/lib/connections/health";
 import { postgresMeta } from "./meta";
 
 export const postgres: TechModule<PostgresConfig> = {
   ...postgresMeta,
-  driver: { probe: (c) => probePostgres(c) },
+  driver: { probe: (c) => probePostgres(c), health: postgresBody },
 };

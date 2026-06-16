@@ -3,6 +3,7 @@ import type { TechModule } from "@/techs/contract";
 import type { R2Config } from "@/lib/connections/types";
 import { r2ClientFor, dropR2Client } from "@/lib/connections/r2";
 import { probe as s3Probe } from "@/lib/connections/s3";
+import { blobBody } from "@/lib/connections/health";
 import { r2Meta } from "./meta";
 
 export const r2: TechModule<R2Config> = {
@@ -17,5 +18,6 @@ export const r2: TechModule<R2Config> = {
         dropR2Client(id);
       }
     },
+    health: blobBody,
   },
 };

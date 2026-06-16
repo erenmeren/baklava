@@ -2,9 +2,10 @@
 import type { TechModule } from "@/techs/contract";
 import type { SqlServerConfig } from "@/lib/connections/types";
 import { probeSqlServer } from "@/lib/connections/sqlserver";
+import { sqlserverBody } from "@/lib/connections/health";
 import { sqlserverMeta } from "./meta";
 
 export const sqlserver: TechModule<SqlServerConfig> = {
   ...sqlserverMeta,
-  driver: { probe: (c) => probeSqlServer(c) },
+  driver: { probe: (c) => probeSqlServer(c), health: sqlserverBody },
 };

@@ -2,6 +2,7 @@
 import type { TechModule } from "@/techs/contract";
 import type { KubernetesConfig } from "@/lib/connections/types";
 import { probe as probeKubernetes, dropKubernetesClient } from "@/lib/connections/kubernetes";
+import { kubernetesBody } from "@/lib/connections/health";
 import { kubernetesMeta } from "./meta";
 
 export const kubernetes: TechModule<KubernetesConfig> = {
@@ -15,5 +16,6 @@ export const kubernetes: TechModule<KubernetesConfig> = {
         dropKubernetesClient(id);
       }
     },
+    health: kubernetesBody,
   },
 };

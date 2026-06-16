@@ -3,6 +3,7 @@ import type { TechModule } from "@/techs/contract";
 import type { S3Config } from "@/lib/connections/types";
 import { s3AwsClientFor, dropS3Client } from "@/lib/connections/s3-aws";
 import { probe as s3Probe } from "@/lib/connections/s3";
+import { blobBody } from "@/lib/connections/health";
 import { s3Meta } from "./meta";
 
 export const s3: TechModule<S3Config> = {
@@ -17,5 +18,6 @@ export const s3: TechModule<S3Config> = {
         dropS3Client(id);
       }
     },
+    health: blobBody,
   },
 };

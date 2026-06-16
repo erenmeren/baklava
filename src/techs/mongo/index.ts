@@ -2,6 +2,7 @@
 import type { TechModule } from "@/techs/contract";
 import type { MongoConfig } from "@/lib/connections/types";
 import { probe as probeMongo, dropMongoClient } from "@/lib/connections/mongo";
+import { mongoBody } from "@/lib/connections/health";
 import { mongoMeta } from "./meta";
 
 export const mongo: TechModule<MongoConfig> = {
@@ -15,5 +16,6 @@ export const mongo: TechModule<MongoConfig> = {
         dropMongoClient(id);
       }
     },
+    health: mongoBody,
   },
 };

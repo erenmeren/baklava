@@ -2,9 +2,10 @@
 import type { TechModule } from "@/techs/contract";
 import type { DockerConfig } from "@/lib/connections/types";
 import { pingDocker } from "@/lib/connections/docker";
+import { dockerBody } from "@/lib/connections/health";
 import { dockerMeta } from "./meta";
 
 export const docker: TechModule<DockerConfig> = {
   ...dockerMeta,
-  driver: { probe: (c) => pingDocker(c) },
+  driver: { probe: (c) => pingDocker(c), health: dockerBody },
 };

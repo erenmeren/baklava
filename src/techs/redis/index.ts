@@ -2,6 +2,7 @@
 import type { TechModule } from "@/techs/contract";
 import type { RedisConfig } from "@/lib/connections/types";
 import { probe as probeRedis, dropRedisClient } from "@/lib/connections/redis";
+import { redisBody } from "@/lib/connections/health";
 import { redisMeta } from "./meta";
 
 export const redis: TechModule<RedisConfig> = {
@@ -15,5 +16,6 @@ export const redis: TechModule<RedisConfig> = {
         dropRedisClient(id);
       }
     },
+    health: redisBody,
   },
 };
