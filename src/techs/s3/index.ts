@@ -1,33 +1,12 @@
-import { z } from "zod";
+// SERVER ONLY — imports driver code. Client code must import from ./meta or @/techs/meta-registry, never this file.
 import type { TechModule } from "@/techs/contract";
-import type { S3Config, ConnectionRecord } from "@/lib/connections/types";
+import type { S3Config } from "@/lib/connections/types";
 import { s3AwsClientFor, dropS3Client } from "@/lib/connections/s3-aws";
 import { probe as s3Probe } from "@/lib/connections/s3";
-
-const schema = z.object({
-  region: z.string(),
-  accessKeyId: z.string(),
-  secretAccessKey: z.string(),
-  sessionToken: z.string().optional(),
-  bucket: z.string().optional(),
-});
+import { s3Meta } from "./meta";
 
 export const s3: TechModule<S3Config> = {
-  id: "s3",
-  catalog: {
-    id: "s3",
-    name: "Amazon S3",
-    tagline: "Object storage",
-    description:
-      "AWS S3 object browser: buckets, prefix navigation, upload/download, presigned links, CORS and lifecycle.",
-    category: "Storage",
-    color: "from-green-500 to-teal-600",
-    status: "available",
-  },
-  config: {
-    schema: schema as unknown as z.ZodType<S3Config>,
-    secretKeys: ["secretAccessKey", "sessionToken"],
-  },
+  ...s3Meta,
   driver: {
     probe: async (c: S3Config) => {
       const id = `__probe_${Math.random().toString(36).slice(2)}`;
@@ -39,16 +18,4 @@ export const s3: TechModule<S3Config> = {
       }
     },
   },
-  summary: (r: ConnectionRecord) => {
-    const cfg = r.config as S3Config;
-    const bucket = cfg.bucket ? ` · ${cfg.bucket}` : "";
-    return `${cfg.accessKeyId}@s3.${cfg.region}${bucket}`;
-  },
-  firstPage: "",
-  optionalDeps: [
-    "@aws-sdk/client-s3",
-    "@aws-sdk/lib-storage",
-    "@aws-sdk/s3-request-presigner",
-  ],
-  capabilities: { browse: true, upload: true, health: true },
 };
