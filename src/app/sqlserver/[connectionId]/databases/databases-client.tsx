@@ -43,8 +43,8 @@ export function DatabasesClient({ connectionId }: Props) {
   const [showSystem, setShowSystem] = useState(false);
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({
-    key: "size",
-    dir: "desc",
+    key: "name",
+    dir: "asc",
   });
   const [loading, setLoading] = useState(false);
 

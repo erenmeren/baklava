@@ -264,8 +264,8 @@ async function fetchDatabaseStats(
     });
   }
 
-  // Sort by size desc for callers that want a quick top-N.
-  summaries.sort((a, b) => b.sizeBytes - a.sizeBytes);
+  // Return alphabetically by name (the query already ORDER BY d.name).
+  summaries.sort((a, b) => a.name.localeCompare(b.name));
   return summaries;
 }
 
