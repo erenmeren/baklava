@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { ConnectionRecord, ConnectionStatus, TechId } from "./types";
+import { TECH_META_LIST } from "@/techs/meta-registry";
 
 type AnyRecord = ConnectionRecord<unknown>;
 
@@ -149,17 +150,12 @@ export function updateStatus(
  * This lets the UI safely send the full config back without the user having
  * to re-type credentials. Status flips to "untested" — the next probe refreshes it.
  */
-const SECRET_KEYS = new Set([
-  "password",
-  "apiKey",
-  "serviceRoleKey",
-  "token",
-  "authToken",
-  "kubeconfigYaml",
-  "uri",
-  "secretAccessKey",
-  "secretKey",
-  "sessionToken",
+// Union of every module's secret keys, plus keys for techs not yet modelled
+// (kept so redaction behavior is unchanged). Redaction/merge stay key-name-based.
+const EXTRA_SECRET_KEYS = ["apiKey", "serviceRoleKey", "token", "authToken"];
+const SECRET_KEYS = new Set<string>([
+  ...TECH_META_LIST.flatMap((m) => m.config.secretKeys),
+  ...EXTRA_SECRET_KEYS,
 ]);
 
 function mergeConfig(
