@@ -151,11 +151,13 @@ export async function listDatabases(
   const b = await bundleFor(connectionId, cfg);
   const admin = b.client.db("admin").admin();
   const result = await admin.listDatabases();
-  return (result.databases ?? []).map((d) => ({
-    name: d.name,
-    sizeOnDisk: d.sizeOnDisk ?? 0,
-    empty: d.empty ?? false,
-  }));
+  return (result.databases ?? [])
+    .map((d) => ({
+      name: d.name,
+      sizeOnDisk: d.sizeOnDisk ?? 0,
+      empty: d.empty ?? false,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export async function listCollections(
