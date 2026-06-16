@@ -77,12 +77,22 @@ export default async function RootLayout({
                   aria-hidden
                 />
                 <ConnectionTabs />
-                <div className="flex items-center gap-1.5 pl-2 shrink-0">
-                  <DashboardTrigger />
+                <div className="flex items-center pl-3 shrink-0">
                   <PaletteTrigger />
-                  <AssistantTrigger />
-                  <SettingsTrigger />
-                  <ThemeToggle />
+                  <span
+                    className="self-center h-5 w-px bg-border/70 mx-2"
+                    aria-hidden
+                  />
+                  {/* Destinations read as one group */}
+                  <div className="flex items-center gap-0.5">
+                    <DashboardTrigger />
+                    <AssistantTrigger />
+                    <SettingsTrigger />
+                  </div>
+                  {/* Appearance is a preference, not a destination — detached */}
+                  <div className="ml-1.5">
+                    <ThemeToggle />
+                  </div>
                 </div>
               </div>
             </header>
