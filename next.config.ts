@@ -1,19 +1,8 @@
 import type { NextConfig } from "next";
+import { SERVER_EXTERNAL_PACKAGES } from "./src/techs/server-packages.generated";
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: [
-    "dockerode",
-    "ssh2",
-    "kafkajs",
-    "avsc",
-    "pg",
-    "mysql2",
-    "mssql",
-    "tedious",
-    "@kubernetes/client-node",
-    "ioredis",
-    "mongodb",
-  ],
+  serverExternalPackages: [...SERVER_EXTERNAL_PACKAGES],
 };
 
 export default nextConfig;
