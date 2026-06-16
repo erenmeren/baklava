@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { TechModule } from "@/techs/contract";
 import type { MongoConfig, ConnectionRecord } from "@/lib/connections/types";
-import { probe as probeMongo } from "@/lib/connections/mongo";
+import { probe as probeMongo, dropMongoClient } from "@/lib/connections/mongo";
 
 const schema = z.object({
   uri: z.string(),
@@ -21,7 +21,16 @@ export const mongo: TechModule<MongoConfig> = {
     status: "available",
   },
   config: { schema: schema as unknown as z.ZodType<MongoConfig>, secretKeys: ["uri"] },
-  driver: { probe: (c) => probeMongo("probe", c) },
+  driver: {
+    probe: async (c: MongoConfig) => {
+      const id = `__probe_${Math.random().toString(36).slice(2)}`;
+      try {
+        return await probeMongo(id, c);
+      } finally {
+        dropMongoClient(id);
+      }
+    },
+  },
   summary: (r: ConnectionRecord) => {
     const cfg = r.config as MongoConfig;
     const uri = cfg.uri ?? "";

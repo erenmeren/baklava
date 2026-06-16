@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { TechModule } from "@/techs/contract";
 import type { RedisConfig, ConnectionRecord } from "@/lib/connections/types";
-import { probe as probeRedis } from "@/lib/connections/redis";
+import { probe as probeRedis, dropRedisClient } from "@/lib/connections/redis";
 
 const schema = z.object({
   mode: z.enum(["single", "cluster"]),
@@ -27,7 +27,16 @@ export const redis: TechModule<RedisConfig> = {
     status: "available",
   },
   config: { schema: schema as unknown as z.ZodType<RedisConfig>, secretKeys: ["password"] },
-  driver: { probe: (c) => probeRedis("probe", c) },
+  driver: {
+    probe: async (c: RedisConfig) => {
+      const id = `__probe_${Math.random().toString(36).slice(2)}`;
+      try {
+        return await probeRedis(id, c);
+      } finally {
+        dropRedisClient(id);
+      }
+    },
+  },
   summary: (r: ConnectionRecord) => {
     const cfg = r.config as RedisConfig;
     const proto = cfg.tls ? "rediss" : "redis";

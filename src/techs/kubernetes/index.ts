@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { TechModule } from "@/techs/contract";
 import type { KubernetesConfig, ConnectionRecord } from "@/lib/connections/types";
-import { probe as probeKubernetes } from "@/lib/connections/kubernetes";
+import { probe as probeKubernetes, dropKubernetesClient } from "@/lib/connections/kubernetes";
 
 const schema = z.object({
   source: z.enum(["path", "inline"]),
@@ -24,7 +24,16 @@ export const kubernetes: TechModule<KubernetesConfig> = {
     status: "available",
   },
   config: { schema: schema as unknown as z.ZodType<KubernetesConfig>, secretKeys: ["kubeconfigYaml"] },
-  driver: { probe: (c) => probeKubernetes("probe", c) },
+  driver: {
+    probe: async (c: KubernetesConfig) => {
+      const id = `__probe_${Math.random().toString(36).slice(2)}`;
+      try {
+        return await probeKubernetes(id, c);
+      } finally {
+        dropKubernetesClient(id);
+      }
+    },
+  },
   summary: (r: ConnectionRecord) => {
     const cfg = r.config as KubernetesConfig;
     const where =
