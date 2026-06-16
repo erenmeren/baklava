@@ -1,3 +1,5 @@
+import { NextResponse } from "next/server";
+
 interface AggregateLike {
   errors?: unknown[];
 }
@@ -31,4 +33,11 @@ export function formatError(err: unknown): string {
     return err.name || "Unknown error";
   }
   return String(err);
+}
+
+/** 503 for a missing optional driver package, 500 otherwise. */
+export function errorResponse(err: unknown) {
+  const status =
+    err instanceof Error && err.name === "DriverNotInstalledError" ? 503 : 500;
+  return NextResponse.json({ error: formatError(err) }, { status });
 }

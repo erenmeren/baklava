@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { formatError } from "./errors";
+import { formatError, errorResponse } from "./errors";
+import { DriverNotInstalledError } from "@/techs/contract";
 
 describe("formatError", () => {
   it("returns the trimmed message for a normal Error", () => {
@@ -94,5 +95,22 @@ describe("formatError", () => {
   it("trims whitespace-only messages and falls through to name fallback", () => {
     const err = Object.assign(new Error("   "), { name: "Whitey" });
     expect(formatError(err)).toBe("Whitey");
+  });
+});
+
+describe("formatError + DriverNotInstalledError", () => {
+  it("returns the install-hint message", () => {
+    const msg = formatError(new DriverNotInstalledError("postgres", "pg"));
+    expect(msg).toContain("pg");
+    expect(msg).toContain("npm i pg");
+  });
+});
+
+describe("errorResponse", () => {
+  it("returns 503 for a missing driver, 500 otherwise", () => {
+    const r503 = errorResponse(new DriverNotInstalledError("postgres", "pg"));
+    expect(r503.status).toBe(503);
+    const r500 = errorResponse(new Error("boom"));
+    expect(r500.status).toBe(500);
   });
 });
