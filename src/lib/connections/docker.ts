@@ -1,15 +1,36 @@
-import Docker from "dockerode";
+import type Docker from "dockerode"; // type-only — erased at build, safe when dockerode absent
 import type { DockerConfig } from "./types";
+import { DriverNotInstalledError } from "@/techs/contract";
 
-export function createDockerClient(config: DockerConfig): Docker {
+// dockerode uses `module.exports = Dockerode` (CJS), so dynamic import() gives
+// the class directly (no .default indirection) under the interop rules that tsc
+// and Node use here.  We cache the constructor in a typed slot and cast once.
+type DockerConstructor = new (opts?: object) => Docker;
+let _dockerodeCtor: DockerConstructor | null = null;
+async function getDockerode(): Promise<DockerConstructor> {
+  try {
+    if (!_dockerodeCtor) {
+      const mod = await import("dockerode");
+      // Under CJS interop the module itself IS the constructor; some bundlers
+      // wrap it in {default:…} — handle both shapes.
+      _dockerodeCtor = ((mod as unknown as { default?: unknown }).default ?? mod) as DockerConstructor;
+    }
+    return _dockerodeCtor;
+  } catch {
+    throw new DriverNotInstalledError("docker", "dockerode");
+  }
+}
+
+export async function createDockerClient(config: DockerConfig): Promise<Docker> {
+  const Dockerode = await getDockerode();
   if (config.mode === "tcp") {
-    return new Docker({
+    return new Dockerode({
       host: config.host,
       port: config.port,
       protocol: config.protocol ?? "http",
     });
   }
-  return new Docker({
+  return new Dockerode({
     socketPath: config.socketPath || "/var/run/docker.sock",
   });
 }
@@ -20,7 +41,7 @@ export async function pingDocker(config: DockerConfig): Promise<{
   os: string;
   arch: string;
 }> {
-  const client = createDockerClient(config);
+  const client = await createDockerClient(config);
   const version = await client.version();
   return {
     version: version.Version,
@@ -45,7 +66,7 @@ export async function listContainers(
   config: DockerConfig,
   all: boolean
 ): Promise<ContainerSummary[]> {
-  const client = createDockerClient(config);
+  const client = await createDockerClient(config);
   const containers = await client.listContainers({ all });
   return containers.map((c) => ({
     id: c.Id,
@@ -73,7 +94,7 @@ export interface ImageSummary {
 }
 
 export async function listImages(config: DockerConfig): Promise<ImageSummary[]> {
-  const client = createDockerClient(config);
+  const client = await createDockerClient(config);
   const images = await client.listImages();
   return images.map((i) => ({
     id: i.Id,
@@ -93,7 +114,7 @@ export interface VolumeSummary {
 }
 
 export async function listVolumes(config: DockerConfig): Promise<VolumeSummary[]> {
-  const client = createDockerClient(config);
+  const client = await createDockerClient(config);
   const res = await client.listVolumes();
   return (res.Volumes || []).map((v) => {
     const created = (v as unknown as { CreatedAt?: string }).CreatedAt;
@@ -119,7 +140,7 @@ export interface NetworkSummary {
 export async function listNetworks(
   config: DockerConfig
 ): Promise<NetworkSummary[]> {
-  const client = createDockerClient(config);
+  const client = await createDockerClient(config);
   const networks = await client.listNetworks();
   return networks.map((n) => ({
     id: n.Id,
@@ -136,7 +157,7 @@ export async function containerAction(
   id: string,
   action: "start" | "stop" | "restart" | "remove" | "kill" | "pause" | "unpause"
 ): Promise<void> {
-  const client = createDockerClient(config);
+  const client = await createDockerClient(config);
   const container = client.getContainer(id);
   switch (action) {
     case "start":
@@ -167,7 +188,7 @@ export async function inspectContainer(
   config: DockerConfig,
   id: string
 ): Promise<unknown> {
-  const client = createDockerClient(config);
+  const client = await createDockerClient(config);
   return client.getContainer(id).inspect();
 }
 
@@ -184,7 +205,7 @@ export async function readContainerLogs(
 ): Promise<string> {
   const opts: ReadLogsOptions =
     typeof tailOrOpts === "number" ? { tail: tailOrOpts } : tailOrOpts;
-  const client = createDockerClient(config);
+  const client = await createDockerClient(config);
   const container = client.getContainer(id);
   const buf = (await container.logs({
     stdout: true,
@@ -221,7 +242,7 @@ export async function streamContainerLogs(
   onError: (err: unknown) => void,
   onEnd: () => void
 ): Promise<StreamLogsHandle> {
-  const client = createDockerClient(config);
+  const client = await createDockerClient(config);
   const container = client.getContainer(id);
   const stream = (await container.logs({
     stdout: true,
@@ -350,7 +371,7 @@ export async function createContainer(
   config: DockerConfig,
   input: CreateContainerInput
 ): Promise<CreateContainerResult> {
-  const client = createDockerClient(config);
+  const client = await createDockerClient(config);
   const exposed: Record<string, object> = {};
   const portBindings: Record<string, { HostPort: string }[]> = {};
   for (const p of input.ports ?? []) {
@@ -434,7 +455,7 @@ export async function readContainerStats(
   config: DockerConfig,
   id: string
 ): Promise<ContainerStats> {
-  const client = createDockerClient(config);
+  const client = await createDockerClient(config);
   const container = client.getContainer(id);
   const raw = (await container.stats({ stream: false })) as unknown as RawStats;
 
@@ -492,7 +513,7 @@ export async function execInContainer(
   id: string,
   command: string[]
 ): Promise<ExecResult> {
-  const client = createDockerClient(config);
+  const client = await createDockerClient(config);
   const container = client.getContainer(id);
   const exec = await container.exec({
     Cmd: command,
@@ -562,7 +583,7 @@ export async function startTerminal(
   };
   stream: NodeJS.ReadWriteStream;
 }> {
-  const client = createDockerClient(config);
+  const client = await createDockerClient(config);
   const container = client.getContainer(containerId);
   const exec = await container.exec({
     Cmd: [input.shell],
@@ -738,7 +759,7 @@ export interface SystemInfo {
 export async function readSystemInfo(
   config: DockerConfig
 ): Promise<SystemInfo> {
-  const client = createDockerClient(config);
+  const client = await createDockerClient(config);
   const [info, version] = await Promise.all([
     client.info(),
     client.version(),
@@ -772,7 +793,7 @@ export async function pruneResource(
   config: DockerConfig,
   resource: "containers" | "images" | "volumes" | "networks" | "build"
 ): Promise<PruneResult> {
-  const client = createDockerClient(config);
+  const client = await createDockerClient(config);
   let raw: unknown;
   if (resource === "containers") raw = await client.pruneContainers();
   else if (resource === "images") raw = await client.pruneImages();
@@ -816,7 +837,7 @@ export async function pullImage(
   ref: string,
   auth?: RegistryAuth
 ): Promise<void> {
-  const client = createDockerClient(config);
+  const client = await createDockerClient(config);
   await new Promise<void>((resolve, reject) => {
     const cb = (err: Error | null, stream?: NodeJS.ReadableStream) => {
       if (err || !stream) {
@@ -837,10 +858,10 @@ export async function pullImage(
   });
 }
 
-export function eventsStream(
+export async function eventsStream(
   config: DockerConfig
 ): Promise<NodeJS.ReadableStream> {
-  const client = createDockerClient(config);
+  const client = await createDockerClient(config);
   return new Promise((resolve, reject) => {
     client.getEvents({}, (err: Error | null, stream?: NodeJS.ReadableStream) => {
       if (err || !stream) reject(err || new Error("no event stream"));
@@ -882,7 +903,7 @@ export async function buildImageStream(
   tag: string
 ): Promise<NodeJS.ReadableStream> {
   const { Readable } = await import("node:stream");
-  const client = createDockerClient(config);
+  const client = await createDockerClient(config);
   const tar = dockerfileTarball(dockerfile);
   const tarStream = Readable.from(tar);
   return new Promise((resolve, reject) => {
@@ -905,12 +926,12 @@ export interface PullProgressEvent {
   error?: string;
 }
 
-export function pullImageStream(
+export async function pullImageStream(
   config: DockerConfig,
   ref: string,
   auth?: RegistryAuth
 ): Promise<NodeJS.ReadableStream> {
-  const client = createDockerClient(config);
+  const client = await createDockerClient(config);
   return new Promise((resolve, reject) => {
     const cb = (err: Error | null, stream?: NodeJS.ReadableStream) => {
       if (err || !stream) reject(err || new Error("no pull stream"));
@@ -929,7 +950,7 @@ export async function removeImage(
   id: string,
   force = false
 ): Promise<void> {
-  const client = createDockerClient(config);
+  const client = await createDockerClient(config);
   await client.getImage(id).remove({ force });
 }
 
@@ -938,7 +959,7 @@ export async function createVolume(
   name: string,
   driver = "local"
 ): Promise<void> {
-  const client = createDockerClient(config);
+  const client = await createDockerClient(config);
   await client.createVolume({ Name: name, Driver: driver });
 }
 
@@ -947,7 +968,7 @@ export async function removeVolume(
   name: string,
   force = false
 ): Promise<void> {
-  const client = createDockerClient(config);
+  const client = await createDockerClient(config);
   await client.getVolume(name).remove({ force });
 }
 
@@ -955,7 +976,7 @@ export async function removeNetwork(
   config: DockerConfig,
   id: string
 ): Promise<void> {
-  const client = createDockerClient(config);
+  const client = await createDockerClient(config);
   await client.getNetwork(id).remove();
 }
 
@@ -965,7 +986,7 @@ export async function connectContainerToNetwork(
   containerId: string,
   aliases?: string[]
 ): Promise<void> {
-  const client = createDockerClient(config);
+  const client = await createDockerClient(config);
   await client.getNetwork(networkId).connect({
     Container: containerId,
     EndpointConfig: aliases?.length ? { Aliases: aliases } : undefined,
@@ -978,7 +999,7 @@ export async function disconnectContainerFromNetwork(
   containerId: string,
   force = false
 ): Promise<void> {
-  const client = createDockerClient(config);
+  const client = await createDockerClient(config);
   await client.getNetwork(networkId).disconnect({
     Container: containerId,
     Force: force,
@@ -998,7 +1019,7 @@ export async function createNetwork(
   config: DockerConfig,
   input: CreateNetworkInput
 ): Promise<{ id: string }> {
-  const client = createDockerClient(config);
+  const client = await createDockerClient(config);
   const ipam =
     input.subnet || input.gateway
       ? {

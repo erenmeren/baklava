@@ -37,7 +37,6 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
-    "dockerode": "^5.0.0",
     "fast-xml-parser": "^5.8.0",
     "ioredis": "^5.11.0",
     "js-yaml": "^4.1.1",
@@ -58,6 +57,7 @@
     "zod": "^4.4.3"
   },
   "optionalDependencies": {
+    "dockerode": "^5.0.0",
     "pg": "^8.20.0"
   },
   "devDependencies": {

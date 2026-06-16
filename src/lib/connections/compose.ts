@@ -436,7 +436,7 @@ export async function deployStack(
   parsed: ParsedCompose,
   emit: (event: DeployEvent) => void
 ): Promise<void> {
-  const client = createDockerClient(config);
+  const client = await createDockerClient(config);
   const { stack, services, networks, volumes } = parsed;
 
   emit({ type: "phase", phase: "networks" });
@@ -708,7 +708,7 @@ export interface StackDetail {
 export async function listStacks(
   config: DockerConfig
 ): Promise<StackSummary[]> {
-  const client = createDockerClient(config);
+  const client = await createDockerClient(config);
   const all = await client.listContainers({
     all: true,
     filters: JSON.stringify({ label: [STACK_LABEL] }),
@@ -745,7 +745,7 @@ export async function getStack(
   config: DockerConfig,
   name: string
 ): Promise<StackDetail | null> {
-  const client = createDockerClient(config);
+  const client = await createDockerClient(config);
   const containers = await client.listContainers({
     all: true,
     filters: JSON.stringify({ label: [`${STACK_LABEL}=${name}`] }),
@@ -798,7 +798,7 @@ export async function stackAction(
   name: string,
   action: "start" | "stop" | "restart"
 ): Promise<{ services: number }> {
-  const client = createDockerClient(config);
+  const client = await createDockerClient(config);
   const containers = await client.listContainers({
     all: true,
     filters: JSON.stringify({ label: [`${STACK_LABEL}=${name}`] }),
@@ -821,7 +821,7 @@ export async function teardownStack(
   name: string,
   options: { removeVolumes?: boolean } = {}
 ): Promise<void> {
-  const client = createDockerClient(config);
+  const client = await createDockerClient(config);
   const containers = await client.listContainers({
     all: true,
     filters: JSON.stringify({ label: [`${STACK_LABEL}=${name}`] }),
