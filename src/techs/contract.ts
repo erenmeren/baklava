@@ -18,7 +18,7 @@ export class DriverNotInstalledError extends Error {
 
 /** The only operation the contract guarantees. Tech-specific operations live as
  *  additional exports from the module's driver file and are imported directly. */
-export interface TechDriver<C extends BaseConfig> {
+export interface TechDriver<C = unknown> {
   /** Probe the connection. Throws on failure; resolves with tech-specific probe info. */
   probe(config: C): Promise<unknown>;
 }
@@ -47,7 +47,7 @@ export interface TechCapabilities {
   health?: boolean;
 }
 
-export interface TechModule<C extends BaseConfig = BaseConfig> {
+export interface TechModule<C = unknown> {
   id: TechId;
   catalog: TechMeta;
   config: {

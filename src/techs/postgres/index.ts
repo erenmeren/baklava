@@ -1,12 +1,8 @@
 import { z } from "zod";
-import type { BaseConfig, TechModule } from "@/techs/contract";
+import type { TechModule } from "@/techs/contract";
 import type { PostgresConfig, ConnectionRecord } from "@/lib/connections/types";
 import { probePostgres } from "@/lib/connections/postgres";
 import { OBJECT_PROVIDERS } from "@/lib/command-palette/object-providers";
-
-/** Intersection so PgConfig satisfies BaseConfig's index signature constraint
- *  while retaining all typed fields from PostgresConfig. */
-type PgConfig = PostgresConfig & BaseConfig;
 
 const schema = z.object({
   host: z.string(),
@@ -17,7 +13,7 @@ const schema = z.object({
   ssl: z.boolean(),
 });
 
-export const postgres: TechModule<PgConfig> = {
+export const postgres: TechModule<PostgresConfig> = {
   id: "postgres",
   catalog: {
     id: "postgres",
@@ -28,7 +24,7 @@ export const postgres: TechModule<PgConfig> = {
     color: "from-indigo-400 to-violet-600",
     status: "available",
   },
-  config: { schema: schema as unknown as z.ZodType<PgConfig>, secretKeys: ["password"] },
+  config: { schema: schema as unknown as z.ZodType<PostgresConfig>, secretKeys: ["password"] },
   driver: { probe: (c) => probePostgres(c) },
   summary: (r: ConnectionRecord) => {
     const c = r.config as PostgresConfig;
