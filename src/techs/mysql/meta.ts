@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { TechModuleMeta } from "@/techs/contract";
 import type { MysqlConfig, ConnectionRecord } from "@/lib/connections/types";
-import { OBJECT_PROVIDERS } from "@/lib/command-palette/object-providers";
+import { mysqlProvider } from "@/lib/command-palette/sql-providers";
 
 const schema = z.object({
   host: z.string(),
@@ -33,6 +33,6 @@ export const mysqlMeta: TechModuleMeta<MysqlConfig> = {
   firstPage: "",
   optionalDeps: ["mysql2"],
   serverPackages: ["mysql2"],
-  commandObjects: OBJECT_PROVIDERS.mysql,
+  commandObjects: mysqlProvider,
   capabilities: { browse: true, query: true, objectExplorer: true, health: true },
 };

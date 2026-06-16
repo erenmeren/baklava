@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { TechModuleMeta } from "@/techs/contract";
 import type { SqlServerConfig, ConnectionRecord } from "@/lib/connections/types";
-import { OBJECT_PROVIDERS } from "@/lib/command-palette/object-providers";
+import { sqlserverProvider } from "@/lib/command-palette/sql-providers";
 
 const schema = z.object({
   host: z.string(),
@@ -32,6 +32,6 @@ export const sqlserverMeta: TechModuleMeta<SqlServerConfig> = {
   firstPage: "",
   optionalDeps: ["mssql", "tedious"],
   serverPackages: ["mssql", "tedious"],
-  commandObjects: OBJECT_PROVIDERS.sqlserver,
+  commandObjects: sqlserverProvider,
   capabilities: { browse: true, query: true, objectExplorer: true, health: true },
 };

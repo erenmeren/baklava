@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { TechModuleMeta } from "@/techs/contract";
 import type { PostgresConfig, ConnectionRecord } from "@/lib/connections/types";
-import { OBJECT_PROVIDERS } from "@/lib/command-palette/object-providers";
+import { postgresProvider } from "@/lib/command-palette/sql-providers";
 
 const schema = z.object({
   host: z.string(),
@@ -31,6 +31,6 @@ export const postgresMeta: TechModuleMeta<PostgresConfig> = {
   firstPage: "",
   optionalDeps: ["pg"],
   serverPackages: ["pg"],
-  commandObjects: OBJECT_PROVIDERS.postgres,
+  commandObjects: postgresProvider,
   capabilities: { browse: true, query: true, objectExplorer: true, health: true },
 };
