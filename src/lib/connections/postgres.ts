@@ -1,4 +1,14 @@
-import { Client, type ClientConfig } from "pg";
+import type { Client as PgClient, ClientConfig } from "pg"; // type-only — erased at build, safe when pg absent
+import { DriverNotInstalledError } from "@/techs/contract";
+
+let pgMod: typeof import("pg") | null = null;
+async function getPg(): Promise<typeof import("pg")> {
+  try {
+    return (pgMod ??= await import("pg"));
+  } catch {
+    throw new DriverNotInstalledError("postgres", "pg");
+  }
+}
 import type { PostgresConfig } from "./types";
 
 function buildClientConfig(
@@ -22,9 +32,10 @@ function buildClientConfig(
 async function withClient<T>(
   config: PostgresConfig,
   database: string | undefined,
-  fn: (client: Client) => Promise<T>
+  fn: (client: PgClient) => Promise<T>
 ): Promise<T> {
-  const client = new Client(buildClientConfig(config, database));
+  const { Client } = await getPg();
+  const client: PgClient = new Client(buildClientConfig(config, database));
   await client.connect();
   try {
     return await fn(client);
@@ -3280,7 +3291,8 @@ export async function* streamDatabaseDump(
   const includeData = options.includeData ?? true;
   const batchSize = Math.min(Math.max(options.batchSize ?? 1000, 1), 10_000);
 
-  const client = new Client(
+  const { Client } = await getPg();
+  const client: PgClient = new Client(
     buildClientConfig(config, database, { statementTimeoutMs: 0 }),
   );
   await client.connect();
@@ -3469,7 +3481,8 @@ export async function restoreSql(
   database: string,
   sql: string,
 ): Promise<RestoreResult> {
-  const client = new Client(
+  const { Client } = await getPg();
+  const client: PgClient = new Client(
     buildClientConfig(config, database, { statementTimeoutMs: 0 }),
   );
   await client.connect();
