@@ -1,15 +1,19 @@
-import {
-  Kafka,
-  logLevel,
-  ConfigResourceTypes,
-  type SASLOptions,
-  type ITopicConfig,
-  type Consumer,
-} from "kafkajs";
+import type { SASLOptions, ITopicConfig, Consumer, Kafka } from "kafkajs";
 import type { KafkaConfig } from "./types";
+import { DriverNotInstalledError } from "@/techs/contract";
+
+let _kafkajsMod: typeof import("kafkajs") | null = null;
+async function getKafkajs(): Promise<typeof import("kafkajs")> {
+  try {
+    return (_kafkajsMod ??= await import("kafkajs"));
+  } catch {
+    throw new DriverNotInstalledError("kafka", "kafkajs");
+  }
+}
 import type { SchemaRegistryClient } from "./kafka-schema-registry";
 
-export function createKafkaClient(config: KafkaConfig): Kafka {
+export async function createKafkaClient(config: KafkaConfig): Promise<Kafka> {
+  const { Kafka, logLevel } = await getKafkajs();
   let sasl: SASLOptions | undefined;
   if (config.sasl) {
     const { username, password, mechanism } = config.sasl;
@@ -42,7 +46,7 @@ export interface KafkaTopicSummary {
 export async function listTopics(
   config: KafkaConfig
 ): Promise<KafkaTopicSummary[]> {
-  const client = createKafkaClient(config);
+  const client = await createKafkaClient(config);
   const admin = client.admin();
   await admin.connect();
   try {
@@ -66,7 +70,7 @@ export interface KafkaProbeResult {
 }
 
 export async function probeKafka(config: KafkaConfig): Promise<KafkaProbeResult> {
-  const client = createKafkaClient(config);
+  const client = await createKafkaClient(config);
   const admin = client.admin();
   await admin.connect();
   try {
@@ -93,7 +97,7 @@ export async function createTopic(
   partitions: number,
   replicationFactor: number
 ): Promise<void> {
-  const client = createKafkaClient(config);
+  const client = await createKafkaClient(config);
   const admin = client.admin();
   await admin.connect();
   try {
@@ -112,7 +116,7 @@ export async function deleteTopic(
   config: KafkaConfig,
   name: string
 ): Promise<void> {
-  const client = createKafkaClient(config);
+  const client = await createKafkaClient(config);
   const admin = client.admin();
   await admin.connect();
   try {
@@ -139,7 +143,7 @@ export async function describeTopic(
   config: KafkaConfig,
   name: string
 ): Promise<TopicDetail> {
-  const client = createKafkaClient(config);
+  const client = await createKafkaClient(config);
   const admin = client.admin();
   await admin.connect();
   try {
@@ -276,7 +280,7 @@ export async function fetchMessages(
     schemaRegistry?: SchemaRegistryClient | null;
   },
 ): Promise<KafkaMessage[]> {
-  const client = createKafkaClient(config);
+  const client = await createKafkaClient(config);
   const groupId = `baklava-browse-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   const consumer = client.consumer({
     groupId,
@@ -353,7 +357,7 @@ export async function fetchMessagesFromOffset(
   limit: number,
   schemaRegistry?: SchemaRegistryClient | null,
 ): Promise<KafkaMessage[]> {
-  const client = createKafkaClient(config);
+  const client = await createKafkaClient(config);
   const groupId = `baklava-seek-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   const consumer = client.consumer({
     groupId,
@@ -428,7 +432,7 @@ export async function produceMessage(
   topic: string,
   payload: { key?: string; value: string; headers?: Record<string, string> }
 ): Promise<void> {
-  const client = createKafkaClient(config);
+  const client = await createKafkaClient(config);
   const producer = client.producer();
   await producer.connect();
   try {
@@ -504,7 +508,7 @@ export async function replayDeadLetters(
     return null;
   };
 
-  const client = createKafkaClient(config);
+  const client = await createKafkaClient(config);
   const producer = client.producer();
   await producer.connect();
 
@@ -575,7 +579,7 @@ export interface ConsumerGroupSummary {
 export async function listConsumerGroups(
   config: KafkaConfig
 ): Promise<ConsumerGroupSummary[]> {
-  const client = createKafkaClient(config);
+  const client = await createKafkaClient(config);
   const admin = client.admin();
   await admin.connect();
   try {
@@ -651,7 +655,7 @@ export async function describeConsumerGroup(
   config: KafkaConfig,
   groupId: string
 ): Promise<ConsumerGroupDetail> {
-  const client = createKafkaClient(config);
+  const client = await createKafkaClient(config);
   const admin = client.admin();
   await admin.connect();
   try {
@@ -764,7 +768,7 @@ export interface BrokerInfo {
  * enrichment steps degrade gracefully — the base broker list still returns.
  */
 export async function listBrokers(config: KafkaConfig): Promise<BrokerInfo[]> {
-  const client = createKafkaClient(config);
+  const client = await createKafkaClient(config);
   const admin = client.admin();
   await admin.connect();
   try {
@@ -868,7 +872,7 @@ export interface UnderReplicatedPartition {
 export async function listUnderReplicated(
   config: KafkaConfig,
 ): Promise<UnderReplicatedPartition[]> {
-  const client = createKafkaClient(config);
+  const client = await createKafkaClient(config);
   const admin = client.admin();
   await admin.connect();
   try {
@@ -915,7 +919,7 @@ export async function alterReassignments(
   specs: ReassignmentSpec[],
 ): Promise<void> {
   if (specs.length === 0) return;
-  const client = createKafkaClient(config);
+  const client = await createKafkaClient(config);
   const admin = client.admin();
   await admin.connect();
   try {
@@ -961,7 +965,7 @@ export interface OngoingReassignment {
 export async function listOngoingReassignments(
   config: KafkaConfig,
 ): Promise<OngoingReassignment[]> {
-  const client = createKafkaClient(config);
+  const client = await createKafkaClient(config);
   const admin = client.admin();
   await admin.connect();
   try {
@@ -1024,7 +1028,8 @@ export async function alterTopicConfig(
   topic: string,
   entries: { name: string; value: string }[]
 ): Promise<void> {
-  const client = createKafkaClient(config);
+  const { ConfigResourceTypes } = await getKafkajs();
+  const client = await createKafkaClient(config);
   const admin = client.admin();
   await admin.connect();
   try {
@@ -1048,7 +1053,7 @@ export async function addTopicPartitions(
   topic: string,
   totalPartitions: number
 ): Promise<void> {
-  const client = createKafkaClient(config);
+  const client = await createKafkaClient(config);
   const admin = client.admin();
   await admin.connect();
   try {
@@ -1064,7 +1069,7 @@ export async function emptyTopic(
   config: KafkaConfig,
   topic: string
 ): Promise<void> {
-  const client = createKafkaClient(config);
+  const client = await createKafkaClient(config);
   const admin = client.admin();
   await admin.connect();
   try {
@@ -1102,7 +1107,7 @@ export interface PulseSample {
  * the 5-second pulse tick on the cluster overview.
  */
 export async function fetchPulse(config: KafkaConfig): Promise<PulseSample> {
-  const client = createKafkaClient(config);
+  const client = await createKafkaClient(config);
   const admin = client.admin();
   await admin.connect();
   try {
@@ -1253,7 +1258,7 @@ export async function searchMessages(
   options: SearchOptions,
   emit: (ev: SearchEvent) => void,
 ): Promise<void> {
-  const client = createKafkaClient(config);
+  const client = await createKafkaClient(config);
   const groupId = `baklava-search-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   const consumer = client.consumer({
     groupId,
@@ -1416,7 +1421,7 @@ export async function* streamTopicBackup(
   options: BackupOptions = {},
 ): AsyncGenerator<string> {
   const limit = options.limit ?? 0;
-  const client = createKafkaClient(config);
+  const client = await createKafkaClient(config);
   const groupId = `baklava-backup-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   const consumer = client.consumer({
     groupId,
@@ -1559,7 +1564,7 @@ export async function restoreTopic(
   jsonl: string,
   partitionStrategy: PartitionStrategy = "auto",
 ): Promise<RestoreTopicResult> {
-  const client = createKafkaClient(config);
+  const client = await createKafkaClient(config);
   const producer = client.producer();
   await producer.connect();
   let produced = 0;
@@ -1650,7 +1655,7 @@ export async function startMessageTail(
   onMessage: (m: TailMessage) => void,
   onError: (err: unknown) => void,
 ): Promise<TailHandle> {
-  const client = createKafkaClient(config);
+  const client = await createKafkaClient(config);
   const groupId = `baklava-tail-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   const consumer: Consumer = client.consumer({
     groupId,
@@ -1714,7 +1719,7 @@ export async function getConsumerGroupState(
   config: KafkaConfig,
   groupId: string
 ): Promise<string | null> {
-  const client = createKafkaClient(config);
+  const client = await createKafkaClient(config);
   const admin = client.admin();
   await admin.connect();
   try {
@@ -1742,7 +1747,7 @@ async function commitGroupOffsetsClean(
   partitionEntries: { partition: number; offset: string }[]
 ): Promise<void> {
   if (partitionEntries.length === 0) return;
-  const client = createKafkaClient(config);
+  const client = await createKafkaClient(config);
   const consumer = client.consumer({
     groupId,
     sessionTimeout: 10_000,
@@ -1780,7 +1785,7 @@ export async function resetGroupOffsets(
   target: ResetOffsetTarget,
   partitions?: number[]
 ): Promise<void> {
-  const client = createKafkaClient(config);
+  const client = await createKafkaClient(config);
   const admin = client.admin();
   await admin.connect();
   try {
@@ -1830,7 +1835,7 @@ export async function deleteConsumerGroup(
   config: KafkaConfig,
   groupId: string
 ): Promise<void> {
-  const client = createKafkaClient(config);
+  const client = await createKafkaClient(config);
   const admin = client.admin();
   await admin.connect();
   try {
@@ -1863,7 +1868,7 @@ export interface KafkaClusterSummary {
 export async function getClusterSummary(
   config: KafkaConfig
 ): Promise<KafkaClusterSummary> {
-  const client = createKafkaClient(config);
+  const client = await createKafkaClient(config);
   const admin = client.admin();
   await admin.connect();
   try {
@@ -1988,7 +1993,7 @@ export interface KafkaTopicStat extends KafkaTopicSummary {
 export async function listTopicsWithStats(
   config: KafkaConfig
 ): Promise<KafkaTopicStat[]> {
-  const client = createKafkaClient(config);
+  const client = await createKafkaClient(config);
   const admin = client.admin();
   await admin.connect();
   try {
@@ -2045,7 +2050,7 @@ export interface KafkaGroupStat extends ConsumerGroupSummary {
 export async function listConsumerGroupsWithLag(
   config: KafkaConfig
 ): Promise<KafkaGroupStat[]> {
-  const client = createKafkaClient(config);
+  const client = await createKafkaClient(config);
   const admin = client.admin();
   await admin.connect();
   try {
@@ -2148,7 +2153,7 @@ async function fetchGroupOffsetsRaw(
   config: KafkaConfig,
   groupId: string,
 ): Promise<OffsetSnapshotEntry[]> {
-  const client = createKafkaClient(config);
+  const client = await createKafkaClient(config);
   const admin = client.admin();
   await admin.connect();
   try {
@@ -2207,7 +2212,7 @@ export async function skipPartitionOffset(
   if (count > 1_000_000) {
     throw new Error("Skip count is too large (max 1,000,000)");
   }
-  const client = createKafkaClient(config);
+  const client = await createKafkaClient(config);
   const admin = client.admin();
   await admin.connect();
   let currentOffset: string;
@@ -2285,7 +2290,7 @@ export async function bulkDeleteConsumerGroups(
   if (groupIds.length === 0) {
     return { deleted: [], failed: [] };
   }
-  const client = createKafkaClient(config);
+  const client = await createKafkaClient(config);
   const admin = client.admin();
   await admin.connect();
   try {
