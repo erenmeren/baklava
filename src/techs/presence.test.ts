@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isDriverInstalled, modulesInstalled } from "./presence";
+import { isDriverInstalled, modulesInstalled, invalidatePresence } from "./presence";
 import { postgres } from "./postgres";
 
 describe("isDriverInstalled", () => {
@@ -23,5 +23,18 @@ describe("modulesInstalled", () => {
     expect(
       modulesInstalled({ optionalDeps: ["totally-not-real-pkg-xyz"] } as never),
     ).toBe(false);
+  });
+});
+
+describe("invalidatePresence", () => {
+  it("clears specific packages so they are re-resolved", () => {
+    expect(isDriverInstalled("zod")).toBe(true);
+    invalidatePresence(["zod"]);
+    expect(isDriverInstalled("zod")).toBe(true);
+  });
+  it("clears the whole cache when called with no args", () => {
+    isDriverInstalled("zod");
+    invalidatePresence();
+    expect(isDriverInstalled("zod")).toBe(true);
   });
 });

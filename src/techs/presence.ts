@@ -23,3 +23,13 @@ export function isDriverInstalled(pkg: string): boolean {
 export function modulesInstalled(module: TechModule): boolean {
   return module.optionalDeps.every(isDriverInstalled);
 }
+
+/** Drop cached resolution results so the next isDriverInstalled re-checks disk.
+ *  Call after installing a driver at runtime. Omit `pkgs` to clear everything. */
+export function invalidatePresence(pkgs?: string[]): void {
+  if (!pkgs) {
+    cache.clear();
+    return;
+  }
+  for (const p of pkgs) cache.delete(p);
+}
