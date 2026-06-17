@@ -146,7 +146,9 @@ export function TechGrid({
                 "flex flex-col items-center justify-center gap-3 text-center",
                 isAvailable && !driverMissing
                   ? "tile-neon hover:border-border/80 cursor-pointer"
-                  : "opacity-55 transition-opacity",
+                  : driverMissing
+                    ? "opacity-60 hover:opacity-100 hover:border-border/80 cursor-pointer transition-all"
+                    : "opacity-55 transition-opacity",
               )}
             >
               <span
@@ -191,50 +193,45 @@ export function TechGrid({
               </h3>
 
               {driverMissing && (
-                <div className="flex flex-col items-center gap-1.5">
-                  <p className="text-[10.5px] text-muted-foreground/80 leading-tight">
-                    needs: {(optionalDeps[tech.id] ?? []).join(", ")}
-                  </p>
-                  {canInstall ? (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setInstallTech(tech);
-                      }}
-                      className="rounded-md border border-brand/40 bg-brand/10 px-2 py-1 text-[11px] font-medium text-brand hover:bg-brand/20 transition-colors"
-                    >
-                      Install driver
-                    </button>
-                  ) : (
-                    <code className="text-[10px] text-muted-foreground/70 select-all">
-                      npm i {(optionalDeps[tech.id] ?? []).join(" ")}
-                    </code>
-                  )}
-                </div>
+                <p className="text-[10.5px] text-muted-foreground/80 leading-tight">
+                  Driver not installed
+                </p>
               )}
             </div>
           );
 
-          return isAvailable && !driverMissing ? (
-            <button
-              key={tech.id}
-              type="button"
-              onClick={() => (tech.kind === "tool" ? router.push("/loadtest") : setOpenTech(tech))}
-              aria-label={`Open ${tech.name} connections`}
-              className="rounded-xl text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
-            >
-              {tile}
-            </button>
-          ) : (
+          if (isAvailable && !driverMissing) {
+            return (
+              <button
+                key={tech.id}
+                type="button"
+                onClick={() => (tech.kind === "tool" ? router.push("/loadtest") : setOpenTech(tech))}
+                aria-label={`Open ${tech.name} connections`}
+                className="rounded-xl text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
+              >
+                {tile}
+              </button>
+            );
+          }
+          if (driverMissing) {
+            return (
+              <button
+                key={tech.id}
+                type="button"
+                onClick={() => setInstallTech(tech)}
+                aria-label={`Install ${tech.name} driver`}
+                title={`${tech.name} — driver not installed`}
+                className="rounded-xl text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
+              >
+                {tile}
+              </button>
+            );
+          }
+          return (
             <div
               key={tech.id}
               aria-disabled
-              title={
-                driverMissing
-                  ? `${tech.name} — driver not installed`
-                  : `${tech.name} — ${isComingSoon ? "coming soon" : "not enabled in this build"}`
-              }
+              title={`${tech.name} — ${isComingSoon ? "coming soon" : "not enabled in this build"}`}
               className="cursor-not-allowed"
             >
               {tile}
@@ -252,6 +249,8 @@ export function TechGrid({
       <InstallDriverDialog
         techId={installTech?.id ?? null}
         techName={installTech?.name ?? ""}
+        packages={installTech ? (optionalDeps[installTech.id] ?? []) : []}
+        canInstall={canInstall}
         open={installTech !== null}
         onOpenChange={handleInstallOpenChange}
       />
