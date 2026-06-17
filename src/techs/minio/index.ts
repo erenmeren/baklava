@@ -11,7 +11,7 @@ export const minio: TechModule<MinioConfig> = {
   driver: {
     probe: async (c: MinioConfig) => {
       const id = `__probe_${Math.random().toString(36).slice(2)}`;
-      const client = minioClientFor(id, c);
+      const client = await minioClientFor(id, c);
       try {
         return await s3Probe(client);
       } finally {

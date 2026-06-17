@@ -11,7 +11,7 @@ export const s3: TechModule<S3Config> = {
   driver: {
     probe: async (c: S3Config) => {
       const id = `__probe_${Math.random().toString(36).slice(2)}`;
-      const client = s3AwsClientFor(id, c);
+      const client = await s3AwsClientFor(id, c);
       try {
         return await s3Probe(client);
       } finally {

@@ -283,7 +283,7 @@ import { probe as s3Probe } from "./s3";
 export async function blobBody(conn: ConnectionRecord): Promise<ProbeBody> {
   const bt = blobTech(conn.tech);
   if (!bt) throw new Error(`no blob handler for ${conn.tech}`);
-  const client = bt.clientFor(conn.id, conn.config);
+  const client = await bt.clientFor(conn.id, conn.config);
   const { buckets } = await s3Probe(client);
   return {
     summary: plural(buckets, "bucket"),

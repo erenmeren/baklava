@@ -1,18 +1,18 @@
 import "server-only";
-import { S3Client } from "@aws-sdk/client-s3";
-import { getCachedClient, dropCachedClient } from "./s3";
+import type { S3Client } from "@aws-sdk/client-s3";
+import { getCachedClient, dropCachedClient, createS3Client } from "./s3";
 import type { R2Config } from "./types";
 
 export function endpointFor(accountId: string): string {
   return `https://${accountId}.r2.cloudflarestorage.com`;
 }
 
-export function r2ClientFor(connectionId: string, cfg: R2Config): S3Client {
+export async function r2ClientFor(connectionId: string, cfg: R2Config): Promise<S3Client> {
   return getCachedClient(
     `r2:${connectionId}`,
     JSON.stringify([cfg.accountId, cfg.accessKeyId, cfg.secretAccessKey]),
     () =>
-      new S3Client({
+      createS3Client({
         region: "auto",
         endpoint: endpointFor(cfg.accountId),
         credentials: {

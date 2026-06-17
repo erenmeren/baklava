@@ -1,26 +1,39 @@
 import "server-only";
-import {
+import type {
   S3Client,
-  ListBucketsCommand,
-  CreateBucketCommand,
-  DeleteBucketCommand,
-  ListObjectsV2Command,
-  HeadObjectCommand,
-  GetObjectCommand,
-  CopyObjectCommand,
-  DeleteObjectsCommand,
-  GetBucketCorsCommand,
-  PutBucketCorsCommand,
-  GetBucketLifecycleConfigurationCommand,
-  PutBucketLifecycleConfigurationCommand,
-  type CORSRule,
-  type LifecycleRule,
-  type BucketLocationConstraint,
+  S3ClientConfig,
+  CORSRule,
+  LifecycleRule,
+  BucketLocationConstraint,
 } from "@aws-sdk/client-s3";
-import { Upload } from "@aws-sdk/lib-storage";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { DriverNotInstalledError } from "@/techs/contract";
+
+let _s3: typeof import("@aws-sdk/client-s3") | null = null;
+async function getS3Sdk() {
+  try { return (_s3 ??= await import("@aws-sdk/client-s3")); }
+  catch { throw new DriverNotInstalledError("s3", "@aws-sdk/client-s3"); }
+}
+
+let _up: typeof import("@aws-sdk/lib-storage") | null = null;
+async function getLibStorage() {
+  try { return (_up ??= await import("@aws-sdk/lib-storage")); }
+  catch { throw new DriverNotInstalledError("s3", "@aws-sdk/lib-storage"); }
+}
+
+let _pre: typeof import("@aws-sdk/s3-request-presigner") | null = null;
+async function getPresigner() {
+  try { return (_pre ??= await import("@aws-sdk/s3-request-presigner")); }
+  catch { throw new DriverNotInstalledError("s3", "@aws-sdk/s3-request-presigner"); }
+}
+
 import type { Readable } from "node:stream";
 import { cache } from "react";
+
+/** Build an S3Client from config, lazy-loading the SDK on first call. */
+export async function createS3Client(config: S3ClientConfig): Promise<S3Client> {
+  const { S3Client: S3ClientClass } = await getS3Sdk();
+  return new S3ClientClass(config);
+}
 
 // ── Pure helpers ────────────────────────────────────────────────────────────
 
@@ -90,18 +103,18 @@ function getCache(): Map<string, ClientBundle> {
 }
 
 /** Build-or-reuse a cached client; rebuilds + destroys the stale one on hash change. */
-export function getCachedClient(
+export async function getCachedClient(
   cacheKey: string,
   hash: string,
-  build: () => S3Client,
-): S3Client {
+  build: () => Promise<S3Client>,
+): Promise<S3Client> {
   const cache = getCache();
   const cached = cache.get(cacheKey);
   if (cached && cached.hash === hash) return cached.client;
   if (cached) {
     try { cached.client.destroy(); } catch { /* ignore */ }
   }
-  const client = build();
+  const client = await build();
   cache.set(cacheKey, { hash, client });
   return client;
 }
@@ -144,6 +157,7 @@ export interface ObjectMeta {
 // ── Operations (each takes an S3Client) ────────────────────────────────────────
 
 export async function probe(client: S3Client): Promise<{ buckets: number }> {
+  const { ListBucketsCommand } = await getS3Sdk();
   const out = await client.send(new ListBucketsCommand({}));
   return { buckets: out.Buckets?.length ?? 0 };
 }
@@ -157,6 +171,7 @@ export async function probe(client: S3Client): Promise<{ buckets: number }> {
 export const probeCached = cache(probe);
 
 export async function listBuckets(client: S3Client): Promise<BucketInfo[]> {
+  const { ListBucketsCommand } = await getS3Sdk();
   const out = await client.send(new ListBucketsCommand({}));
   return (out.Buckets ?? []).map((b) => ({
     name: b.Name ?? "",
@@ -173,6 +188,7 @@ export async function createBucket(
   // AWS S3 requires CreateBucketConfiguration.LocationConstraint for every
   // region except us-east-1. R2 ("auto") and MinIO (us-east-1 default) must
   // NOT receive a constraint, so only set it for a real, non-default region.
+  const { CreateBucketCommand } = await getS3Sdk();
   const region = await client.config.region();
   const constraint =
     region && region !== "us-east-1" && region !== "auto" ? region : undefined;
@@ -191,6 +207,7 @@ export async function createBucket(
 }
 
 export async function deleteBucket(client: S3Client, name: string): Promise<void> {
+  const { DeleteBucketCommand } = await getS3Sdk();
   await client.send(new DeleteBucketCommand({ Bucket: name }));
 }
 
@@ -200,6 +217,7 @@ export async function listObjects(
   prefix: string,
   token: string | null,
 ): Promise<ObjectListing> {
+  const { ListObjectsV2Command } = await getS3Sdk();
   const out = await client.send(
     new ListObjectsV2Command({
       Bucket: bucket,
@@ -236,6 +254,7 @@ export async function headObject(
   key: string,
 ): Promise<ObjectMeta> {
   validateObjectKey(key);
+  const { HeadObjectCommand } = await getS3Sdk();
   const out = await client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
   return {
     key,
@@ -257,6 +276,7 @@ export async function uploadObject(
   contentType?: string,
 ): Promise<void> {
   validateObjectKey(key);
+  const { Upload } = await getLibStorage();
   const upload = new Upload({
     client,
     params: { Bucket: bucket, Key: key, Body: body, ContentType: contentType },
@@ -272,6 +292,7 @@ export async function copyObject(
 ): Promise<void> {
   validateObjectKey(srcKey);
   validateObjectKey(dstKey);
+  const { CopyObjectCommand } = await getS3Sdk();
   await client.send(
     new CopyObjectCommand({
       Bucket: bucket,
@@ -287,6 +308,7 @@ export async function deleteObjects(
   keys: string[],
 ): Promise<void> {
   if (keys.length === 0) return;
+  const { DeleteObjectsCommand } = await getS3Sdk();
   const out = await client.send(
     new DeleteObjectsCommand({
       Bucket: bucket,
@@ -312,11 +334,14 @@ export async function presignGet(
   expiresIn = 900,
 ): Promise<string> {
   validateObjectKey(key);
+  const { getSignedUrl } = await getPresigner();
+  const { GetObjectCommand } = await getS3Sdk();
   return getSignedUrl(client, new GetObjectCommand({ Bucket: bucket, Key: key }), { expiresIn });
 }
 
 export async function getBucketCors(client: S3Client, bucket: string): Promise<CORSRule[]> {
   try {
+    const { GetBucketCorsCommand } = await getS3Sdk();
     const out = await client.send(new GetBucketCorsCommand({ Bucket: bucket }));
     return out.CORSRules ?? [];
   } catch (e) {
@@ -330,6 +355,7 @@ export async function putBucketCors(
   bucket: string,
   rules: CORSRule[],
 ): Promise<void> {
+  const { PutBucketCorsCommand } = await getS3Sdk();
   await client.send(
     new PutBucketCorsCommand({ Bucket: bucket, CORSConfiguration: { CORSRules: rules } }),
   );
@@ -340,6 +366,7 @@ export async function getBucketLifecycle(
   bucket: string,
 ): Promise<LifecycleRule[]> {
   try {
+    const { GetBucketLifecycleConfigurationCommand } = await getS3Sdk();
     const out = await client.send(
       new GetBucketLifecycleConfigurationCommand({ Bucket: bucket }),
     );
@@ -355,6 +382,7 @@ export async function putBucketLifecycle(
   bucket: string,
   rules: LifecycleRule[],
 ): Promise<void> {
+  const { PutBucketLifecycleConfigurationCommand } = await getS3Sdk();
   await client.send(
     new PutBucketLifecycleConfigurationCommand({
       Bucket: bucket,

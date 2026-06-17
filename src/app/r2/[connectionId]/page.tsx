@@ -12,7 +12,7 @@ export default async function R2Overview({ params }: PageProps) {
   const { connectionId } = await params;
   const record = requireConnection<R2Config>(connectionId, "r2");
   // probeCached dedupes with the layout's bucket-count call in the same render.
-  const { buckets } = await probeCached(r2ClientFor(connectionId, record.config)).catch(() => ({ buckets: 0 }));
+  const { buckets } = await probeCached(await r2ClientFor(connectionId, record.config)).catch(() => ({ buckets: 0 }));
   return (
     <WorkspacePage title="Overview" description="Cloudflare R2 object storage">
       <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-2 text-sm">

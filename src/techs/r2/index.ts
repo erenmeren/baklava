@@ -11,7 +11,7 @@ export const r2: TechModule<R2Config> = {
   driver: {
     probe: async (c: R2Config) => {
       const id = `__probe_${Math.random().toString(36).slice(2)}`;
-      const client = r2ClientFor(id, c);
+      const client = await r2ClientFor(id, c);
       try {
         return await s3Probe(client);
       } finally {
