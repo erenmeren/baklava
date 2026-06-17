@@ -72,6 +72,13 @@ describe("install route extra guards", () => {
     expect(spawnMock).not.toHaveBeenCalled();
     (globalThis as Record<symbol, unknown>)[Symbol.for("baklava.driverInstalls")] = new Set();
   });
+  it("429 when the global concurrent-install cap is reached", async () => {
+    (globalThis as Record<symbol, unknown>)[Symbol.for("baklava.driverInstalls")] = new Set(["mysql", "redis"]);
+    const res = await GET(makeReq("localhost:3000"), ctx("postgres"));
+    expect(res.status).toBe(429);
+    expect(spawnMock).not.toHaveBeenCalled();
+    (globalThis as Record<symbol, unknown>)[Symbol.for("baklava.driverInstalls")] = new Set();
+  });
   it("emits error when the child process errors (e.g. npm missing)", async () => {
     const child = Object.assign(new EventEmitter(), {
       stdout: new EventEmitter(), stderr: new EventEmitter(), kill: vi.fn(),

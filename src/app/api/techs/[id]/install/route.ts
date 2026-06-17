@@ -28,6 +28,13 @@ function inFlight(): Set<string> {
   ] ??= new Set<string>()) as Set<string>;
 }
 
+// EventSource forces a GET, which is CSRF-reachable: a page the user visits could
+// hit this endpoint (the localhost gate passes for same-machine requests). Impact
+// is bounded — only registry-whitelisted driver packages can ever be installed —
+// but we also cap TOTAL concurrent installs so a flood of distinct tech ids can't
+// spawn many npm processes at once.
+const MAX_CONCURRENT_INSTALLS = 2;
+
 interface RouteContext {
   params: Promise<{ id: string }>;
 }
@@ -48,6 +55,10 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
 
   if (inFlight().has(id)) {
     return sseError("An install for this tech is already in progress", 409);
+  }
+
+  if (inFlight().size >= MAX_CONCURRENT_INSTALLS) {
+    return sseError("Too many driver installs in progress; try again shortly", 429);
   }
 
   const stream = new ReadableStream<Uint8Array>({
