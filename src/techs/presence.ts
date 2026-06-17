@@ -1,3 +1,4 @@
+import "server-only";
 import { createRequire } from "node:module";
 import type { TechModule } from "./contract";
 

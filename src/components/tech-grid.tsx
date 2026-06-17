@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   TECH_CATALOG,
@@ -11,17 +11,31 @@ import {
 } from "@/lib/tech-catalog";
 import type { ConnectionRecord } from "@/lib/connections/types";
 import { ConnectionSheet } from "@/components/connection-sheet";
+import { InstallDriverDialog } from "@/components/install-driver-dialog";
 import { cn } from "@/lib/utils";
 
 interface ConnectionsResponse {
   connections: ConnectionRecord[];
 }
 
-export function TechGrid({ installed = {} }: { installed?: Record<string, boolean> }) {
+export function TechGrid({
+  installed = {},
+  optionalDeps = {},
+  canInstall = false,
+}: {
+  installed?: Record<string, boolean>;
+  optionalDeps?: Record<string, string[]>;
+  canInstall?: boolean;
+}) {
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [filter, setFilter] = useState<TechCategoryFilter>("All");
   const [openTech, setOpenTech] = useState<TechMeta | null>(null);
+  const [installTech, setInstallTech] = useState<TechMeta | null>(null);
   const router = useRouter();
+
+  const handleInstallOpenChange = useCallback((o: boolean) => {
+    if (!o) setInstallTech(null);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -177,9 +191,27 @@ export function TechGrid({ installed = {} }: { installed?: Record<string, boolea
               </h3>
 
               {driverMissing && (
-                <p className="text-[10.5px] text-muted-foreground/80 leading-tight">
-                  Driver not installed
-                </p>
+                <div className="flex flex-col items-center gap-1.5">
+                  <p className="text-[10.5px] text-muted-foreground/80 leading-tight">
+                    needs: {(optionalDeps[tech.id] ?? []).join(", ")}
+                  </p>
+                  {canInstall ? (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setInstallTech(tech);
+                      }}
+                      className="rounded-md border border-brand/40 bg-brand/10 px-2 py-1 text-[11px] font-medium text-brand hover:bg-brand/20 transition-colors"
+                    >
+                      Install driver
+                    </button>
+                  ) : (
+                    <code className="text-[10px] text-muted-foreground/70 select-all">
+                      npm i {(optionalDeps[tech.id] ?? []).join(" ")}
+                    </code>
+                  )}
+                </div>
               )}
             </div>
           );
@@ -216,6 +248,12 @@ export function TechGrid({ installed = {} }: { installed?: Record<string, boolea
         onOpenChange={(o) => {
           if (!o) setOpenTech(null);
         }}
+      />
+      <InstallDriverDialog
+        techId={installTech?.id ?? null}
+        techName={installTech?.name ?? ""}
+        open={installTech !== null}
+        onOpenChange={handleInstallOpenChange}
       />
     </div>
   );
