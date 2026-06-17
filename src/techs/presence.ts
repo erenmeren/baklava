@@ -1,22 +1,34 @@
 import "server-only";
-import { createRequire } from "node:module";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import type { TechModule } from "./contract";
 
-const require = createRequire(import.meta.url);
-const cache = new Map<string, boolean>();
+// Shared on globalThis so the positive cache is one instance across server
+// components and route handlers (Turbopack may otherwise load this module twice).
+const cache: Map<string, boolean> = ((
+  globalThis as Record<symbol, unknown>
+)[Symbol.for("baklava.driverPresence")] ??= new Map<string, boolean>()) as Map<
+  string,
+  boolean
+>;
 
-/** True if `pkg` can be resolved from this process. Cached per package. */
+/** True if the package is installed in the project's node_modules.
+ *
+ * We check `node_modules/<pkg>/package.json` on disk rather than
+ * `require.resolve`: in a long-running Next/Turbopack server process,
+ * require.resolve does NOT pick up a package installed AFTER the process
+ * started, so a tile would never re-enable after an in-app install. A direct
+ * fs stat always reflects current disk state.
+ *
+ * Only POSITIVE results are cached — a missing package is volatile (the user may
+ * install it at runtime), so negatives are always re-checked. */
 export function isDriverInstalled(pkg: string): boolean {
-  const hit = cache.get(pkg);
-  if (hit !== undefined) return hit;
-  let installed = false;
-  try {
-    require.resolve(pkg);
-    installed = true;
-  } catch {
-    installed = false;
-  }
-  cache.set(pkg, installed);
+  if (cache.get(pkg)) return true;
+  // pkg may be scoped ("@aws-sdk/client-s3") — split so the path is correct.
+  const installed = existsSync(
+    join(process.cwd(), "node_modules", ...pkg.split("/"), "package.json"),
+  );
+  if (installed) cache.set(pkg, true);
   return installed;
 }
 

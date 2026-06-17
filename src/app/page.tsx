@@ -4,6 +4,11 @@ import { TECH_META_LIST } from "@/techs/meta-registry";
 import { isDriverInstalled } from "@/techs/presence";
 import { isInstallAllowed } from "@/lib/techs/install";
 
+// Always re-read driver-install state on the server: after an in-app install the
+// client calls router.refresh(), and this render must reflect the freshly
+// resolvable package rather than a cached render.
+export const dynamic = "force-dynamic";
+
 export default async function Home() {
   const installed: Record<string, boolean> = {};
   const optionalDeps: Record<string, string[]> = {};
