@@ -1,4 +1,14 @@
-import sql, { ConnectionPool } from "mssql";
+import type { ConnectionPool } from "mssql"; // type-only — erased at build, safe when mssql absent
+import { DriverNotInstalledError } from "@/techs/contract";
+
+let _mssqlMod: typeof import("mssql") | null = null;
+async function getMssql(): Promise<typeof import("mssql")> {
+  try {
+    return (_mssqlMod ??= await import("mssql"));
+  } catch {
+    throw new DriverNotInstalledError("sqlserver", "mssql");
+  }
+}
 import type { SqlServerConfig } from "./types";
 
 const SQLSERVER_SYSTEM_DBS = new Set(["master", "tempdb", "model", "msdb"]);
@@ -49,7 +59,8 @@ async function withPool<T>(
   // active database, and one finishing first would close the global pool
   // out from under the other (ECONNCLOSED). Construct a fresh pool per
   // call instead so each request is fully isolated.
-  const pool = new ConnectionPool({
+  const { ConnectionPool: MssqlPool } = await getMssql();
+  const pool = new MssqlPool({
     server: config.host,
     port: config.port,
     database: opts?.database || config.database || undefined,
@@ -1016,7 +1027,7 @@ export async function listSqlServerSchemaColumns(
         .request()
         .input(
           "schema",
-          (sql as unknown as { NVarChar: unknown }).NVarChar,
+          ((await getMssql()).default as unknown as { NVarChar: unknown }).NVarChar,
           schema,
         )
         .query<{ table_name: string; column_name: string }>(`
@@ -1076,7 +1087,7 @@ export async function listSqlServerTables(
     // mssql/lib/base/index.js but mssql ships no .d.ts, so cast through any.
     const headResult = await pool
       .request()
-      .input("db", (sql as unknown as { NVarChar: unknown }).NVarChar, database)
+      .input("db", ((await getMssql()).default as unknown as { NVarChar: unknown }).NVarChar, database)
       .query<{
         name: string;
         state_desc: string;
@@ -2696,7 +2707,7 @@ export async function getSqlServerBackupHistory(
   return withPool(config, async (pool) => {
     const res = await pool
       .request()
-      .input("db", (sql as unknown as { NVarChar: unknown }).NVarChar, database)
+      .input("db", ((await getMssql()).default as unknown as { NVarChar: unknown }).NVarChar, database)
       .query<{
         type: string;
         backup_start_date: Date | null;

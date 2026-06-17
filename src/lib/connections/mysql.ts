@@ -1,5 +1,15 @@
-import mysql, { type Connection, type RowDataPacket } from "mysql2/promise";
+import type { Connection, RowDataPacket, ConnectionOptions } from "mysql2/promise"; // type-only — erased at build, safe when mysql2 absent
 import type { MysqlConfig } from "./types";
+import { DriverNotInstalledError } from "@/techs/contract";
+
+let _mysql2Mod: typeof import("mysql2/promise") | null = null;
+async function getMysql2(): Promise<typeof import("mysql2/promise")> {
+  try {
+    return (_mysql2Mod ??= await import("mysql2/promise"));
+  } catch {
+    throw new DriverNotInstalledError("mysql", "mysql2");
+  }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MySQL driver
@@ -19,7 +29,7 @@ function buildConnConfig(
   config: MysqlConfig,
   databaseOverride?: string,
   opts?: { multipleStatements?: boolean }
-): mysql.ConnectionOptions {
+): ConnectionOptions {
   const database = databaseOverride ?? config.database;
   return {
     host: config.host,
@@ -45,7 +55,8 @@ async function withConn<T>(
   fn: (conn: Connection) => Promise<T>,
   opts?: { multipleStatements?: boolean }
 ): Promise<T> {
-  const conn = await mysql.createConnection(
+  const { createConnection } = await getMysql2();
+  const conn = await createConnection(
     buildConnConfig(config, database, opts)
   );
   try {

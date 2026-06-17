@@ -24,7 +24,7 @@ export async function BlobWorkspaceLayout({
 }) {
   const record = requireConnection(connectionId, tech);
   const meta = getTech(tech)!;
-  const client = blobTech(tech)!.clientFor(connectionId, record.config);
+  const client = await blobTech(tech)!.clientFor(connectionId, record.config);
   const result = await probeCached(client).catch(() => null);
   const subtitle = result ? `${result.buckets} bucket(s)` : "unreachable";
   const defaultBucket = (record.config as { bucket?: string }).bucket ?? "";

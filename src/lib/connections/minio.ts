@@ -1,6 +1,6 @@
 import "server-only";
-import { S3Client } from "@aws-sdk/client-s3";
-import { getCachedClient, dropCachedClient } from "./s3";
+import type { S3Client } from "@aws-sdk/client-s3";
+import { getCachedClient, dropCachedClient, createS3Client } from "./s3";
 import type { MinioConfig } from "./types";
 
 export function resolveEndpoint(cfg: MinioConfig): string {
@@ -9,12 +9,12 @@ export function resolveEndpoint(cfg: MinioConfig): string {
   return `${cfg.useSSL ? "https" : "http"}://${e}`;
 }
 
-export function minioClientFor(connectionId: string, cfg: MinioConfig): S3Client {
+export async function minioClientFor(connectionId: string, cfg: MinioConfig): Promise<S3Client> {
   return getCachedClient(
     `minio:${connectionId}`,
     JSON.stringify([cfg.endpoint, cfg.useSSL, cfg.accessKey, cfg.secretKey, cfg.region]),
     () =>
-      new S3Client({
+      createS3Client({
         region: cfg.region || "us-east-1",
         endpoint: resolveEndpoint(cfg),
         forcePathStyle: true,

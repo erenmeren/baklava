@@ -14,7 +14,17 @@
  * recreate the client if the connection record is updated.
  */
 
-import { Type as AvroType, parse as parseAvro } from "avsc";
+import type { Type as AvroType } from "avsc"; // type-only — erased at build, safe when avsc absent
+import { DriverNotInstalledError } from "@/techs/contract";
+
+let _avscMod: typeof import("avsc") | null = null;
+async function getAvsc(): Promise<typeof import("avsc")> {
+  try {
+    return (_avscMod ??= await import("avsc"));
+  } catch {
+    throw new DriverNotInstalledError("kafka", "avsc");
+  }
+}
 
 export type SchemaType = "AVRO" | "JSON" | "PROTOBUF";
 
@@ -172,6 +182,7 @@ export class SchemaRegistryClient {
     const schema = await this.getSchema(sniff.schemaId);
 
     if (schema.type === "AVRO") {
+      const { parse: parseAvro } = await getAvsc();
       try {
         let t: AvroType | undefined = this.avroTypes.get(sniff.schemaId);
         if (!t) {

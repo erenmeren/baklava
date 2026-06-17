@@ -1,7 +1,7 @@
 import "server-only";
 import { NextRequest, NextResponse } from "next/server";
 import { Readable } from "node:stream";
-import type { CORSRule, LifecycleRule } from "@aws-sdk/client-s3";
+import type { CORSRule, LifecycleRule, S3Client } from "@aws-sdk/client-s3";
 import { getConnection, saveConnection, publicView } from "@/lib/connections/store";
 import { formatError } from "@/lib/errors";
 import type { TechId } from "./types";
@@ -14,12 +14,13 @@ export function blobHandlers(tech: TechId) {
   const bt = blobTech(tech)!;
 
   /** Resolve the connection + client, or return a 404 response. */
-  function resolve(id: string):
-    | { ok: true; rec: ReturnType<typeof getConnection> & object; client: ReturnType<typeof bt.clientFor> }
-    | { ok: false; res: NextResponse } {
+  async function resolve(id: string): Promise<
+    | { ok: true; rec: ReturnType<typeof getConnection> & object; client: S3Client }
+    | { ok: false; res: NextResponse }
+  > {
     const rec = getConnection(id);
     if (!rec || rec.tech !== tech) return { ok: false, res: NextResponse.json({ error: "Not found" }, { status: 404 }) };
-    return { ok: true, rec, client: bt.clientFor(id, rec.config) };
+    return { ok: true, rec, client: await bt.clientFor(id, rec.config) };
   }
 
   return {
@@ -31,7 +32,7 @@ export function blobHandlers(tech: TechId) {
       if (invalid) return NextResponse.json({ error: invalid }, { status: 400 });
       const probeId = `__probe_${Math.random().toString(36).slice(2)}`;
       try {
-        const client = bt.clientFor(probeId, cfg);
+        const client = await bt.clientFor(probeId, cfg);
         const { buckets } = await s3.probe(client);
         const record = body.save
           ? saveConnection({ tech, name: body.name || bt.defaultName, config: cfg as Record<string, unknown>, status: "ok" })
@@ -50,14 +51,14 @@ export function blobHandlers(tech: TechId) {
 
     async listBuckets(_req: NextRequest, ctx: Ctx) {
       const { id } = await ctx.params;
-      const r = resolve(id); if (!r.ok) return r.res;
+      const r = await resolve(id); if (!r.ok) return r.res;
       try { return NextResponse.json({ buckets: await s3.listBuckets(r.client) }); }
       catch (err) { return NextResponse.json({ error: formatError(err) }, { status: 500 }); }
     },
 
     async createBucket(req: NextRequest, ctx: Ctx) {
       const { id } = await ctx.params;
-      const r = resolve(id); if (!r.ok) return r.res;
+      const r = await resolve(id); if (!r.ok) return r.res;
       let body: { name?: string };
       try { body = await req.json(); } catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
       try { await s3.createBucket(r.client, body.name?.trim() ?? "", { lax: tech === "minio" }); return NextResponse.json({ ok: true, name: body.name?.trim() }); }
@@ -66,14 +67,14 @@ export function blobHandlers(tech: TechId) {
 
     async deleteBucket(_req: NextRequest, ctx: Ctx) {
       const { id, bucket } = await ctx.params;
-      const r = resolve(id); if (!r.ok) return r.res;
+      const r = await resolve(id); if (!r.ok) return r.res;
       try { await s3.deleteBucket(r.client, bucket); return NextResponse.json({ ok: true }); }
       catch (err) { return NextResponse.json({ error: formatError(err) }, { status: 400 }); }
     },
 
     async listObjects(req: NextRequest, ctx: Ctx) {
       const { id, bucket } = await ctx.params;
-      const r = resolve(id); if (!r.ok) return r.res;
+      const r = await resolve(id); if (!r.ok) return r.res;
       const prefix = req.nextUrl.searchParams.get("prefix") ?? "";
       const token = req.nextUrl.searchParams.get("token");
       try { return NextResponse.json(await s3.listObjects(r.client, bucket, prefix, token)); }
@@ -82,7 +83,7 @@ export function blobHandlers(tech: TechId) {
 
     async bulkDelete(req: NextRequest, ctx: Ctx) {
       const { id, bucket } = await ctx.params;
-      const r = resolve(id); if (!r.ok) return r.res;
+      const r = await resolve(id); if (!r.ok) return r.res;
       let body: { keys?: string[] };
       try { body = await req.json(); } catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
       try { await s3.deleteObjects(r.client, bucket, body.keys ?? []); return NextResponse.json({ ok: true, deleted: body.keys?.length ?? 0 }); }
@@ -91,7 +92,7 @@ export function blobHandlers(tech: TechId) {
 
     async upload(req: NextRequest, ctx: Ctx) {
       const { id, bucket } = await ctx.params;
-      const r = resolve(id); if (!r.ok) return r.res;
+      const r = await resolve(id); if (!r.ok) return r.res;
       let form: FormData;
       try { form = await req.formData(); } catch { return NextResponse.json({ error: "Expected multipart form" }, { status: 400 }); }
       const file = form.get("file");
@@ -106,7 +107,7 @@ export function blobHandlers(tech: TechId) {
 
     async download(req: NextRequest, ctx: Ctx) {
       const { id, bucket } = await ctx.params;
-      const r = resolve(id); if (!r.ok) return r.res;
+      const r = await resolve(id); if (!r.ok) return r.res;
       const key = req.nextUrl.searchParams.get("key") ?? "";
       try { return NextResponse.redirect(await s3.presignGet(r.client, bucket, key, 300), 302); }
       catch (err) { return NextResponse.json({ error: formatError(err) }, { status: 400 }); }
@@ -114,7 +115,7 @@ export function blobHandlers(tech: TechId) {
 
     async meta(req: NextRequest, ctx: Ctx) {
       const { id, bucket } = await ctx.params;
-      const r = resolve(id); if (!r.ok) return r.res;
+      const r = await resolve(id); if (!r.ok) return r.res;
       const key = req.nextUrl.searchParams.get("key") ?? "";
       try { return NextResponse.json(await s3.headObject(r.client, bucket, key)); }
       catch (err) { return NextResponse.json({ error: formatError(err) }, { status: 400 }); }
@@ -122,7 +123,7 @@ export function blobHandlers(tech: TechId) {
 
     async presign(req: NextRequest, ctx: Ctx) {
       const { id, bucket } = await ctx.params;
-      const r = resolve(id); if (!r.ok) return r.res;
+      const r = await resolve(id); if (!r.ok) return r.res;
       let body: { key?: string; expiresIn?: number };
       try { body = await req.json(); } catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
       try { return NextResponse.json({ url: await s3.presignGet(r.client, bucket, body.key ?? "", Math.min(body.expiresIn ?? 3600, 604800)) }); }
@@ -131,7 +132,7 @@ export function blobHandlers(tech: TechId) {
 
     async copy(req: NextRequest, ctx: Ctx) {
       const { id, bucket } = await ctx.params;
-      const r = resolve(id); if (!r.ok) return r.res;
+      const r = await resolve(id); if (!r.ok) return r.res;
       let body: { from?: string; to?: string; move?: boolean };
       try { body = await req.json(); } catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
       const from = body.from ?? "", to = body.to ?? "";
@@ -144,13 +145,13 @@ export function blobHandlers(tech: TechId) {
 
     async getCors(_req: NextRequest, ctx: Ctx) {
       const { id, bucket } = await ctx.params;
-      const r = resolve(id); if (!r.ok) return r.res;
+      const r = await resolve(id); if (!r.ok) return r.res;
       try { return NextResponse.json({ rules: await s3.getBucketCors(r.client, bucket) }); }
       catch (err) { return NextResponse.json({ error: formatError(err) }, { status: 500 }); }
     },
     async putCors(req: NextRequest, ctx: Ctx) {
       const { id, bucket } = await ctx.params;
-      const r = resolve(id); if (!r.ok) return r.res;
+      const r = await resolve(id); if (!r.ok) return r.res;
       let body: { rules?: CORSRule[] };
       try { body = await req.json(); } catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
       try { await s3.putBucketCors(r.client, bucket, body.rules ?? []); return NextResponse.json({ ok: true }); }
@@ -159,13 +160,13 @@ export function blobHandlers(tech: TechId) {
 
     async getLifecycle(_req: NextRequest, ctx: Ctx) {
       const { id, bucket } = await ctx.params;
-      const r = resolve(id); if (!r.ok) return r.res;
+      const r = await resolve(id); if (!r.ok) return r.res;
       try { return NextResponse.json({ rules: await s3.getBucketLifecycle(r.client, bucket) }); }
       catch (err) { return NextResponse.json({ error: formatError(err) }, { status: 500 }); }
     },
     async putLifecycle(req: NextRequest, ctx: Ctx) {
       const { id, bucket } = await ctx.params;
-      const r = resolve(id); if (!r.ok) return r.res;
+      const r = await resolve(id); if (!r.ok) return r.res;
       let body: { rules?: LifecycleRule[] };
       try { body = await req.json(); } catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
       try { await s3.putBucketLifecycle(r.client, bucket, body.rules ?? []); return NextResponse.json({ ok: true }); }

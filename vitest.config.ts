@@ -78,6 +78,8 @@ export default defineConfig({
             "src/test/**/*.test.ts",
             "src/lib/**/*.test.ts",
             "src/app/**/*.test.ts",
+            "src/techs/**/*.test.ts",
+            "scripts/**/*.test.ts",
           ],
           exclude: ["**/*.dom.test.*", "**/*.integration.test.*"],
         },

@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Duplex } from "node:stream";
+import type Docker from "dockerode";
 import { createDockerClient } from "@/lib/connections/docker";
 import type { DockerConfig } from "@/lib/connections/types";
 import type { Executor, Progress, RawRunOutput, RunOpts } from "../executor";
@@ -13,7 +14,7 @@ const K6_IMAGE = "grafana/k6:latest";
 const PASS_EXIT = 0;
 const THRESHOLD_FAIL_EXIT = 99;
 
-async function ensureImage(client: ReturnType<typeof createDockerClient>): Promise<void> {
+async function ensureImage(client: Docker): Promise<void> {
   try {
     await client.getImage(K6_IMAGE).inspect();
     return; // already present
@@ -59,7 +60,7 @@ export class K6DockerExecutor implements Executor {
     opts: RunOpts,
     onProgress: (p: Progress) => void,
   ): Promise<RawRunOutput> {
-    const client = createDockerClient(this.dockerConfig);
+    const client = await createDockerClient(this.dockerConfig);
     await ensureImage(client);
 
     const envArr = Object.entries(opts.env).map(([k, v]) => `${k}=${v}`);
@@ -71,7 +72,7 @@ export class K6DockerExecutor implements Executor {
     writeFileSync(join(workDir, "script.js"), script, "utf8");
 
     let container:
-      | Awaited<ReturnType<ReturnType<typeof createDockerClient>["createContainer"]>>
+      | Awaited<ReturnType<Docker["createContainer"]>>
       | undefined;
     let onAbort: (() => void) | undefined;
 

@@ -1,0 +1,36 @@
+import { z } from "zod";
+import type { TechModuleMeta } from "@/techs/contract";
+import type { PostgresConfig, ConnectionRecord } from "@/lib/connections/types";
+import { postgresProvider } from "@/lib/command-palette/sql-providers";
+
+const schema = z.object({
+  host: z.string(),
+  port: z.number(),
+  database: z.string(),
+  user: z.string(),
+  password: z.string(),
+  ssl: z.boolean(),
+});
+
+export const postgresMeta: TechModuleMeta<PostgresConfig> = {
+  id: "postgres",
+  catalog: {
+    id: "postgres",
+    name: "PostgreSQL",
+    tagline: "Relational database",
+    description: "Run queries, browse schemas and inspect tables.",
+    category: "Database",
+    color: "from-indigo-400 to-violet-600",
+    status: "available",
+  },
+  config: { schema: schema as unknown as z.ZodType<PostgresConfig>, secretKeys: ["password"] },
+  summary: (r: ConnectionRecord) => {
+    const c = r.config as PostgresConfig;
+    return `${c.user}@${c.host}:${c.port}/${c.database}`;
+  },
+  firstPage: "",
+  optionalDeps: ["pg"],
+  serverPackages: ["pg"],
+  commandObjects: postgresProvider,
+  capabilities: { browse: true, query: true, objectExplorer: true, health: true },
+};

@@ -3,27 +3,33 @@ import os from "node:os";
 import path from "node:path";
 import { PassThrough, Writable } from "node:stream";
 import type { Duplex } from "node:stream";
-import {
+import type {
   KubeConfig,
   CoreV1Api,
   AppsV1Api,
   VersionApi,
   KubernetesObjectApi,
-  Log,
-  Exec,
-  dumpYaml,
-  loadYaml,
-  type V1Pod,
-  type V1Deployment,
-  type V1Service,
-  type V1ConfigMap,
-  type V1Secret,
-  type V1Namespace,
-  type V1Node,
-  type KubernetesObject,
-} from "@kubernetes/client-node";
+  V1Pod,
+  V1Deployment,
+  V1Service,
+  V1ConfigMap,
+  V1Secret,
+  V1Namespace,
+  V1Node,
+  KubernetesObject,
+} from "@kubernetes/client-node"; // type-only — erased at build, safe when package absent
 import type WebSocket from "isomorphic-ws";
 import type { KubernetesConfig } from "./types";
+import { DriverNotInstalledError } from "@/techs/contract";
+
+let _k8sMod: typeof import("@kubernetes/client-node") | null = null;
+async function getK8s(): Promise<typeof import("@kubernetes/client-node")> {
+  try {
+    return (_k8sMod ??= await import("@kubernetes/client-node"));
+  } catch {
+    throw new DriverNotInstalledError("kubernetes", "@kubernetes/client-node");
+  }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Client cache
@@ -66,7 +72,8 @@ function expandHome(p: string): string {
   return path.join(os.homedir(), p.slice(1));
 }
 
-function buildKubeConfig(cfg: KubernetesConfig): KubeConfig {
+async function buildKubeConfig(cfg: KubernetesConfig): Promise<KubeConfig> {
+  const { KubeConfig } = await getK8s();
   const kc = new KubeConfig();
   if (cfg.source === "inline") {
     if (!cfg.kubeconfigYaml?.trim()) {
@@ -84,13 +91,14 @@ function buildKubeConfig(cfg: KubernetesConfig): KubeConfig {
   return kc;
 }
 
-function bundleFor(connectionId: string, cfg: KubernetesConfig): ClientBundle {
+async function bundleFor(connectionId: string, cfg: KubernetesConfig): Promise<ClientBundle> {
   const cache = getCache();
   const hash = hashConfig(cfg);
   const cached = cache.get(connectionId);
   if (cached && cached.hash === hash) return cached;
 
-  const kc = buildKubeConfig(cfg);
+  const { CoreV1Api, AppsV1Api, VersionApi, KubernetesObjectApi } = await getK8s();
+  const kc = await buildKubeConfig(cfg);
   const bundle: ClientBundle = {
     hash,
     kc,
@@ -455,7 +463,7 @@ export async function probe(
   connectionId: string,
   cfg: KubernetesConfig,
 ): Promise<Probe> {
-  const b = bundleFor(connectionId, cfg);
+  const b = await bundleFor(connectionId, cfg);
   const [version, nodes] = await Promise.all([
     b.version.getCode().catch(() => null),
     b.core.listNode().catch<{ items: V1Node[] }>(() => ({ items: [] })),
@@ -471,7 +479,7 @@ export async function listNamespaces(
   connectionId: string,
   cfg: KubernetesConfig,
 ): Promise<NamespaceRow[]> {
-  const b = bundleFor(connectionId, cfg);
+  const b = await bundleFor(connectionId, cfg);
   const [nsList, podList] = await Promise.all([
     b.core.listNamespace(),
     b.core.listPodForAllNamespaces(),
@@ -489,7 +497,7 @@ export async function listPods(
   cfg: KubernetesConfig,
   namespace?: string,
 ): Promise<PodRow[]> {
-  const b = bundleFor(connectionId, cfg);
+  const b = await bundleFor(connectionId, cfg);
   const list =
     namespace && namespace !== "*"
       ? await b.core.listNamespacedPod({ namespace })
@@ -502,7 +510,7 @@ export async function listDeployments(
   cfg: KubernetesConfig,
   namespace?: string,
 ): Promise<DeploymentRow[]> {
-  const b = bundleFor(connectionId, cfg);
+  const b = await bundleFor(connectionId, cfg);
   const list =
     namespace && namespace !== "*"
       ? await b.apps.listNamespacedDeployment({ namespace })
@@ -515,7 +523,7 @@ export async function listServices(
   cfg: KubernetesConfig,
   namespace?: string,
 ): Promise<ServiceRow[]> {
-  const b = bundleFor(connectionId, cfg);
+  const b = await bundleFor(connectionId, cfg);
   const list =
     namespace && namespace !== "*"
       ? await b.core.listNamespacedService({ namespace })
@@ -528,7 +536,7 @@ export async function listConfigMaps(
   cfg: KubernetesConfig,
   namespace?: string,
 ): Promise<ConfigMapRow[]> {
-  const b = bundleFor(connectionId, cfg);
+  const b = await bundleFor(connectionId, cfg);
   const list =
     namespace && namespace !== "*"
       ? await b.core.listNamespacedConfigMap({ namespace })
@@ -541,7 +549,7 @@ export async function listSecrets(
   cfg: KubernetesConfig,
   namespace?: string,
 ): Promise<SecretRow[]> {
-  const b = bundleFor(connectionId, cfg);
+  const b = await bundleFor(connectionId, cfg);
   const list =
     namespace && namespace !== "*"
       ? await b.core.listNamespacedSecret({ namespace })
@@ -567,7 +575,8 @@ export async function streamPodLogs(
   podName: string,
   options: { follow?: boolean; tailLines?: number; container?: string } = {},
 ): Promise<LogStream> {
-  const b = bundleFor(connectionId, cfg);
+  const { Log } = await getK8s();
+  const b = await bundleFor(connectionId, cfg);
   const log = new Log(b.kc);
   const output = new PassThrough();
   const controller = await log.log(
@@ -610,7 +619,8 @@ export async function getPodLogs(
   podName: string,
   options: { tailLines?: number; container?: string } = {},
 ): Promise<string> {
-  const b = bundleFor(connectionId, cfg);
+  const { Log } = await getK8s();
+  const b = await bundleFor(connectionId, cfg);
   const log = new Log(b.kc);
   const output = new PassThrough();
   const MAX_BYTES = 200_000;
@@ -721,7 +731,8 @@ export async function startExec(
   command: string[] = ["/bin/sh"],
   container?: string,
 ): Promise<ExecSession> {
-  const b = bundleFor(connectionId, cfg);
+  const { Exec } = await getK8s();
+  const b = await bundleFor(connectionId, cfg);
   const exec = new Exec(b.kc);
   const stdin = new PassThrough();
   const output = new PassThrough();
@@ -832,7 +843,8 @@ export async function readResourceYaml(
   name: string,
   opts: { redactSecretValues?: boolean } = {},
 ): Promise<string> {
-  const b = bundleFor(connectionId, cfg);
+  const { dumpYaml } = await getK8s();
+  const b = await bundleFor(connectionId, cfg);
   const k = resolveKind(kind);
   const spec = {
     apiVersion: k.apiVersion,
@@ -862,7 +874,8 @@ export async function replaceResourceYaml(
   cfg: KubernetesConfig,
   yaml: string,
 ): Promise<void> {
-  const b = bundleFor(connectionId, cfg);
+  const { loadYaml } = await getK8s();
+  const b = await bundleFor(connectionId, cfg);
   const parsed = loadYaml<KubernetesObject>(yaml);
   if (!parsed?.kind || !parsed?.apiVersion) {
     throw new Error("YAML missing kind/apiVersion");
@@ -910,7 +923,7 @@ export async function deleteResource(
   namespace: string | undefined,
   name: string,
 ): Promise<void> {
-  const b = bundleFor(connectionId, cfg);
+  const b = await bundleFor(connectionId, cfg);
   const k = resolveKind(kind);
   await b.objects.delete({
     apiVersion: k.apiVersion,

@@ -117,7 +117,7 @@ shadcn wrappers in `src/components/ui/` re-export `@base-ui/react/*` primitives.
 - **`RelativeTime`** (`src/components/workspace/relative-time.tsx`): renders empty until the `useEffect` mount flag flips. Don't replace it with a raw `relativeTime(value)` call in a `"use client"` component — `Date.now()` differs between SSR and the first client render and React 19 will warn.
 - **SSE clients**: store the `EventSource` in a ref and add a dedicated unmount `useEffect(() => () => sourceRef.current?.close(), [])`. Don't rely on an `if (!open)` effect to handle unmount.
 - **Abort in-flight fetches** the same way: `useEffect(() => () => abortRef.current?.abort(), [])`.
-- **Native server packages**: register them in `next.config.ts` `serverExternalPackages` (already lists `dockerode`, `ssh2`, `kafkajs`, `pg`). Turbopack will refuse to bundle `ssh2`'s native crypto otherwise.
+- **Native server packages**: `serverExternalPackages` in `next.config.ts` is **generated** from each tech module's `serverPackages` by `scripts/gen-server-packages.ts` (runs on `prebuild`/`predev`, writes `src/techs/server-packages.generated.ts`). Declare a tech's native deps in its `meta.ts` `serverPackages` — don't hand-edit `next.config.ts`. Turbopack will refuse to bundle native crypto (e.g. `ssh2`) otherwise.
 
 ## Driver lifecycle
 
@@ -125,19 +125,26 @@ shadcn wrappers in `src/components/ui/` re-export `@base-ui/react/*` primitives.
 - **Docker**: dockerode hijacked streams (logs, exec, terminal, events) need explicit `stream.destroy?.()` on `req.signal.abort`. Terminal sessions are kept in `terminal-sessions.ts` keyed by `sid`; `dropConnectionSessions(connectionId)` enumerates and ends them all (called from `DELETE /api/connections/[id]`).
 - **Compose deployment** (`src/lib/connections/compose.ts`): every created container / network / volume gets the `baklava.stack.name`, `baklava.stack.service`, `baklava.stack.role` labels. `listStacks` / `getStack` / `stackAction` / `teardownStack` all filter by these labels — never assume name-based reconstruction.
 
-## Adding a new technology
+## Tech module architecture (`src/techs/`)
 
-1. Add a `TechId` literal in `src/lib/connections/types.ts` and a config interface.
-2. Add a catalog entry in `src/lib/tech-catalog.ts` (icon, gradient, tagline, `simpleicons.org` slug).
-3. Add a `connectionSummaries[tech]` entry in `src/lib/connections/summaries.ts`.
-4. Drop a driver helper in `src/lib/connections/<tech>.ts` (probe + per-object operations). Mirror the Kafka/Docker connect-try-finally-disconnect pattern.
-5. If the driver is a native package, add it to `serverExternalPackages` in `next.config.ts`.
-6. Add API routes under `src/app/api/<tech>/` (`test`, `[id]/...`). Use `formatError`. SSE routes follow the streaming pattern above.
-7. Build the form at `src/app/<tech>/<tech>-form.tsx` (reused by `ConnectionSheet`; there is no standalone `/<tech>` page).
-8. Build the workspace at `src/app/<tech>/[connectionId]/`:
-   - `layout.tsx` with `<WorkspaceShell>` and a sidebar of `<SidebarLink>`s (or a custom tree, like Postgres).
-   - One page per object kind, optionally with a `[id]` detail subpage and `*-client.tsx` sibling.
-9. Add the tech to `FIRST_PAGE` in `src/components/connection-tabs.tsx` so the workspace tab opens at the right initial route.
+A technology is one self-contained **module** under `src/techs/<tech>/`, collected by two registries. Core derives catalog, summaries, `FIRST_PAGE`, secret keys, health probes, command-palette providers, and `serverExternalPackages` **from the registry** — so adding a tech is create-module + register, not a 9-file diff.
+
+- **`<tech>/meta.ts`** — `export const <tech>Meta: TechModuleMeta<C>`: `catalog`, `config` (zod `schema` + `secretKeys`), `summary`, `firstPage`, `optionalDeps`, `serverPackages`, optional `capabilities` + `commandObjects`. **CLIENT-SAFE — must NOT import driver code.** It is reached by the home grid and command palette.
+- **`<tech>/index.ts`** — `export const <tech>: TechModule<C> = { ...<tech>Meta, driver: { probe, health } }`. **Server-only** — imports the driver, which lazy-imports its npm package behind a `get<Pkg>()` guard that throws `DriverNotInstalledError` (template: `src/lib/connections/postgres.ts`).
+- **`registry.ts`** (server, full modules) vs **`meta-registry.ts`** (client-safe metadata). **Client components import `@/techs/meta-registry`; server code imports `@/techs/registry`.** Never import a `<tech>/index.ts` or the server `registry.ts` from a client component — it pulls Node-only driver packages into the client bundle and breaks the build.
+- `contract.ts` defines `TechModuleMeta` (client) + `TechDriver` (server) + `TechModule = TechModuleMeta & { driver }`. `DriverNotInstalledError` lives here; `errorResponse` in `src/lib/errors.ts` maps it to 503.
+
+### Adding a new technology
+
+1. Add a `TechId` literal in `src/lib/connections/types.ts` and a config interface. `TechId` is the hand-maintained source of truth; the registry is typed `Record<TechId, …>` so `tsc` fails if a tech has no module.
+2. Create `src/techs/<tech>/meta.ts` (client-safe metadata — no driver import).
+3. Create `src/techs/<tech>/index.ts` (spreads meta + adds `driver`). Put the driver helper in `src/lib/connections/<tech>.ts` (probe + per-object ops, Kafka/Docker connect-try-finally-disconnect pattern) and **lazy-import its npm package** so the dependency is optional.
+4. Register in BOTH `src/techs/registry.ts` (full module) and `src/techs/meta-registry.ts` (meta) — one line each.
+5. Add the npm driver to `optionalDependencies` in `package.json`. `serverExternalPackages` is generated from module `serverPackages` by `scripts/gen-server-packages.ts` (runs on `prebuild`/`predev`) — do **not** hand-edit `next.config.ts`.
+6. Add API routes under `src/app/api/<tech>/` (`test`, `[id]/...`). Use `formatError`; the lazy guard surfaces "Run: npm i <pkg>" when the driver is absent. SSE routes follow the streaming pattern above.
+7. Build the form at `src/app/<tech>/<tech>-form.tsx` and the workspace at `src/app/<tech>/[connectionId]/` (`layout.tsx` with `<WorkspaceShell>` + sidebar; one page per object kind, optional `[id]` detail + `*-client.tsx` sibling).
+
+Catalog, `connectionSummaries`, `FIRST_PAGE`, secret keys, health probes, and command-palette providers all derive from the registry automatically — do **not** edit them per tech.
 
 ## Run
 

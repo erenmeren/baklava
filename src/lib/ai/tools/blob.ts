@@ -32,7 +32,7 @@ const TEXT_CONTENT_TYPE =
  * lazily per call from the cached pool in s3.ts.
  */
 export function blobTools(tech: TechId, connectionId: string, config: unknown): AiTool[] {
-  const client = () => {
+  const client = async () => {
     const bt = blobTech(tech);
     if (!bt) throw new Error(`No blob client registered for tech: ${tech}`);
     return bt.clientFor(connectionId, config);
@@ -47,7 +47,7 @@ export function blobTools(tech: TechId, connectionId: string, config: unknown): 
       description: "List all buckets with their creation time.",
       category: "read",
       inputSchema: z.object({}),
-      execute: async () => listBuckets(client()),
+      execute: async () => listBuckets(await client()),
     },
     {
       name: "blob_list_objects",
@@ -60,7 +60,7 @@ export function blobTools(tech: TechId, connectionId: string, config: unknown): 
         token: z.string().optional(),
       }),
       execute: async ({ bucket, prefix, token }) =>
-        listObjects(client(), bucket as string, (prefix as string) ?? "", (token as string) ?? null),
+        listObjects(await client(), bucket as string, (prefix as string) ?? "", (token as string) ?? null),
     },
     {
       name: "blob_head_object",
@@ -68,21 +68,21 @@ export function blobTools(tech: TechId, connectionId: string, config: unknown): 
         "Object metadata only (size, content-type, etag, last-modified, custom metadata) — never the object's contents.",
       category: "read",
       inputSchema: z.object({ bucket, key: z.string().min(1) }),
-      execute: async ({ bucket, key }) => headObject(client(), bucket as string, key as string),
+      execute: async ({ bucket, key }) => headObject(await client(), bucket as string, key as string),
     },
     {
       name: "blob_get_cors",
       description: "Get the bucket's CORS rules (empty if none configured).",
       category: "read",
       inputSchema: z.object({ bucket }),
-      execute: async ({ bucket }) => getBucketCors(client(), bucket as string),
+      execute: async ({ bucket }) => getBucketCors(await client(), bucket as string),
     },
     {
       name: "blob_get_lifecycle",
       description: "Get the bucket's lifecycle rules (empty if none configured).",
       category: "read",
       inputSchema: z.object({ bucket }),
-      execute: async ({ bucket }) => getBucketLifecycle(client(), bucket as string),
+      execute: async ({ bucket }) => getBucketLifecycle(await client(), bucket as string),
     },
 
     // ── write ─────────────────────────────────────────────────────────────
@@ -92,7 +92,7 @@ export function blobTools(tech: TechId, connectionId: string, config: unknown): 
       category: "write",
       inputSchema: z.object({ name: z.string().min(1) }),
       execute: async ({ name }) =>
-        createBucket(client(), name as string, { lax: tech === "minio" }),
+        createBucket(await client(), name as string, { lax: tech === "minio" }),
     },
     {
       name: "blob_upload_object",
@@ -118,7 +118,7 @@ export function blobTools(tech: TechId, connectionId: string, config: unknown): 
             `Body is ${bytes} bytes; the limit is ${MAX_UPLOAD_BYTES} (256KB).`,
           );
         }
-        await uploadObject(client(), bucket as string, key as string, Buffer.from(content as string, "utf8"), type);
+        await uploadObject(await client(), bucket as string, key as string, Buffer.from(content as string, "utf8"), type);
         return { uploaded: { bucket, key, bytes, contentType: type } };
       },
     },
@@ -128,7 +128,7 @@ export function blobTools(tech: TechId, connectionId: string, config: unknown): 
       category: "write",
       inputSchema: z.object({ bucket, from: z.string().min(1), to: z.string().min(1) }),
       execute: async ({ bucket, from, to }) => {
-        await copyObject(client(), bucket as string, from as string, to as string);
+        await copyObject(await client(), bucket as string, from as string, to as string);
         return { copied: { from, to } };
       },
     },
@@ -138,7 +138,7 @@ export function blobTools(tech: TechId, connectionId: string, config: unknown): 
       category: "write",
       inputSchema: z.object({ bucket, rules: z.array(z.record(z.string(), z.unknown())) }),
       execute: async ({ bucket, rules }) => {
-        await putBucketCors(client(), bucket as string, rules as unknown as CORSRule[]);
+        await putBucketCors(await client(), bucket as string, rules as unknown as CORSRule[]);
         return { ok: true };
       },
     },
@@ -153,7 +153,7 @@ export function blobTools(tech: TechId, connectionId: string, config: unknown): 
       category: "destructive",
       inputSchema: z.object({ bucket, rules: z.array(z.record(z.string(), z.unknown())) }),
       execute: async ({ bucket, rules }) => {
-        await putBucketLifecycle(client(), bucket as string, rules as unknown as LifecycleRule[]);
+        await putBucketLifecycle(await client(), bucket as string, rules as unknown as LifecycleRule[]);
         return { ok: true };
       },
     },
@@ -163,7 +163,7 @@ export function blobTools(tech: TechId, connectionId: string, config: unknown): 
       category: "destructive",
       inputSchema: z.object({ bucket, keys: z.array(z.string().min(1)).min(1) }),
       execute: async ({ bucket, keys }) => {
-        await deleteObjects(client(), bucket as string, keys as string[]);
+        await deleteObjects(await client(), bucket as string, keys as string[]);
         return { deleted: keys };
       },
     },
@@ -173,7 +173,7 @@ export function blobTools(tech: TechId, connectionId: string, config: unknown): 
       category: "destructive",
       inputSchema: z.object({ bucket }),
       execute: async ({ bucket }) => {
-        await deleteBucket(client(), bucket as string);
+        await deleteBucket(await client(), bucket as string);
         return { deleted: bucket };
       },
     },
@@ -184,7 +184,7 @@ export function blobTools(tech: TechId, connectionId: string, config: unknown): 
       category: "destructive",
       inputSchema: z.object({ bucket, from: z.string().min(1), to: z.string().min(1) }),
       execute: async ({ bucket, from, to }) => {
-        const c = client();
+        const c = await client();
         await copyObject(c, bucket as string, from as string, to as string);
         try {
           await deleteObjects(c, bucket as string, [from as string]);

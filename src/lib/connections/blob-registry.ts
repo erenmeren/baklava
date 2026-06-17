@@ -7,7 +7,7 @@ import { s3AwsClientFor, dropS3Client, endpointFor as s3EndpointFor } from "./s3
 
 export interface BlobTech {
   tech: TechId;
-  clientFor(id: string, cfg: unknown): S3Client;
+  clientFor(id: string, cfg: unknown): Promise<S3Client>;
   dropClient(id: string): void;
   /** Returns an error message, or null when the config is valid. */
   validateConfig(cfg: unknown): string | null;

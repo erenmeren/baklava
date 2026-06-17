@@ -30,7 +30,7 @@ export interface HealthSnapshot {
   error?: string;
 }
 
-interface ProbeBody {
+export interface ProbeBody {
   summary: string;
   metrics: HealthMetric[];
   primary?: HealthSnapshot["primary"];
@@ -79,21 +79,10 @@ export async function probeHealth(conn: ConnectionRecord): Promise<HealthSnapsho
   }
 }
 
-function probeFor(conn: ConnectionRecord): Promise<ProbeBody> {
-  switch (conn.tech) {
-    case "postgres": return postgresBody(conn);
-    case "redis": return redisBody(conn);
-    case "docker": return dockerBody(conn);
-    case "kafka": return kafkaBody(conn);
-    case "mysql": return mysqlBody(conn);
-    case "sqlserver": return sqlserverBody(conn);
-    case "mongo": return mongoBody(conn);
-    case "kubernetes": return kubernetesBody(conn);
-    case "r2":
-    case "minio":
-    case "s3": return blobBody(conn);
-    default: return reachabilityOnly(conn);
-  }
+async function probeFor(conn: ConnectionRecord): Promise<ProbeBody> {
+  const { techById } = await import("@/techs/registry");
+  const health = techById.get(conn.tech)?.driver.health;
+  return health ? ((await health(conn)) as ProbeBody) : reachabilityOnly(conn);
 }
 
 const PROTO_PORT: Record<string, number> = {
@@ -173,7 +162,7 @@ async function reachabilityOnly(conn: ConnectionRecord): Promise<ProbeBody> {
 
 // ── Postgres ────────────────────────────────────────────────────────────────
 import { getServerOverview as pgOverview } from "./postgres";
-async function postgresBody(conn: ConnectionRecord): Promise<ProbeBody> {
+export async function postgresBody(conn: ConnectionRecord): Promise<ProbeBody> {
   const o = await pgOverview(conn.config as PostgresConfig);
   const pct = o.maxConnections > 0 ? o.activeConnections / o.maxConnections : 0;
   return {
@@ -189,7 +178,7 @@ async function postgresBody(conn: ConnectionRecord): Promise<ProbeBody> {
 
 // ── Redis ───────────────────────────────────────────────────────────────────
 import { info as redisInfo } from "./redis";
-async function redisBody(conn: ConnectionRecord): Promise<ProbeBody> {
+export async function redisBody(conn: ConnectionRecord): Promise<ProbeBody> {
   const s = await redisInfo(conn.id, conn.config as RedisConfig);
   const used = Number(s.memory?.used_memory ?? 0);
   const max = Number(s.memory?.maxmemory ?? 0);
@@ -209,7 +198,7 @@ async function redisBody(conn: ConnectionRecord): Promise<ProbeBody> {
 
 // ── Docker ──────────────────────────────────────────────────────────────────
 import { pingDocker, listContainers, readContainerStats } from "./docker";
-async function dockerBody(conn: ConnectionRecord): Promise<ProbeBody> {
+export async function dockerBody(conn: ConnectionRecord): Promise<ProbeBody> {
   const cfg = conn.config as DockerConfig;
   await pingDocker(cfg); // reachability
   const containers = await listContainers(cfg, true);
@@ -231,7 +220,7 @@ async function dockerBody(conn: ConnectionRecord): Promise<ProbeBody> {
 
 // ── Kafka ───────────────────────────────────────────────────────────────────
 import { probeKafka, listConsumerGroups } from "./kafka";
-async function kafkaBody(conn: ConnectionRecord): Promise<ProbeBody> {
+export async function kafkaBody(conn: ConnectionRecord): Promise<ProbeBody> {
   const cfg = conn.config as KafkaConfig;
   const [probe, groups] = await Promise.all([
     probeKafka(cfg),
@@ -250,14 +239,14 @@ async function kafkaBody(conn: ConnectionRecord): Promise<ProbeBody> {
 
 // ── MySQL ───────────────────────────────────────────────────────────────────
 import { probeMysql } from "./mysql";
-async function mysqlBody(conn: ConnectionRecord): Promise<ProbeBody> {
+export async function mysqlBody(conn: ConnectionRecord): Promise<ProbeBody> {
   const p = await probeMysql(conn.config as MysqlConfig);
   return { summary: `MySQL ${p.serverVersion.split("-")[0]}`, metrics: [] };
 }
 
 // ── SQL Server ──────────────────────────────────────────────────────────────
 import { probeSqlServer } from "./sqlserver";
-async function sqlserverBody(conn: ConnectionRecord): Promise<ProbeBody> {
+export async function sqlserverBody(conn: ConnectionRecord): Promise<ProbeBody> {
   const p = await probeSqlServer(conn.config as SqlServerConfig);
   return {
     summary: plural(p.databaseCount, "database"),
@@ -268,7 +257,7 @@ async function sqlserverBody(conn: ConnectionRecord): Promise<ProbeBody> {
 
 // ── Mongo ───────────────────────────────────────────────────────────────────
 import { probe as mongoProbe } from "./mongo";
-async function mongoBody(conn: ConnectionRecord): Promise<ProbeBody> {
+export async function mongoBody(conn: ConnectionRecord): Promise<ProbeBody> {
   const p = await mongoProbe(conn.id, conn.config as MongoConfig);
   return {
     summary: `${plural(p.databases, "database")} · ${formatBytes(p.totalSize)}`,
@@ -279,7 +268,7 @@ async function mongoBody(conn: ConnectionRecord): Promise<ProbeBody> {
 
 // ── Kubernetes ──────────────────────────────────────────────────────────────
 import { probe as k8sProbe } from "./kubernetes";
-async function kubernetesBody(conn: ConnectionRecord): Promise<ProbeBody> {
+export async function kubernetesBody(conn: ConnectionRecord): Promise<ProbeBody> {
   const p = await k8sProbe(conn.id, conn.config as KubernetesConfig);
   return {
     summary: `${plural(p.nodeCount, "node")} · ${p.context}`,
@@ -291,10 +280,10 @@ async function kubernetesBody(conn: ConnectionRecord): Promise<ProbeBody> {
 // ── Blob (r2 / minio / s3) ──────────────────────────────────────────────────
 import { blobTech } from "./blob-registry";
 import { probe as s3Probe } from "./s3";
-async function blobBody(conn: ConnectionRecord): Promise<ProbeBody> {
+export async function blobBody(conn: ConnectionRecord): Promise<ProbeBody> {
   const bt = blobTech(conn.tech);
   if (!bt) throw new Error(`no blob handler for ${conn.tech}`);
-  const client = bt.clientFor(conn.id, conn.config);
+  const client = await bt.clientFor(conn.id, conn.config);
   const { buckets } = await s3Probe(client);
   return {
     summary: plural(buckets, "bucket"),

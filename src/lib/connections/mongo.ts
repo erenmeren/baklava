@@ -1,7 +1,25 @@
 import "server-only";
-import { MongoClient, type Document, type IndexSpecification, type CreateIndexesOptions } from "mongodb";
-import { EJSON } from "bson";
+import type { MongoClient, Document, IndexSpecification, CreateIndexesOptions } from "mongodb"; // type-only — erased at build, safe when mongodb absent
 import type { MongoConfig } from "./types";
+import { DriverNotInstalledError } from "@/techs/contract";
+
+let _mongodbMod: typeof import("mongodb") | null = null;
+async function getMongodb(): Promise<typeof import("mongodb")> {
+  try {
+    return (_mongodbMod ??= await import("mongodb"));
+  } catch {
+    throw new DriverNotInstalledError("mongo", "mongodb");
+  }
+}
+
+let _bsonMod: typeof import("bson") | null = null;
+async function getBson(): Promise<typeof import("bson")> {
+  try {
+    return (_bsonMod ??= await import("bson"));
+  } catch {
+    throw new DriverNotInstalledError("mongo", "bson");
+  }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Client cache
@@ -43,10 +61,11 @@ async function bundleFor(
       // ignore
     }
   }
-  const client = new MongoClient(cfg.uri, {
+  const { MongoClient: MongoClientCtor } = await getMongodb();
+  const client = new MongoClientCtor(cfg.uri, {
     serverSelectionTimeoutMS: 5_000,
     connectTimeoutMS: 5_000,
-  });
+  }) as MongoClient;
   await client.connect();
   const bundle: ClientBundle = { hash, client };
   cache.set(connectionId, bundle);
@@ -66,13 +85,15 @@ export function dropMongoClient(connectionId: string): void {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Parse extended JSON; returns plain JS objects with BSON types instantiated. */
-export function parseEjson<T = unknown>(s: string): T {
+export async function parseEjson<T = unknown>(s: string): Promise<T> {
+  const { EJSON } = await getBson();
   if (!s?.trim()) return {} as T;
   return EJSON.parse(s, { relaxed: false }) as T;
 }
 
 /** Serialize using canonical EJSON so the UI shows {"$oid": "…"} explicitly. */
-export function stringifyEjson(v: unknown, pretty = true): string {
+export async function stringifyEjson(v: unknown, pretty = true): Promise<string> {
+  const { EJSON } = await getBson();
   return EJSON.stringify(v, undefined, pretty ? 2 : undefined, { relaxed: false });
 }
 
@@ -230,12 +251,12 @@ export async function findDocuments(
 ): Promise<FindResult> {
   const b = await bundleFor(connectionId, cfg);
   const coll = b.client.db(dbName).collection(collName);
-  const filter = (options.filter ? parseEjson<Document>(options.filter) : {}) as Document;
+  const filter = (options.filter ? await parseEjson<Document>(options.filter) : {}) as Document;
   const projection = options.projection
-    ? parseEjson<Document>(options.projection)
+    ? await parseEjson<Document>(options.projection)
     : undefined;
   const sort = options.sort
-    ? parseEjson<Document>(options.sort)
+    ? await parseEjson<Document>(options.sort)
     : undefined;
   const limit = Math.min(Math.max(options.limit ?? 50, 1), 500);
   const skip = Math.max(options.skip ?? 0, 0);
@@ -246,7 +267,7 @@ export async function findDocuments(
     coll.countDocuments(filter).catch(() => 0),
   ]);
   return {
-    documents: docs.map((d) => stringifyEjson(d)),
+    documents: await Promise.all(docs.map((d) => stringifyEjson(d))),
     total,
     skip,
     limit,
@@ -261,9 +282,9 @@ export async function insertDocument(
   ejson: string,
 ): Promise<{ insertedId: string }> {
   const b = await bundleFor(connectionId, cfg);
-  const doc = parseEjson<Document>(ejson);
+  const doc = await parseEjson<Document>(ejson);
   const res = await b.client.db(dbName).collection(collName).insertOne(doc);
-  return { insertedId: stringifyEjson(res.insertedId, false) };
+  return { insertedId: await stringifyEjson(res.insertedId, false) };
 }
 
 export async function replaceDocument(
@@ -275,8 +296,8 @@ export async function replaceDocument(
   documentEjson: string,
 ): Promise<{ matched: number; modified: number }> {
   const b = await bundleFor(connectionId, cfg);
-  const filter = parseEjson<Document>(filterEjson);
-  const replacement = parseEjson<Document>(documentEjson);
+  const filter = await parseEjson<Document>(filterEjson);
+  const replacement = await parseEjson<Document>(documentEjson);
   // Mongo refuses _id in $set / replacement, so strip it if present and rely
   // on the filter to pin the target.
   if ("_id" in replacement) delete (replacement as { _id?: unknown })._id;
@@ -295,7 +316,7 @@ export async function deleteDocument(
   filterEjson: string,
 ): Promise<{ deleted: number }> {
   const b = await bundleFor(connectionId, cfg);
-  const filter = parseEjson<Document>(filterEjson);
+  const filter = await parseEjson<Document>(filterEjson);
   const res = await b.client
     .db(dbName)
     .collection(collName)
@@ -334,15 +355,15 @@ export async function listIndexes(
   } catch {
     // ignore — sizes are best-effort
   }
-  return idx.map((i) => ({
+  return Promise.all(idx.map(async (i) => ({
     name: i.name ?? "?",
-    keys: stringifyEjson(i.key ?? {}, false),
+    keys: await stringifyEjson(i.key ?? {}, false),
     unique: Boolean(i.unique),
     sparse: Boolean(i.sparse),
     ttl: typeof i.expireAfterSeconds === "number" ? i.expireAfterSeconds : undefined,
     partial: Boolean(i.partialFilterExpression),
     size: i.name ? sizes[i.name] : undefined,
-  }));
+  })));
 }
 
 export interface CreateIndexInput {
@@ -364,7 +385,7 @@ export async function createIndex(
   input: CreateIndexInput,
 ): Promise<{ name: string }> {
   const b = await bundleFor(connectionId, cfg);
-  const keys = parseEjson<IndexSpecification>(input.keysEjson);
+  const keys = await parseEjson<IndexSpecification>(input.keysEjson);
   const opts: CreateIndexesOptions = {};
   if (input.options?.name) opts.name = input.options.name;
   if (input.options?.unique) opts.unique = true;
@@ -373,7 +394,7 @@ export async function createIndex(
     opts.expireAfterSeconds = input.options.expireAfterSeconds;
   }
   if (input.options?.partialFilterExpression) {
-    opts.partialFilterExpression = parseEjson<Document>(
+    opts.partialFilterExpression = await parseEjson<Document>(
       input.options.partialFilterExpression,
     );
   }
@@ -416,7 +437,7 @@ export async function runAggregate(
   pipelineEjson: string,
 ): Promise<AggregateResult> {
   const b = await bundleFor(connectionId, cfg);
-  const pipeline = parseEjson<Document[]>(pipelineEjson);
+  const pipeline = await parseEjson<Document[]>(pipelineEjson);
   if (!Array.isArray(pipeline)) {
     throw new Error("Pipeline must be a JSON array of stages");
   }
@@ -435,7 +456,7 @@ export async function runAggregate(
   }
   await cursor.close();
   return {
-    documents: docs.map((d) => stringifyEjson(d)),
+    documents: await Promise.all(docs.map((d) => stringifyEjson(d))),
     truncated,
   };
 }
@@ -493,12 +514,12 @@ function bsonTypeOf(v: unknown): string {
   return t;
 }
 
-function walkDoc(
+async function walkDoc(
   doc: unknown,
   path: string,
   fields: Map<string, SchemaField>,
   sampleSize: number,
-): void {
+): Promise<void> {
   if (doc === null || doc === undefined) return;
   if (typeof doc !== "object") return;
   if (Array.isArray(doc)) return;
@@ -517,7 +538,7 @@ function walkDoc(
       // Sample value — stringified short form so the UI can render verbatim.
       let sample = "";
       try {
-        sample = stringifyEjson(raw, false);
+        sample = await stringifyEjson(raw, false);
       } catch {
         sample = String(raw);
       }
@@ -526,7 +547,7 @@ function walkDoc(
     }
     entry.presence += 1;
     if (type === "object") {
-      walkDoc(raw, nextPath, fields, sampleSize);
+      await walkDoc(raw, nextPath, fields, sampleSize);
     }
   }
 }
@@ -552,7 +573,7 @@ export async function sampleSchema(
   const fields = new Map<string, SchemaField>();
   let actual = 0;
   for await (const doc of cursor) {
-    walkDoc(doc, "", fields, size);
+    await walkDoc(doc, "", fields, size);
     actual += 1;
   }
   await cursor.close();
@@ -583,7 +604,7 @@ export async function explainFind(
   verbosity: ExplainVerbosity = "executionStats",
 ): Promise<Record<string, unknown>> {
   const b = await bundleFor(connectionId, cfg);
-  const filter = filterEjson ? parseEjson<Document>(filterEjson) : ({} as Document);
+  const filter = filterEjson ? await parseEjson<Document>(filterEjson) : ({} as Document);
   const result = await b.client
     .db(dbName)
     .command({
@@ -606,12 +627,12 @@ export async function distinctValues(
   filterEjson?: string,
 ): Promise<string[]> {
   const b = await bundleFor(connectionId, cfg);
-  const filter = filterEjson ? parseEjson<Document>(filterEjson) : ({} as Document);
+  const filter = filterEjson ? await parseEjson<Document>(filterEjson) : ({} as Document);
   const values = await b.client
     .db(dbName)
     .collection(collName)
     .distinct(field, filter);
-  return values.map((v) => stringifyEjson(v, false));
+  return Promise.all(values.map((v) => stringifyEjson(v, false)));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -636,11 +657,11 @@ export async function indexUsage(
     .collection(collName)
     .aggregate([{ $indexStats: {} }])
     .toArray();
-  return stats.map((s) => ({
+  return Promise.all(stats.map(async (s) => ({
     name: String(s.name ?? "?"),
     ops: Number((s.accesses as { ops?: number })?.ops ?? 0),
-    since: stringifyEjson((s.accesses as { since?: unknown })?.since ?? "", false),
-  }));
+    since: await stringifyEjson((s.accesses as { since?: unknown })?.since ?? "", false),
+  })));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -670,7 +691,7 @@ export async function createCollectionOp(
     if (typeof input.max === "number") options.max = input.max;
   }
   if (input.validatorEjson?.trim()) {
-    options.validator = parseEjson<Document>(input.validatorEjson);
+    options.validator = await parseEjson<Document>(input.validatorEjson);
     if (input.validationLevel) options.validationLevel = input.validationLevel;
   }
   await b.client.db(dbName).createCollection(input.name, options);
@@ -716,7 +737,7 @@ export async function currentOps(
     active: options.active ?? true,
   });
   const list = ((result as { inprog?: Record<string, unknown>[] }).inprog ?? []) as Record<string, unknown>[];
-  return list.map((o) => ({
+  return Promise.all(list.map(async (o) => ({
     opid: String(o.opid ?? ""),
     type: String(o.type ?? "op"),
     op: String(o.op ?? ""),
@@ -725,9 +746,9 @@ export async function currentOps(
     microsecs_running: Number(o.microsecs_running ?? 0),
     client: o.client ? String(o.client) : undefined,
     desc: o.desc ? String(o.desc) : undefined,
-    command: o.command ? stringifyEjson(o.command, false) : undefined,
+    command: o.command ? await stringifyEjson(o.command, false) : undefined,
     waitingForLock: Boolean(o.waitingForLock),
-  }));
+  })));
 }
 
 export async function killOp(
