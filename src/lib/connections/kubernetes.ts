@@ -9,8 +9,6 @@ import type {
   AppsV1Api,
   VersionApi,
   KubernetesObjectApi,
-  Log,
-  Exec,
   V1Pod,
   V1Deployment,
   V1Service,
