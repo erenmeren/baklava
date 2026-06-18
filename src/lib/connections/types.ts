@@ -173,3 +173,10 @@ export interface S3Config {
   sessionToken?: string;
   bucket?: string;
 }
+
+export interface QdrantConfig {
+  /** Base URL, e.g. http://localhost:6333 or a Qdrant Cloud URL. */
+  url: string;
+  /** Optional API key (Qdrant Cloud). Stored as a secret. */
+  apiKey?: string;
+}

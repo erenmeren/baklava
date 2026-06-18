@@ -1,6 +1,7 @@
 export type TechCategory =
   | "Runtime"
   | "Database"
+  | "Vector"
   | "Streaming"
   | "Orchestration"
   | "Cache"
@@ -11,6 +12,7 @@ export const TECH_CATEGORIES = [
   "All",
   "Runtime",
   "Database",
+  "Vector",
   "Streaming",
   "Orchestration",
   "Cache",
