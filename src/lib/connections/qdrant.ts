@@ -93,27 +93,68 @@ export async function getCollection(cfg: QdrantConfig, name: string): Promise<Co
 
 export interface QdrantPoint { id: string | number; payload: Record<string, unknown> | null; vector?: number[] | Record<string, number[]> }
 
+/** Loose escape-valve type for the REST client — avoids fighting narrow SDK generics. */
+type AnyClient = Record<string, (...args: unknown[]) => Promise<unknown>>;
+
 export async function scrollPoints(
   cfg: QdrantConfig,
   name: string,
   opts: { limit: number; offset?: string | number; filter?: unknown; withVector?: boolean },
 ): Promise<{ points: QdrantPoint[]; nextOffset: string | number | null }> {
   return withClient(cfg, async (c) => {
-    const res = await (c as unknown as {
-      scroll(name: string, opts: Record<string, unknown>): Promise<{
-        points: QdrantPoint[];
-        next_page_offset?: string | number | null;
-      }>;
-    }).scroll(name, {
+    const res = await (c as unknown as AnyClient).scroll(name, {
       limit: opts.limit,
       offset: opts.offset,
       filter: opts.filter,
       with_payload: true,
       with_vector: opts.withVector ?? false,
-    });
+    }) as { points: QdrantPoint[]; next_page_offset?: string | number | null };
     return {
       points: (res.points ?? []) as QdrantPoint[],
       nextOffset: (res.next_page_offset as string | number | null) ?? null,
     };
   });
+}
+
+export interface SearchHit { id: string | number; score: number; payload: Record<string, unknown> | null }
+
+export async function searchPoints(
+  cfg: QdrantConfig,
+  name: string,
+  opts: { vector?: number[]; pointId?: string | number; vectorName?: string; limit: number; filter?: unknown },
+): Promise<SearchHit[]> {
+  return withClient(cfg, async (c) => {
+    const ac = c as unknown as AnyClient;
+    let vector = opts.vector;
+    if (vector === undefined && opts.pointId !== undefined) {
+      const got = await ac.retrieve(name, { ids: [opts.pointId], with_vector: true }) as Array<{ id: string | number; vector?: unknown }>;
+      const v = got[0]?.vector;
+      vector = (opts.vectorName && v && typeof v === "object" && !Array.isArray(v)
+        ? (v as Record<string, number[]>)[opts.vectorName]
+        : (v as number[])) ?? undefined;
+      if (!vector) throw new Error(`Point ${opts.pointId} has no vector to search by`);
+    }
+    if (!vector) throw new Error("A query vector or pointId is required");
+    const res = await ac.search(name, {
+      vector: opts.vectorName ? { name: opts.vectorName, vector } : vector,
+      limit: opts.limit,
+      filter: opts.filter,
+      with_payload: true,
+    }) as Array<{ id: string | number; score: number; payload?: unknown }>;
+    return (res ?? []).map((h) => ({ id: h.id, score: h.score, payload: (h.payload as Record<string, unknown>) ?? null }));
+  });
+}
+
+export async function createCollection(cfg: QdrantConfig, name: string, opts: { size: number; distance: string }): Promise<void> {
+  await withClient(cfg, (c) =>
+    (c as unknown as AnyClient).createCollection(name, { vectors: { size: opts.size, distance: opts.distance } }),
+  );
+}
+
+export async function deleteCollection(cfg: QdrantConfig, name: string): Promise<void> {
+  await withClient(cfg, (c) => (c as unknown as AnyClient).deleteCollection(name));
+}
+
+export async function deletePoints(cfg: QdrantConfig, name: string, ids: (string | number)[]): Promise<void> {
+  await withClient(cfg, (c) => (c as unknown as AnyClient).delete(name, { points: ids }));
 }
