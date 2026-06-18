@@ -29,10 +29,28 @@ declare module "mssql" {
   }
 
   export class Request {
+    /** Enable row-by-row streaming via events instead of buffering recordsets. */
+    stream: boolean;
     input(name: string, value: unknown): this;
     input(name: string, type: unknown, value: unknown): this;
     query<T = unknown>(command: string): Promise<IResult<T>>;
     batch<T = unknown>(command: string): Promise<IResult<T>>;
+    /** Cancel an in-flight request. In stream mode the promise still resolves. */
+    cancel(): boolean;
+    pause(): boolean;
+    resume(): boolean;
+    on(
+      event: "recordset",
+      listener: (columns: Record<string, unknown>) => void
+    ): this;
+    on(event: "row", listener: (row: Record<string, unknown>) => void): this;
+    on(event: "rowsaffected", listener: (count: number) => void): this;
+    on(event: "info", listener: (info: { message?: string }) => void): this;
+    on(
+      event: "error",
+      listener: (err: Error & { code?: string }) => void
+    ): this;
+    on(event: "done", listener: (result: IResult<unknown>) => void): this;
   }
 
   export class ConnectionPool {

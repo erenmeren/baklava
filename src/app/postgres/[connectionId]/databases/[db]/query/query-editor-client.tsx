@@ -197,6 +197,11 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
   // Editor handle — lets us read the current selection so ⌘↵ / Run can run
   // just the highlighted text (falling back to the whole editor).
   const cmRef = useRef<ReactCodeMirrorRef>(null);
+
+  // Aborts an in-flight query fetch on a new run or unmount, so navigating away
+  // doesn't leave the request hanging.
+  const abortRef = useRef<AbortController | null>(null);
+  useEffect(() => () => abortRef.current?.abort(), []);
   const runText = useCallback(() => {
     const view = cmRef.current?.view;
     if (view) {
@@ -337,6 +342,9 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
       setResultIdx(0);
       setTab("data");
       const t0 = Date.now();
+      abortRef.current?.abort();
+      const ac = new AbortController();
+      abortRef.current = ac;
       try {
         const res = await fetch(
           `/api/postgres/${connectionId}/databases/${encodeURIComponent(db)}/query`,
@@ -348,6 +356,7 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
               multi: true,
               searchPath: searchPath ?? undefined,
             }),
+            signal: ac.signal,
           },
         );
         const data = await res.json();
@@ -454,6 +463,8 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
           });
         }
       } catch (e) {
+        // A superseded / unmounted run was aborted on purpose — not an error.
+        if (e instanceof DOMException && e.name === "AbortError") return;
         const msg = e instanceof Error ? e.message : String(e);
         setError(msg);
         setPhase("err");
@@ -545,7 +556,7 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
       }
       description={
         <span className="text-xs">
-          PostgreSQL · {kbd} to run · results capped at 500 rows
+          PostgreSQL · {kbd} to run · results capped at 1000 rows
         </span>
       }
       actions={
@@ -608,7 +619,7 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
         <div className="flex items-center gap-2 text-[11px] font-mono">
           <StatusIndicator phase={phase} result={result} error={error} kbd={kbd} />
           <div className="ml-auto flex items-center gap-2 text-muted-foreground">
-            {result?.truncated ? <span>· truncated to first 500 rows</span> : null}
+            {result?.truncated ? <span>· first 1000 rows — more exist</span> : null}
             <ShortcutCheatsheet
               compact
               onRun={() => execute(false)}
@@ -964,7 +975,7 @@ function MessagesPanel({
         <div className="text-brand">
           [ok] returned {result.rowCount} row{result.rowCount === 1 ? "" : "s"}{" "}
           in {result.durationMs}ms
-          {result.truncated ? " · truncated to 500 rows" : ""}
+          {result.truncated ? " · first 1000 rows (more exist)" : ""}
         </div>
       ) : null}
       {phase === "err" && error ? (

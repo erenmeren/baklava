@@ -19,8 +19,6 @@ interface QueryRequest {
   searchPath?: string;
 }
 
-const MAX_ROWS = 500;
-
 export async function POST(req: NextRequest, ctx: RouteContext) {
   const { id, db } = await ctx.params;
   const record = getConnection(id);
@@ -48,15 +46,15 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
       );
       updateStatus(id, "ok");
       return NextResponse.json({
+        // The driver caps rows via a server-side cursor and sets `truncated`.
         results: result.results.map((r) => {
           if ("error" in r) return r;
-          const truncated = r.rows.slice(0, MAX_ROWS);
           return {
             sql: r.sql,
             fields: r.fields,
-            rows: truncated,
+            rows: r.rows,
             rowCount: r.rowCount,
-            truncated: r.rows.length > truncated.length,
+            truncated: r.truncated ?? false,
             durationMs: r.durationMs,
             isCommand: r.isCommand,
             command: r.command,
@@ -79,12 +77,11 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
       body.sql
     );
     updateStatus(id, "ok");
-    const truncated = result.rows.slice(0, MAX_ROWS);
     return NextResponse.json({
       fields: result.fields,
-      rows: truncated,
+      rows: result.rows,
       rowCount: result.rowCount,
-      truncated: result.rows.length > truncated.length,
+      truncated: result.truncated ?? false,
       durationMs: result.durationMs,
     });
   } catch (err) {

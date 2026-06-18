@@ -1282,38 +1282,78 @@ export async function runSqlServerScript(
           const start = Date.now();
           const messages: string[] = [];
           const req = pool.request();
-          // mssql's Request extends EventEmitter and emits 'info' for PRINT /
-          // STATISTICS output, but the bundled types don't declare `.on`.
-          (req as unknown as {
-            on: (ev: string, cb: (info: { message?: string }) => void) => void;
-          }).on("info", (info) => {
+          // Stream rows as they arrive and cancel the moment a result set
+          // exceeds the cap, instead of buffering the whole recordset and
+          // slicing afterwards. The old approach pulled every matching row over
+          // the wire first, so `SELECT *` over a large table hit the request
+          // timeout long before the 1000-row slice ever applied.
+          req.stream = true;
+          req.on("info", (info) => {
             if (info?.message) messages.push(info.message);
+          });
+          type Acc = {
+            fields: string[];
+            rows: unknown[][];
+            received: number;
+            truncated: boolean;
+          };
+          const accs: Acc[] = [];
+          const rowsAffected: number[] = [];
+          let current: Acc | null = null;
+          let canceled = false;
+          let streamError: Error | null = null;
+          req.on("recordset", (columns) => {
+            current = {
+              fields: Object.keys(columns),
+              rows: [],
+              received: 0,
+              truncated: false,
+            };
+            accs.push(current);
+          });
+          req.on("row", (row) => {
+            if (!current) return;
+            current.received += 1;
+            if (current.rows.length < MAX_RESULT_ROWS) {
+              current.rows.push(current.fields.map((f) => row[f] ?? null));
+            } else {
+              current.truncated = true;
+              if (!canceled) {
+                canceled = true;
+                req.cancel(); // stop the firehose — the promise still resolves
+              }
+            }
+          });
+          req.on("rowsaffected", (count) => {
+            rowsAffected.push(count);
+          });
+          req.on("error", (err) => {
+            // Our own cancel() surfaces as ECANCEL — an intentional truncation,
+            // not a failure. Any other error is the batch failing for real.
+            if (err?.code === "ECANCEL") return;
+            if (!streamError) streamError = err;
           });
           const text = opts.statistics
             ? `SET STATISTICS IO ON; SET STATISTICS TIME ON;\n${batch.sql}`
             : batch.sql;
           try {
-            const res = await req.batch(text);
-            // mssql exposes recordsets as an array; each has a `columns` map.
-            const recordsets = (res.recordsets ?? []) as unknown as Array<
-              Array<Record<string, unknown>> & {
-                columns?: Record<string, unknown>;
-              }
-            >;
-            const resultSets: SqlServerResultSet[] = recordsets.map((rs) => {
-              const fields = rs.columns ? Object.keys(rs.columns) : rs[0] ? Object.keys(rs[0]) : [];
-              const sliced = rs.slice(0, MAX_RESULT_ROWS);
-              return {
-                fields,
-                rows: sliced.map((row) => fields.map((f) => row[f] ?? null)),
-                rowCount: rs.length,
-                truncated: rs.length > sliced.length,
-              };
-            });
+            // In stream mode the promise resolves on `done` even when the batch
+            // errored (the error arrives via the 'error' event), so re-throw it.
+            await req.batch(text);
+            if (streamError) throw streamError;
+            const resultSets: SqlServerResultSet[] = accs.map((a) => ({
+              fields: a.fields,
+              rows: a.rows,
+              // When truncated the true total is unknown (we cancelled early),
+              // so report the rows actually returned and let `truncated` carry
+              // the "more exist" signal.
+              rowCount: a.truncated ? a.rows.length : a.received,
+              truncated: a.truncated,
+            }));
             out.push({
               sql: batch.sql,
               resultSets,
-              rowsAffected: res.rowsAffected ?? [],
+              rowsAffected,
               messages,
               durationMs: Date.now() - start,
             });

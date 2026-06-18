@@ -814,6 +814,8 @@ export interface QueryResult {
   rows: Record<string, ColumnValue>[];
   rowCount: number;
   command: string;
+  /** True when the rowset was capped (more rows exist than were returned). */
+  truncated?: boolean;
 }
 
 export interface QueryStatementResult extends QueryResult {
@@ -910,6 +912,90 @@ function commandOf(sql: string): string {
   return m ? m[0].toUpperCase() : "";
 }
 
+/** Editor row cap — matches the Postgres / SQL Server editors. */
+const EDITOR_ROW_CAP = 1000;
+
+// Minimal shape of mysql2's underlying (callback) connection + Query emitter,
+// reached via the promise wrapper's `.connection`. mysql2 ships no usable
+// types for the streaming event API, so we declare just what we use.
+interface CoreQuery {
+  on(ev: "fields", cb: (fields: { name: string }[] | undefined) => void): CoreQuery;
+  on(ev: "result", cb: (row: unknown) => void): CoreQuery;
+  on(ev: "end", cb: () => void): CoreQuery;
+  on(ev: "error", cb: (err: Error) => void): CoreQuery;
+}
+interface CoreConn {
+  query(sql: string): CoreQuery;
+  destroy(): void;
+}
+
+/**
+ * Run one statement in streaming mode, keeping at most `maxRows` rows. The
+ * moment a result set produces one row past the cap we `destroy()` the
+ * connection to stop the server mid-stream, instead of buffering the whole
+ * result (mysql2 has no statement timeout, so a huge SELECT would otherwise
+ * pull every row into memory). Because the connection is then dead, a truncated
+ * statement ends the batch — `runQueryMulti` breaks after it.
+ */
+function runStatementBounded(
+  conn: Connection,
+  statement: string,
+  maxRows: number,
+): Promise<{
+  columns: string[];
+  rows: Record<string, ColumnValue>[];
+  rowCount: number;
+  truncated: boolean;
+  isResultSet: boolean;
+}> {
+  const core = (conn as unknown as { connection: CoreConn }).connection;
+  return new Promise((resolve, reject) => {
+    const rows: Record<string, ColumnValue>[] = [];
+    let columns: string[] = [];
+    let isResultSet = false;
+    let affectedRows = 0;
+    let settled = false;
+    const q = core.query(statement);
+    // Writes emit 'fields' with `undefined`; result sets emit the field list.
+    q.on("fields", (fields) => {
+      if (fields) {
+        isResultSet = true;
+        columns = fields.map((f) => f.name);
+      }
+    });
+    q.on("result", (row) => {
+      if (settled) return;
+      if (!isResultSet) {
+        affectedRows = (row as { affectedRows?: number })?.affectedRows ?? 0;
+        return;
+      }
+      if (rows.length < maxRows) {
+        rows.push(row as Record<string, ColumnValue>);
+      } else {
+        settled = true;
+        core.destroy(); // one row past the cap — stop the firehose
+        resolve({ columns, rows, rowCount: rows.length, truncated: true, isResultSet });
+      }
+    });
+    q.on("error", (err) => {
+      if (settled) return;
+      settled = true;
+      reject(err);
+    });
+    q.on("end", () => {
+      if (settled) return;
+      settled = true;
+      resolve({
+        columns: isResultSet ? columns : [],
+        rows,
+        rowCount: isResultSet ? rows.length : affectedRows,
+        truncated: false,
+        isResultSet,
+      });
+    });
+  });
+}
+
 export async function runQueryMulti(
   config: MysqlConfig,
   database: string | undefined,
@@ -923,32 +1009,20 @@ export async function runQueryMulti(
     for (const statement of statements) {
       const start = process.hrtime.bigint();
       try {
-        const [rows, fields] = await conn.query(statement);
+        const r = await runStatementBounded(conn, statement, EDITOR_ROW_CAP);
         const durationMs = Number(process.hrtime.bigint() - start) / 1e6;
-        if (Array.isArray(rows)) {
-          const cols =
-            (fields as { name: string }[] | undefined)?.map((f) => f.name) ??
-            (rows.length ? Object.keys(rows[0] as object) : []);
-          results.push({
-            statement,
-            durationMs,
-            columns: cols,
-            rows: rows as Record<string, ColumnValue>[],
-            rowCount: rows.length,
-            command: commandOf(statement),
-          });
-        } else {
-          // OkPacket (INSERT/UPDATE/DELETE/DDL)
-          const ok = rows as { affectedRows?: number };
-          results.push({
-            statement,
-            durationMs,
-            columns: [],
-            rows: [],
-            rowCount: ok.affectedRows ?? 0,
-            command: commandOf(statement),
-          });
-        }
+        results.push({
+          statement,
+          durationMs,
+          columns: r.columns,
+          rows: r.rows,
+          rowCount: r.rowCount,
+          truncated: r.truncated,
+          command: commandOf(statement),
+        });
+        // The connection was destroyed to stop the stream, so no further
+        // statements can run on it — end the batch here.
+        if (r.truncated) break;
       } catch (err) {
         errors.push({
           statement,

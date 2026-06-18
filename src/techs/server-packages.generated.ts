@@ -9,6 +9,7 @@ export const SERVER_EXTERNAL_PACKAGES = [
   "mssql",
   "mysql2",
   "pg",
+  "pg-cursor",
   "ssh2",
   "tedious"
 ] as const;

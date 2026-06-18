@@ -29,8 +29,8 @@ export const postgresMeta: TechModuleMeta<PostgresConfig> = {
     return `${c.user}@${c.host}:${c.port}/${c.database}`;
   },
   firstPage: "",
-  optionalDeps: ["pg"],
-  serverPackages: ["pg"],
+  optionalDeps: ["pg", "pg-cursor"],
+  serverPackages: ["pg", "pg-cursor"],
   commandObjects: postgresProvider,
   capabilities: { browse: true, query: true, objectExplorer: true, health: true },
 };

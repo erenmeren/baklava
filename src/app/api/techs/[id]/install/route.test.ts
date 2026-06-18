@@ -45,7 +45,7 @@ describe("install route happy path", () => {
     });
     spawnMock.mockReturnValue(child);
     const res = await GET(makeReq("localhost:3000"), ctx("postgres"));
-    expect(spawnMock).toHaveBeenCalledWith("npm", ["install", "pg", "--no-save"], expect.objectContaining({ cwd: expect.any(String) }));
+    expect(spawnMock).toHaveBeenCalledWith("npm", ["install", "pg", "pg-cursor", "--no-save"], expect.objectContaining({ cwd: expect.any(String) }));
     queueMicrotask(() => { child.stdout.emit("data", Buffer.from("added 1 package\n")); child.emit("close", 0); });
     const body = await readAll(res);
     expect(body).toContain("event: progress");
