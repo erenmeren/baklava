@@ -81,6 +81,9 @@ export const TECH_SECTIONS: Record<TechId, TechSection[]> = {
     { label: "Overview", seg: "", icon: "LayoutDashboard" },
     { label: "Buckets", seg: "buckets", icon: "Boxes" },
   ],
+  qdrant: [
+    { label: "Collections", seg: "collections", icon: "Layers" },
+  ],
 };
 
 export function sectionsFor(tech: TechId): TechSection[] {

@@ -9,7 +9,8 @@ export type TechId =
   | "mongo"
   | "r2"
   | "minio"
-  | "s3";
+  | "s3"
+  | "qdrant";
 
 export type ConnectionStatus = "untested" | "ok" | "error";
 

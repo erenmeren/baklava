@@ -14,16 +14,17 @@ import { mongoMeta } from "./mongo/meta";
 import { r2Meta } from "./r2/meta";
 import { minioMeta } from "./minio/meta";
 import { s3Meta } from "./s3/meta";
+import { qdrantMeta } from "./qdrant/meta";
 
 export const TECH_META: Record<TechId, TechModuleMeta> = {
   docker: dockerMeta, postgres: postgresMeta, kafka: kafkaMeta, mysql: mysqlMeta,
   sqlserver: sqlserverMeta, kubernetes: kubernetesMeta, redis: redisMeta, mongo: mongoMeta,
-  r2: r2Meta, minio: minioMeta, s3: s3Meta,
+  r2: r2Meta, minio: minioMeta, s3: s3Meta, qdrant: qdrantMeta,
 };
 
 export const TECH_META_LIST: TechModuleMeta[] = [
   dockerMeta, postgresMeta, kafkaMeta, mysqlMeta, sqlserverMeta, kubernetesMeta,
-  redisMeta, mongoMeta, r2Meta, minioMeta, s3Meta,
+  redisMeta, mongoMeta, r2Meta, minioMeta, s3Meta, qdrantMeta,
 ];
 
 export const techMetaById = new Map<string, TechModuleMeta>(

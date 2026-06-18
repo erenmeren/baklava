@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { TECH_MODULES, TECH_MODULE_LIST, techById, requireTechModule } from "./registry";
 
-const TECH_IDS = ["docker","kafka","postgres","mysql","sqlserver","kubernetes","redis","mongo","r2","minio","s3"] as const;
+const TECH_IDS = ["docker","kafka","postgres","mysql","sqlserver","kubernetes","redis","mongo","r2","minio","s3","qdrant"] as const;
 
 describe("registry", () => {
   it("has exactly one module per TechId", () => {
@@ -16,7 +16,7 @@ describe("registry", () => {
   });
   it("list order matches catalog connection order", () => {
     expect(TECH_MODULE_LIST.map((m) => m.id)).toEqual([
-      "docker","postgres","kafka","mysql","sqlserver","kubernetes","redis","mongo","r2","minio","s3",
+      "docker","postgres","kafka","mysql","sqlserver","kubernetes","redis","mongo","r2","minio","s3","qdrant",
     ]);
   });
 });

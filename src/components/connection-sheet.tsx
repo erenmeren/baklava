@@ -25,6 +25,7 @@ import { MongoForm } from "@/app/mongo/mongo-form";
 import { R2Form } from "@/app/r2/r2-form";
 import { MinioForm } from "@/app/minio/minio-form";
 import { S3Form } from "@/app/s3/s3-form";
+import { QdrantForm } from "@/app/qdrant/qdrant-form";
 
 interface Props {
   tech: TechMeta | null;
@@ -53,6 +54,7 @@ const FORMS: Record<TechId, React.ComponentType<ConnectionFormProps>> = {
   r2: R2Form,
   minio: MinioForm,
   s3: S3Form,
+  qdrant: QdrantForm,
 };
 
 export function ConnectionSheet({ tech, onOpenChange }: Props) {

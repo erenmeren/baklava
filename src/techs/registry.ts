@@ -11,15 +11,16 @@ import { mongo } from "./mongo";
 import { r2 } from "./r2";
 import { minio } from "./minio";
 import { s3 } from "./s3";
+import { qdrant } from "./qdrant";
 
 // Order here = home-grid connection order. `Record<TechId, …>` makes tsc fail
 // if any TechId is missing a module — that is the completeness check.
 export const TECH_MODULES: Record<TechId, TechModule> = {
-  docker, postgres, kafka, mysql, sqlserver, kubernetes, redis, mongo, r2, minio, s3,
+  docker, postgres, kafka, mysql, sqlserver, kubernetes, redis, mongo, r2, minio, s3, qdrant,
 };
 
 export const TECH_MODULE_LIST: TechModule[] = [
-  docker, postgres, kafka, mysql, sqlserver, kubernetes, redis, mongo, r2, minio, s3,
+  docker, postgres, kafka, mysql, sqlserver, kubernetes, redis, mongo, r2, minio, s3, qdrant,
 ];
 
 export const techById = new Map<string, TechModule>(

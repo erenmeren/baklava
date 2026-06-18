@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { TECH_META, TECH_META_LIST, techMetaById, requireTechMeta } from "./meta-registry";
 
-const TECH_IDS = ["docker","kafka","postgres","mysql","sqlserver","kubernetes","redis","mongo","r2","minio","s3"] as const;
+const TECH_IDS = ["docker","kafka","postgres","mysql","sqlserver","kubernetes","redis","mongo","r2","minio","s3","qdrant"] as const;
 
 describe("meta-registry", () => {
   it("has one meta per TechId", () => {
@@ -16,7 +16,7 @@ describe("meta-registry", () => {
   });
   it("list order matches catalog connection order", () => {
     expect(TECH_META_LIST.map((m) => m.id)).toEqual([
-      "docker","postgres","kafka","mysql","sqlserver","kubernetes","redis","mongo","r2","minio","s3",
+      "docker","postgres","kafka","mysql","sqlserver","kubernetes","redis","mongo","r2","minio","s3","qdrant",
     ]);
   });
 });

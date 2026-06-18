@@ -2,15 +2,13 @@ import "server-only";
 import type { QdrantClient } from "@qdrant/js-client-rest"; // type-only — erased
 import type { QdrantConfig } from "./types";
 import { DriverNotInstalledError } from "@/techs/contract";
-import type { TechId } from "./types";
 
 let mod: typeof import("@qdrant/js-client-rest") | null = null;
 async function getQdrant(): Promise<typeof import("@qdrant/js-client-rest")> {
   try {
     return (mod ??= await import("@qdrant/js-client-rest"));
   } catch {
-    // "qdrant" will be added to TechId in a follow-up task; cast until then
-    throw new DriverNotInstalledError("qdrant" as TechId, "@qdrant/js-client-rest");
+    throw new DriverNotInstalledError("qdrant", "@qdrant/js-client-rest");
   }
 }
 
