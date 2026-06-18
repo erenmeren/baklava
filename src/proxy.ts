@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { SESSION_COOKIE, verifySessionToken } from "@/lib/auth/session";
-import { mustChangePassword } from "@/lib/auth/store";
+import { mustChangePassword, isAuthEnabled } from "@/lib/auth/store";
 
 // Next 16 renamed `middleware` → `proxy`. It defaults to the Node.js runtime,
 // so it can verify the HMAC-signed session cookie against the on-disk secret
@@ -16,6 +16,9 @@ function isAuthApi(pathname: string): boolean {
 }
 
 export function proxy(req: NextRequest): NextResponse {
+  // Gate turned off in Settings → let everything through.
+  if (!isAuthEnabled()) return NextResponse.next();
+
   const { pathname } = req.nextUrl;
   const authed = verifySessionToken(req.cookies.get(SESSION_COOKIE)?.value);
   const mustChange = authed && mustChangePassword();

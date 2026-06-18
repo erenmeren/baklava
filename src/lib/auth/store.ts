@@ -30,6 +30,9 @@ export interface AuthState {
   passwordHash: string; // hex (scrypt of password+salt)
   secret: string; // hex — HMAC key for session tokens
   mustChange: boolean;
+  /** When false, the password gate is disabled and every request is allowed.
+   *  Absent in older auth.json files → treated as enabled. */
+  enabled?: boolean;
   updatedAt: number;
 }
 
@@ -51,6 +54,7 @@ function freshState(): AuthState {
     secret: randomBytes(32).toString("hex"),
     // A deployer-chosen password is trusted; the public default must be changed.
     mustChange: !process.env.BAKLAVA_INITIAL_PASSWORD,
+    enabled: true,
     updatedAt: Date.now(),
   };
 }
@@ -104,6 +108,17 @@ export function getAuthSecret(): string {
 /** True while the bootstrap default password is still in place. */
 export function mustChangePassword(): boolean {
   return load().mustChange;
+}
+
+/** Whether the password gate is active. Defaults to true for older files. */
+export function isAuthEnabled(): boolean {
+  return load().enabled !== false;
+}
+
+/** Turn the password gate on or off. */
+export function setAuthEnabled(enabled: boolean): void {
+  const s = load();
+  persist({ ...s, enabled, updatedAt: Date.now() });
 }
 
 /** Constant-time check of a candidate password against the stored hash. */

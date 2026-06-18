@@ -1,8 +1,9 @@
 "use client";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { KeyRound, ShieldCheck } from "lucide-react";
+import { KeyRound, ShieldCheck, Lock } from "lucide-react";
 import { ProviderSettings } from "./provider-settings";
 import { PermissionSettings } from "./permission-settings";
+import { SecuritySettings } from "./security-settings";
 
 export function SettingsClient() {
   return (
@@ -25,6 +26,10 @@ export function SettingsClient() {
             <ShieldCheck className="size-3.5" />
             Permissions
           </TabsTrigger>
+          <TabsTrigger value="security" className="gap-1.5">
+            <Lock className="size-3.5" />
+            Security
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="provider" className="outline-none">
@@ -32,6 +37,9 @@ export function SettingsClient() {
         </TabsContent>
         <TabsContent value="permissions" className="outline-none">
           <PermissionSettings />
+        </TabsContent>
+        <TabsContent value="security" className="outline-none">
+          <SecuritySettings />
         </TabsContent>
       </Tabs>
     </div>

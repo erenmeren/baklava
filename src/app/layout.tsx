@@ -16,7 +16,7 @@ import { SettingsTrigger } from "@/components/settings-trigger";
 import { DashboardTrigger } from "@/components/dashboard-trigger";
 import { LockButton } from "@/components/lock-button";
 import { SESSION_COOKIE, verifySessionToken } from "@/lib/auth/session";
-import { mustChangePassword } from "@/lib/auth/store";
+import { mustChangePassword, isAuthEnabled } from "@/lib/auth/store";
 import Link from "next/link";
 
 // Fonts are vendored into public/fonts/ so builds never reach out to
@@ -55,12 +55,14 @@ export default async function RootLayout({
   const themeClass =
     theme === "dark" ? "dark" : theme === "light" ? "light" : "";
 
-  // App chrome (tabs, palette, settings…) only renders for an authenticated
-  // session that has cleared the bootstrap password — the /login screen and the
-  // forced change flow show a bare card instead.
+  // App chrome (tabs, palette, settings…) renders when the gate is off, or for
+  // an authenticated session that has cleared the bootstrap password — the
+  // /login screen and the forced change flow show a bare card instead.
+  const authEnabled = isAuthEnabled();
   const showChrome =
-    verifySessionToken(cookieStore.get(SESSION_COOKIE)?.value) &&
-    !mustChangePassword();
+    !authEnabled ||
+    (verifySessionToken(cookieStore.get(SESSION_COOKIE)?.value) &&
+      !mustChangePassword());
 
   return (
     <html
@@ -99,7 +101,7 @@ export default async function RootLayout({
                     <DashboardTrigger />
                     <AssistantTrigger />
                     <SettingsTrigger />
-                    <LockButton />
+                    {authEnabled ? <LockButton /> : null}
                   </div>
                   {/* Appearance is a preference, not a destination — detached */}
                   <div className="ml-1.5">

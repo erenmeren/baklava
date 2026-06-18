@@ -41,6 +41,14 @@ describe("auth store", () => {
     expect(store.verifyPassword("password123")).toBe(false);
     expect(store.mustChangePassword()).toBe(false);
   });
+
+  it("toggles the password gate on and off (defaults on)", () => {
+    expect(store.isAuthEnabled()).toBe(true);
+    store.setAuthEnabled(false);
+    expect(store.isAuthEnabled()).toBe(false);
+    store.setAuthEnabled(true);
+    expect(store.isAuthEnabled()).toBe(true);
+  });
 });
 
 describe("session tokens", () => {
