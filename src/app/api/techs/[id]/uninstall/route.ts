@@ -10,5 +10,5 @@ interface RouteContext {
 
 export async function GET(req: NextRequest, ctx: RouteContext) {
   const { id } = await ctx.params;
-  return driverNpmStream(req, id, "install");
+  return driverNpmStream(req, id, "uninstall");
 }

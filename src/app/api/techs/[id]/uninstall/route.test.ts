@@ -7,7 +7,7 @@ vi.mock("node:child_process", () => ({ spawn: (...a: unknown[]) => spawnMock(...
 import { GET } from "./route";
 
 function makeReq(host: string) {
-  return new Request(`http://${host}/api/techs/x/install`, { headers: { host } }) as never;
+  return new Request(`http://${host}/api/techs/x/uninstall`, { headers: { host } }) as never;
 }
 function ctx(id: string) { return { params: Promise.resolve({ id }) }; }
 
@@ -25,7 +25,7 @@ beforeEach(() => {
   (globalThis as Record<symbol, unknown>)[Symbol.for("baklava.driverInstalls")] = new Set();
 });
 
-describe("install route guards", () => {
+describe("uninstall route guards", () => {
   it("403 for a non-local host (no spawn)", async () => {
     const res = await GET(makeReq("evil.example.com"), ctx("postgres"));
     expect(res.status).toBe(403);
@@ -38,15 +38,15 @@ describe("install route guards", () => {
   });
 });
 
-describe("install route happy path", () => {
-  it("spawns npm install with the tech's deps and emits done", async () => {
+describe("uninstall route happy path", () => {
+  it("spawns npm uninstall --no-save with the tech's deps and emits done", async () => {
     const child = Object.assign(new EventEmitter(), {
       stdout: new EventEmitter(), stderr: new EventEmitter(), kill: vi.fn(),
     });
     spawnMock.mockReturnValue(child);
     const res = await GET(makeReq("localhost:3000"), ctx("postgres"));
-    expect(spawnMock).toHaveBeenCalledWith("npm", ["install", "pg", "--no-save"], expect.objectContaining({ cwd: expect.any(String) }));
-    queueMicrotask(() => { child.stdout.emit("data", Buffer.from("added 1 package\n")); child.emit("close", 0); });
+    expect(spawnMock).toHaveBeenCalledWith("npm", ["uninstall", "pg", "--no-save"], expect.objectContaining({ cwd: expect.any(String) }));
+    queueMicrotask(() => { child.stdout.emit("data", Buffer.from("removed 1 package\n")); child.emit("close", 0); });
     const body = await readAll(res);
     expect(body).toContain("event: progress");
     expect(body).toContain("event: done");
@@ -64,29 +64,12 @@ describe("install route happy path", () => {
   });
 });
 
-describe("install route extra guards", () => {
-  it("409 when an install for the tech is already in progress", async () => {
+describe("uninstall route shares the in-flight guard with install", () => {
+  it("409 when an operation for the tech is already in progress", async () => {
     (globalThis as Record<symbol, unknown>)[Symbol.for("baklava.driverInstalls")] = new Set(["postgres"]);
     const res = await GET(makeReq("localhost:3000"), ctx("postgres"));
     expect(res.status).toBe(409);
     expect(spawnMock).not.toHaveBeenCalled();
     (globalThis as Record<symbol, unknown>)[Symbol.for("baklava.driverInstalls")] = new Set();
-  });
-  it("429 when the global concurrent-install cap is reached", async () => {
-    (globalThis as Record<symbol, unknown>)[Symbol.for("baklava.driverInstalls")] = new Set(["mysql", "redis"]);
-    const res = await GET(makeReq("localhost:3000"), ctx("postgres"));
-    expect(res.status).toBe(429);
-    expect(spawnMock).not.toHaveBeenCalled();
-    (globalThis as Record<symbol, unknown>)[Symbol.for("baklava.driverInstalls")] = new Set();
-  });
-  it("emits error when the child process errors (e.g. npm missing)", async () => {
-    const child = Object.assign(new EventEmitter(), {
-      stdout: new EventEmitter(), stderr: new EventEmitter(), kill: vi.fn(),
-    });
-    spawnMock.mockReturnValue(child);
-    const res = await GET(makeReq("localhost:3000"), ctx("postgres"));
-    queueMicrotask(() => { child.emit("error", new Error("spawn npm ENOENT")); });
-    const body = await readAll(res);
-    expect(body).toContain("event: error");
   });
 });

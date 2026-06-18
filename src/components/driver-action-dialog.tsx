@@ -12,42 +12,72 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 
+type DriverAction = "install" | "uninstall";
+
 interface Props {
+  action: DriverAction;
   techId: string | null;
   techName: string;
   /** The driver packages this tech needs — shown in the dialog, not on the card. */
   packages: string[];
-  /** Whether server-side install is allowed (local request + not disabled). */
+  /** Whether the server-side operation is allowed (local request + not disabled). */
   canInstall: boolean;
+  /** Saved connections of this tech — used to warn before uninstalling. */
+  connectionCount?: number;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
-export function InstallDriverDialog({
+const COPY = {
+  install: {
+    title: (n: string) => `Install ${n} driver`,
+    blurb: (n: string, multi: boolean) =>
+      `${n} needs ${multi ? "these packages" : "this package"} to connect.`,
+    busy: (n: string) => `Installing the ${n} driver…`,
+    confirm: "Install",
+    confirmVariant: "default" as const,
+    npm: "npm i",
+    toast: (n: string) => `${n} driver installed`,
+  },
+  uninstall: {
+    title: (n: string) => `Uninstall ${n} driver`,
+    blurb: (n: string, multi: boolean) =>
+      `Remove the ${n} driver ${multi ? "packages" : "package"} from node_modules.`,
+    busy: (n: string) => `Uninstalling the ${n} driver…`,
+    confirm: "Uninstall",
+    confirmVariant: "destructive" as const,
+    npm: "npm uninstall",
+    toast: (n: string) => `${n} driver uninstalled`,
+  },
+};
+
+export function DriverActionDialog({
+  action,
   techId,
   techName,
   packages,
   canInstall,
+  connectionCount = 0,
   open,
   onOpenChange,
 }: Props) {
-  const [phase, setPhase] = useState<"idle" | "installing" | "error">("idle");
+  const [phase, setPhase] = useState<"idle" | "running" | "error">("idle");
   const [log, setLog] = useState<string[]>([]);
   const [error, setError] = useState("");
   const sourceRef = useRef<EventSource | null>(null);
   const router = useRouter();
+  const copy = COPY[action];
 
-  // Reset to the confirm screen each time the dialog opens for a tech.
+  // Reset to the confirm screen each time the dialog opens for a tech/action.
   useEffect(() => {
     if (open) {
       setPhase("idle");
       setLog([]);
       setError("");
     }
-  }, [open, techId]);
+  }, [open, techId, action]);
 
-  // Closing the dialog aborts an in-flight install (server kills npm via the
-  // request abort signal) so we never leave an orphaned stream/process.
+  // Closing aborts an in-flight op (server kills npm via the request abort signal).
   useEffect(() => {
     if (!open && sourceRef.current) {
       sourceRef.current.close();
@@ -58,18 +88,18 @@ export function InstallDriverDialog({
   // Belt-and-suspenders unmount cleanup (per the SSE-client convention).
   useEffect(() => () => sourceRef.current?.close(), []);
 
-  const startInstall = () => {
+  const start = () => {
     if (!techId) return;
-    setPhase("installing");
+    setPhase("running");
     setLog([]);
     setError("");
 
-    const es = new EventSource(`/api/techs/${techId}/install`);
+    const es = new EventSource(`/api/techs/${techId}/${action}`);
     sourceRef.current = es;
 
     es.addEventListener("start", (e) => {
       const { packages: pkgs } = JSON.parse((e as MessageEvent).data) as { packages: string[] };
-      setLog((l) => [...l, `$ npm install ${pkgs.join(" ")}`]);
+      setLog((l) => [...l, `$ npm ${action} ${pkgs.join(" ")} --no-save`]);
     });
     es.addEventListener("progress", (e) => {
       const { line } = JSON.parse((e as MessageEvent).data) as { line: string };
@@ -78,12 +108,12 @@ export function InstallDriverDialog({
     es.addEventListener("done", () => {
       es.close();
       sourceRef.current = null;
-      toast.success(`${techName} driver installed`);
+      toast.success(copy.toast(techName));
       router.refresh();
       onOpenChange(false);
     });
     es.addEventListener("error", (e) => {
-      let message = "Install failed (connection lost)";
+      let message = `${action === "install" ? "Install" : "Uninstall"} failed (connection lost)`;
       const data = (e as MessageEvent).data;
       if (data) {
         try { message = (JSON.parse(data) as { message: string }).message ?? message; } catch { /* native error event */ }
@@ -99,11 +129,9 @@ export function InstallDriverDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>Install {techName} driver</DialogTitle>
+          <DialogTitle>{copy.title(techName)}</DialogTitle>
           <DialogDescription>
-            {phase === "installing"
-              ? `Installing the ${techName} driver…`
-              : `${techName} needs ${packages.length === 1 ? "this package" : "these packages"} to connect.`}
+            {phase === "running" ? copy.busy(techName) : copy.blurb(techName, packages.length !== 1)}
           </DialogDescription>
         </DialogHeader>
 
@@ -125,27 +153,35 @@ export function InstallDriverDialog({
               </ul>
             </div>
 
+            {action === "uninstall" && connectionCount > 0 && (
+              <p className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+                {`${connectionCount} saved ${connectionCount === 1 ? "connection" : "connections"} will stop working until you reinstall the driver. They won't be deleted.`}
+              </p>
+            )}
+
             {canInstall ? (
               <div className="flex justify-end gap-2">
                 <Button variant="outline" onClick={() => onOpenChange(false)}>
                   Cancel
                 </Button>
-                <Button onClick={startInstall}>Install</Button>
+                <Button variant={copy.confirmVariant} onClick={start}>
+                  {copy.confirm}
+                </Button>
               </div>
             ) : (
               <div className="space-y-1.5">
                 <p className="text-sm text-muted-foreground">
-                  Install from your terminal, then refresh:
+                  Run this in your terminal, then refresh:
                 </p>
                 <code className="block select-all rounded-md bg-muted p-2 font-mono text-xs">
-                  npm i {packages.join(" ")}
+                  {copy.npm} {packages.join(" ")}
                 </code>
               </div>
             )}
           </div>
         )}
 
-        {phase === "installing" && (
+        {phase === "running" && (
           <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-md bg-muted p-3 font-mono text-xs">
             {log.join("\n") || "Starting…"}
           </pre>
@@ -163,7 +199,9 @@ export function InstallDriverDialog({
               <Button variant="outline" onClick={() => onOpenChange(false)}>
                 Close
               </Button>
-              <Button onClick={startInstall}>Try again</Button>
+              <Button variant={copy.confirmVariant} onClick={start}>
+                Try again
+              </Button>
             </div>
           </div>
         )}

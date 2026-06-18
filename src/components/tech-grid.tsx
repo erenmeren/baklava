@@ -11,12 +11,20 @@ import {
 } from "@/lib/tech-catalog";
 import type { ConnectionRecord } from "@/lib/connections/types";
 import { ConnectionSheet } from "@/components/connection-sheet";
-import { InstallDriverDialog } from "@/components/install-driver-dialog";
+import { DriverActionDialog } from "@/components/driver-action-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
 interface ConnectionsResponse {
   connections: ConnectionRecord[];
 }
+
+type DriverDialog = { tech: TechMeta; action: "install" | "uninstall" };
 
 export function TechGrid({
   installed = {},
@@ -30,11 +38,11 @@ export function TechGrid({
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [filter, setFilter] = useState<TechCategoryFilter>("All");
   const [openTech, setOpenTech] = useState<TechMeta | null>(null);
-  const [installTech, setInstallTech] = useState<TechMeta | null>(null);
+  const [driverDialog, setDriverDialog] = useState<DriverDialog | null>(null);
   const router = useRouter();
 
-  const handleInstallOpenChange = useCallback((o: boolean) => {
-    if (!o) setInstallTech(null);
+  const handleDialogOpenChange = useCallback((o: boolean) => {
+    if (!o) setDriverDialog(null);
   }, []);
 
   useEffect(() => {
@@ -201,16 +209,43 @@ export function TechGrid({
           );
 
           if (isAvailable && !driverMissing) {
+            // Installed connection techs get a hover "⋯" menu to uninstall the
+            // driver. Rendered as a sibling of the tile button (not nested) so we
+            // never put a button inside a button.
+            const canManageDriver = canInstall && tech.kind !== "tool";
             return (
-              <button
-                key={tech.id}
-                type="button"
-                onClick={() => (tech.kind === "tool" ? router.push("/loadtest") : setOpenTech(tech))}
-                aria-label={`Open ${tech.name} connections`}
-                className="rounded-xl text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
-              >
-                {tile}
-              </button>
+              <div key={tech.id} className="group/tile relative">
+                <button
+                  type="button"
+                  onClick={() => (tech.kind === "tool" ? router.push("/loadtest") : setOpenTech(tech))}
+                  aria-label={`Open ${tech.name} connections`}
+                  className="block w-full rounded-xl text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
+                >
+                  {tile}
+                </button>
+                {canManageDriver && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      aria-label={`${tech.name} driver options`}
+                      className="absolute top-2.5 left-2.5 grid size-6 place-items-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus:opacity-100 focus:outline-none group-hover/tile:opacity-100"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                        <circle cx="5" cy="12" r="1.6" />
+                        <circle cx="12" cy="12" r="1.6" />
+                        <circle cx="19" cy="12" r="1.6" />
+                      </svg>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start">
+                      <DropdownMenuItem
+                        variant="destructive"
+                        onClick={() => setDriverDialog({ tech, action: "uninstall" })}
+                      >
+                        Uninstall driver
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+              </div>
             );
           }
           if (driverMissing) {
@@ -218,7 +253,7 @@ export function TechGrid({
               <button
                 key={tech.id}
                 type="button"
-                onClick={() => setInstallTech(tech)}
+                onClick={() => setDriverDialog({ tech, action: "install" })}
                 aria-label={`Install ${tech.name} driver`}
                 title={`${tech.name} — driver not installed`}
                 className="rounded-xl text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
@@ -246,13 +281,15 @@ export function TechGrid({
           if (!o) setOpenTech(null);
         }}
       />
-      <InstallDriverDialog
-        techId={installTech?.id ?? null}
-        techName={installTech?.name ?? ""}
-        packages={installTech ? (optionalDeps[installTech.id] ?? []) : []}
+      <DriverActionDialog
+        action={driverDialog?.action ?? "install"}
+        techId={driverDialog?.tech.id ?? null}
+        techName={driverDialog?.tech.name ?? ""}
+        packages={driverDialog ? (optionalDeps[driverDialog.tech.id] ?? []) : []}
         canInstall={canInstall}
-        open={installTech !== null}
-        onOpenChange={handleInstallOpenChange}
+        connectionCount={driverDialog ? (counts[driverDialog.tech.id] ?? 0) : 0}
+        open={driverDialog !== null}
+        onOpenChange={handleDialogOpenChange}
       />
     </div>
   );
