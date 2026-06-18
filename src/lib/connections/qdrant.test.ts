@@ -9,6 +9,7 @@ const client = {
   createCollection: vi.fn(),
   deleteCollection: vi.fn(),
   delete: vi.fn(),
+  upsert: vi.fn(),
 };
 vi.mock("@qdrant/js-client-rest", () => ({
   // arrow functions cannot be used as constructors in this Vitest version;
@@ -16,7 +17,7 @@ vi.mock("@qdrant/js-client-rest", () => ({
   QdrantClient: vi.fn(function () { return client; }),
 }));
 
-import { probeQdrant, listCollections, getCollection, scrollPoints, searchPoints, createCollection, deleteCollection, deletePoints } from "./qdrant";
+import { probeQdrant, listCollections, getCollection, scrollPoints, searchPoints, createCollection, deleteCollection, deletePoints, upsertPoints } from "./qdrant";
 
 const cfg = { url: "http://localhost:6333" };
 
@@ -29,6 +30,7 @@ beforeEach(() => {
   client.createCollection.mockReset();
   client.deleteCollection.mockReset();
   client.delete.mockReset();
+  client.upsert.mockReset();
 });
 
 describe("listCollections", () => {
@@ -118,5 +120,13 @@ describe("mutations", () => {
     await deletePoints({ url: "http://localhost:6333" }, "docs", [1, 2]);
     expect(client.deleteCollection).toHaveBeenCalledWith("new");
     expect(client.delete).toHaveBeenCalledWith("docs", { points: [1, 2] });
+  });
+});
+
+describe("upsertPoints", () => {
+  it("delegates to client.upsert with { points }", async () => {
+    const pts = [{ id: 1, vector: [0.1, 0.2], payload: { t: "a" } }];
+    await upsertPoints({ url: "http://localhost:6333" }, "docs", pts);
+    expect(client.upsert).toHaveBeenCalledWith("docs", { points: pts });
   });
 });

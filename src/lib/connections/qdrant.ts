@@ -158,3 +158,11 @@ export async function deleteCollection(cfg: QdrantConfig, name: string): Promise
 export async function deletePoints(cfg: QdrantConfig, name: string, ids: (string | number)[]): Promise<void> {
   await withClient(cfg, (c) => (c as unknown as AnyClient).delete(name, { points: ids }));
 }
+
+export async function upsertPoints(
+  cfg: QdrantConfig,
+  name: string,
+  points: { id: string | number; vector: number[]; payload?: Record<string, unknown> }[],
+): Promise<void> {
+  await withClient(cfg, (c) => (c as unknown as AnyClient).upsert(name, { points }));
+}
