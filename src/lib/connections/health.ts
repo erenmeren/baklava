@@ -9,6 +9,7 @@ import type {
   MongoConfig,
   MysqlConfig,
   PostgresConfig,
+  QdrantConfig,
   RedisConfig,
   SqlServerConfig,
 } from "./types";
@@ -274,6 +275,17 @@ export async function kubernetesBody(conn: ConnectionRecord): Promise<ProbeBody>
     summary: `${plural(p.nodeCount, "node")} · ${p.context}`,
     metrics: [{ label: "Nodes", value: String(p.nodeCount) }],
     primary: { label: "Nodes", value: p.nodeCount },
+  };
+}
+
+// ── Qdrant ──────────────────────────────────────────────────────────────────
+import { probeQdrant } from "./qdrant";
+export async function qdrantBody(conn: ConnectionRecord): Promise<ProbeBody> {
+  const { collectionCount } = await probeQdrant(conn.config as QdrantConfig);
+  return {
+    summary: plural(collectionCount, "collection"),
+    metrics: [{ label: "Collections", value: String(collectionCount) }],
+    primary: { label: "Collections", value: collectionCount },
   };
 }
 
