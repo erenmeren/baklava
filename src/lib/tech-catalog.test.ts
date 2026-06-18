@@ -29,3 +29,9 @@ describe("loadtest catalog entry", () => {
     expect(TECH_CATALOG.filter((t) => t.id === "loadtest")).toHaveLength(1);
   });
 });
+
+describe("Vector category", () => {
+  it("is a known category", () => {
+    expect(TECH_CATEGORIES).toContain("Vector");
+  });
+});

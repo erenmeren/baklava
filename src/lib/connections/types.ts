@@ -9,7 +9,8 @@ export type TechId =
   | "mongo"
   | "r2"
   | "minio"
-  | "s3";
+  | "s3"
+  | "qdrant";
 
 export type ConnectionStatus = "untested" | "ok" | "error";
 
@@ -172,4 +173,11 @@ export interface S3Config {
   /** Optional temporary-credential session token. */
   sessionToken?: string;
   bucket?: string;
+}
+
+export interface QdrantConfig {
+  /** Base URL, e.g. http://localhost:6333 or a Qdrant Cloud URL. */
+  url: string;
+  /** Optional API key (Qdrant Cloud). Stored as a secret. */
+  apiKey?: string;
 }

@@ -6,7 +6,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 # Baklava
 
-Open-source unified ops console for Docker, Kafka, PostgreSQL (and more to come). Each tech has its own workspace modeled on the dedicated tool people already use (Docker Desktop / kafka-ui / pgAdmin).
+Open-source unified ops console for 12 technologies: Docker · PostgreSQL · MySQL · SQL Server · MongoDB · Kafka · Kubernetes · Redis · Qdrant (vector) · Cloudflare R2 · MinIO · Amazon S3. Each tech has its own workspace modeled on the dedicated tool people already use.
 
 ## Stack
 
