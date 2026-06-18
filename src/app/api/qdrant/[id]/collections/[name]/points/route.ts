@@ -13,9 +13,17 @@ export async function GET(req: NextRequest, { params }: Ctx) {
   const sp = req.nextUrl.searchParams;
   const limit = Math.min(Number(sp.get("limit") ?? 25), 100);
   const offsetRaw = sp.get("offset");
+  // offset arrives as a string; coerce digit-only values back to a number so
+  // integer point-id collections accept the continuation cursor.
+  const offset =
+    offsetRaw == null || offsetRaw === ""
+      ? undefined
+      : /^\d+$/.test(offsetRaw)
+        ? Number(offsetRaw)
+        : offsetRaw;
   const withVector = sp.get("withVector") === "1";
   try {
-    const res = await scrollPoints(record.config, decodeURIComponent(name), { limit, offset: offsetRaw ?? undefined, withVector });
+    const res = await scrollPoints(record.config, decodeURIComponent(name), { limit, offset, withVector });
     return NextResponse.json(res);
   } catch (err) { return errorResponse(err); }
 }
