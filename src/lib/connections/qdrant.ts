@@ -71,3 +71,49 @@ export async function probeQdrant(cfg: QdrantConfig): Promise<{ collectionCount:
     return { collectionCount: collections.length };
   });
 }
+
+export interface CollectionDetail {
+  status: string;
+  pointsCount: number;
+  vectors: { size: number | null; distance: string | null; named: string[] };
+  payloadSchema: Record<string, unknown>;
+}
+
+export async function getCollection(cfg: QdrantConfig, name: string): Promise<CollectionDetail> {
+  return withClient(cfg, async (c) => {
+    const info = await c.getCollection(name);
+    return {
+      status: String(info.status ?? "unknown"),
+      pointsCount: info.points_count ?? 0,
+      vectors: vectorParams(info.config?.params?.vectors),
+      payloadSchema: (info.payload_schema as Record<string, unknown>) ?? {},
+    };
+  });
+}
+
+export interface QdrantPoint { id: string | number; payload: Record<string, unknown> | null; vector?: number[] | Record<string, number[]> }
+
+export async function scrollPoints(
+  cfg: QdrantConfig,
+  name: string,
+  opts: { limit: number; offset?: string | number; filter?: unknown; withVector?: boolean },
+): Promise<{ points: QdrantPoint[]; nextOffset: string | number | null }> {
+  return withClient(cfg, async (c) => {
+    const res = await (c as unknown as {
+      scroll(name: string, opts: Record<string, unknown>): Promise<{
+        points: QdrantPoint[];
+        next_page_offset?: string | number | null;
+      }>;
+    }).scroll(name, {
+      limit: opts.limit,
+      offset: opts.offset,
+      filter: opts.filter,
+      with_payload: true,
+      with_vector: opts.withVector ?? false,
+    });
+    return {
+      points: (res.points ?? []) as QdrantPoint[],
+      nextOffset: (res.next_page_offset as string | number | null) ?? null,
+    };
+  });
+}

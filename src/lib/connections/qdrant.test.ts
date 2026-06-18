@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const client = {
   getCollections: vi.fn(),
   getCollection: vi.fn(),
+  scroll: vi.fn(),
 };
 vi.mock("@qdrant/js-client-rest", () => ({
   // arrow functions cannot be used as constructors in this Vitest version;
@@ -10,13 +11,14 @@ vi.mock("@qdrant/js-client-rest", () => ({
   QdrantClient: vi.fn(function () { return client; }),
 }));
 
-import { probeQdrant, listCollections } from "./qdrant";
+import { probeQdrant, listCollections, getCollection, scrollPoints } from "./qdrant";
 
 const cfg = { url: "http://localhost:6333" };
 
 beforeEach(() => {
   client.getCollections.mockReset();
   client.getCollection.mockReset();
+  client.scroll.mockReset();
 });
 
 describe("listCollections", () => {
@@ -49,5 +51,32 @@ describe("probeQdrant", () => {
   it("returns the collection count", async () => {
     client.getCollections.mockResolvedValue({ collections: [{ name: "a" }, { name: "b" }] });
     expect(await probeQdrant(cfg)).toEqual({ collectionCount: 2 });
+  });
+});
+
+describe("getCollection", () => {
+  it("returns config + stats", async () => {
+    client.getCollection.mockResolvedValue({
+      status: "green", points_count: 10,
+      config: { params: { vectors: { size: 4, distance: "Dot" } } },
+      payload_schema: { title: { data_type: "keyword" } },
+    });
+    const out = await getCollection({ url: "http://localhost:6333" }, "docs");
+    expect(out.pointsCount).toBe(10);
+    expect(out.vectors).toEqual({ size: 4, distance: "Dot", named: [] });
+    expect(out.payloadSchema).toEqual({ title: { data_type: "keyword" } });
+  });
+});
+
+describe("scrollPoints", () => {
+  it("returns points + nextOffset", async () => {
+    client.scroll.mockResolvedValue({
+      points: [{ id: 1, payload: { t: "a" }, vector: [0.1, 0.2] }],
+      next_page_offset: 2,
+    });
+    const out = await scrollPoints({ url: "http://localhost:6333" }, "docs", { limit: 1, withVector: true });
+    expect(out.points[0]).toEqual({ id: 1, payload: { t: "a" }, vector: [0.1, 0.2] });
+    expect(out.nextOffset).toBe(2);
+    expect(client.scroll).toHaveBeenCalledWith("docs", expect.objectContaining({ limit: 1, with_payload: true, with_vector: true }));
   });
 });
