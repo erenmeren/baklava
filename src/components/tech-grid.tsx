@@ -227,7 +227,8 @@ export function TechGrid({
                   <DropdownMenu>
                     <DropdownMenuTrigger
                       aria-label={`${tech.name} driver options`}
-                      className="absolute top-2.5 left-2.5 grid size-6 place-items-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus:opacity-100 focus:outline-none group-hover/tile:opacity-100"
+                      title="Driver options"
+                      className="absolute top-2.5 left-2.5 grid size-6 place-items-center rounded-md border border-border bg-card/80 text-muted-foreground backdrop-blur-sm transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
                         <circle cx="5" cy="12" r="1.6" />
