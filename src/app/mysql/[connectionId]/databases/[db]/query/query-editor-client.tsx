@@ -526,7 +526,7 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
       }
       description={
         <span className="text-xs">
-          MySQL · {kbd} to run · results capped at 500 rows
+          MySQL · {kbd} to run · results capped at 1000 rows
         </span>
       }
       actions={
@@ -585,7 +585,7 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
             kbd={kbd}
           />
           <div className="ml-auto flex items-center gap-2 text-muted-foreground">
-            {active?.truncated ? <span>· truncated to first 500 rows</span> : null}
+            {active?.truncated ? <span>· first 1000 rows — more exist</span> : null}
             <ShortcutCheatsheet
               compact
               onRun={() => execute()}
@@ -1064,7 +1064,7 @@ function MessagesPanel({
                 result.rowCount === 1 ? "" : "s"
               }`}{" "}
           in {result.durationMs}ms
-          {result.truncated ? " · truncated to 500 rows" : ""}
+          {result.truncated ? " · first 1000 rows (more exist)" : ""}
         </div>
       ) : null}
       {/* MySQL stops at the first error; surface each one it reported. */}

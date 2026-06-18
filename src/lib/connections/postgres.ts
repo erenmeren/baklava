@@ -9,6 +9,15 @@ async function getPg(): Promise<typeof import("pg")> {
     throw new DriverNotInstalledError("postgres", "pg");
   }
 }
+
+let pgCursorMod: typeof import("pg-cursor") | null = null;
+async function getPgCursor(): Promise<typeof import("pg-cursor").default> {
+  try {
+    return (pgCursorMod ??= await import("pg-cursor")).default;
+  } catch {
+    throw new DriverNotInstalledError("postgres", "pg-cursor");
+  }
+}
 import type { PostgresConfig } from "./types";
 
 function buildClientConfig(
@@ -1884,6 +1893,8 @@ export interface QueryResult {
   rows: unknown[][];
   rowCount: number;
   durationMs: number;
+  /** True when the rowset was capped (more rows exist than were returned). */
+  truncated?: boolean;
 }
 
 // ─── EXPLAIN ─────────────────────────────────────────────────────────────
@@ -2032,6 +2043,70 @@ export async function explainQuery(
   });
 }
 
+/** Editor row cap — matches the SQL Server editor so all SQL workspaces agree. */
+const EDITOR_ROW_CAP = 1000;
+
+/**
+ * True when a statement produces a rowset that could be huge. Only these run
+ * through a server-side cursor (we fetch `cap + 1` rows then close the portal,
+ * so the rest is never executed/transferred). Utility / DDL / DML statements
+ * (VACUUM, CREATE, INSERT, …) are NOT cursor-safe — the cursor's extended-
+ * protocol implicit transaction rejects some of them (e.g. "VACUUM cannot run
+ * inside a transaction block") — so they keep the plain buffered path.
+ */
+function isRowReturning(stmt: string): boolean {
+  const s = stmt
+    .replace(/\/\*[\s\S]*?\*\//g, " ") // block comments
+    .replace(/--[^\n]*/g, " ") // line comments
+    .trimStart();
+  return /^\(*\s*(?:with|select|table|values|show|explain)\b/i.test(s);
+}
+
+/**
+ * Run one row-returning statement through a cursor, fetching at most
+ * `maxRows + 1` rows (the extra row tells us whether more exist), then closing
+ * the portal so Postgres stops executing. Never buffers the full result.
+ */
+async function readBounded(
+  client: PgClient,
+  text: string,
+  maxRows: number,
+): Promise<{
+  fields: string[];
+  rows: unknown[][];
+  rowCount: number;
+  truncated: boolean;
+  command: string | null;
+}> {
+  const Cursor = await getPgCursor();
+  const cursor = new Cursor<unknown[]>(text, undefined, { rowMode: "array" });
+  // pg's Client.query() recognises a Submittable and drives the cursor.
+  (client as unknown as { query: (c: unknown) => unknown }).query(cursor);
+  try {
+    const { rows, result } = await new Promise<{
+      rows: unknown[][];
+      result: { fields: { name: string }[]; rowCount: number | null; command: string };
+    }>((resolve, reject) => {
+      cursor.read(maxRows + 1, (err, r, res) =>
+        err ? reject(err) : resolve({ rows: r as unknown[][], result: res }),
+      );
+    });
+    const truncated = rows.length > maxRows;
+    const capped = truncated ? rows.slice(0, maxRows) : rows;
+    return {
+      fields: (result.fields ?? []).map((f) => f.name),
+      rows: capped,
+      // When truncated we cancelled before CommandComplete, so the true total
+      // is unknown — report what we returned and let `truncated` signal more.
+      rowCount: truncated ? capped.length : result.rowCount ?? capped.length,
+      truncated,
+      command: result.command ?? null,
+    };
+  } finally {
+    await cursor.close().catch(() => undefined);
+  }
+}
+
 export async function runQuery(
   config: PostgresConfig,
   database: string,
@@ -2039,6 +2114,16 @@ export async function runQuery(
 ): Promise<QueryResult> {
   return withClient(config, database, async (client) => {
     const start = Date.now();
+    if (isRowReturning(sql)) {
+      const r = await readBounded(client, sql, EDITOR_ROW_CAP);
+      return {
+        fields: r.fields,
+        rows: r.rows,
+        rowCount: r.rowCount,
+        truncated: r.truncated,
+        durationMs: Date.now() - start,
+      };
+    }
     const res = await client.query({ text: sql, rowMode: "array" });
     return {
       fields: res.fields.map((f) => f.name),
@@ -2236,6 +2321,21 @@ export async function runQueryMulti(
     for (const stmt of stmts) {
       const start = Date.now();
       try {
+        if (isRowReturning(stmt)) {
+          // Cursor path: fetch only what we display, never buffer millions.
+          const r = await readBounded(client, stmt, EDITOR_ROW_CAP);
+          out.push({
+            sql: stmt,
+            fields: r.fields,
+            rows: r.rows,
+            rowCount: r.rowCount,
+            truncated: r.truncated,
+            durationMs: Date.now() - start,
+            isCommand: r.fields.length === 0,
+            command: r.command,
+          });
+          continue;
+        }
         const res = await client.query({ text: stmt, rowMode: "array" });
         const fields = res.fields.map((f) => f.name);
         out.push({

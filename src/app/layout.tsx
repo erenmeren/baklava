@@ -14,6 +14,9 @@ import { PaletteTrigger } from "@/components/command-palette/palette-trigger";
 import { AssistantTrigger } from "@/components/ai/assistant-trigger";
 import { SettingsTrigger } from "@/components/settings-trigger";
 import { DashboardTrigger } from "@/components/dashboard-trigger";
+import { LockButton } from "@/components/lock-button";
+import { SESSION_COOKIE, verifySessionToken } from "@/lib/auth/session";
+import { mustChangePassword, isAuthEnabled } from "@/lib/auth/store";
 import Link from "next/link";
 
 // Fonts are vendored into public/fonts/ so builds never reach out to
@@ -52,6 +55,15 @@ export default async function RootLayout({
   const themeClass =
     theme === "dark" ? "dark" : theme === "light" ? "light" : "";
 
+  // App chrome (tabs, palette, settings…) renders when the gate is off, or for
+  // an authenticated session that has cleared the bootstrap password — the
+  // /login screen and the forced change flow show a bare card instead.
+  const authEnabled = isAuthEnabled();
+  const showChrome =
+    !authEnabled ||
+    (verifySessionToken(cookieStore.get(SESSION_COOKIE)?.value) &&
+      !mustChangePassword());
+
   return (
     <html
       lang="en"
@@ -60,6 +72,7 @@ export default async function RootLayout({
       <body className="min-h-full flex flex-col bg-background text-foreground">
         <ThemeProvider initialTheme={theme}>
           <TooltipProvider delay={150}>
+            {showChrome ? (
             <header className="sticky top-0 z-30 border-b border-border/60 bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/65">
               <div className="flex items-stretch h-12 pr-3">
                 <Link
@@ -88,6 +101,7 @@ export default async function RootLayout({
                     <DashboardTrigger />
                     <AssistantTrigger />
                     <SettingsTrigger />
+                    {authEnabled ? <LockButton /> : null}
                   </div>
                   {/* Appearance is a preference, not a destination — detached */}
                   <div className="ml-1.5">
@@ -96,6 +110,7 @@ export default async function RootLayout({
                 </div>
               </div>
             </header>
+            ) : null}
             <main className="flex-1 w-full">{children}</main>
             <Toaster richColors position="top-right" />
             <GlobalCommandPalette />

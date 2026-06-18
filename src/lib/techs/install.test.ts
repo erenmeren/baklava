@@ -3,7 +3,7 @@ import { resolveInstallPackages, isInstallAllowed } from "./install";
 
 describe("resolveInstallPackages", () => {
   it("returns the tech's declared optionalDeps", () => {
-    expect(resolveInstallPackages("postgres")).toEqual(["pg"]);
+    expect(resolveInstallPackages("postgres")).toEqual(["pg", "pg-cursor"]);
     expect(resolveInstallPackages("mongo")).toEqual(["mongodb", "bson"]);
   });
   it("throws for an unknown tech (never trusts client input)", () => {

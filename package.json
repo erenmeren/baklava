@@ -46,11 +46,11 @@
     "zod": "^4.4.3"
   },
   "optionalDependencies": {
-    "@qdrant/js-client-rest": "^1.18.0",
     "@aws-sdk/client-s3": "^3.1057.0",
     "@aws-sdk/lib-storage": "^3.1057.0",
     "@aws-sdk/s3-request-presigner": "^3.1057.0",
     "@kubernetes/client-node": "^1.4.0",
+    "@qdrant/js-client-rest": "^1.18.0",
     "avsc": "^5.7.9",
     "bson": "^7.2.0",
     "dockerode": "^5.0.0",
@@ -59,7 +59,8 @@
     "mongodb": "^7.2.0",
     "mssql": "^12.5.4",
     "mysql2": "^3.22.4",
-    "pg": "^8.20.0"
+    "pg": "^8.20.0",
+    "pg-cursor": "^2.20.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",

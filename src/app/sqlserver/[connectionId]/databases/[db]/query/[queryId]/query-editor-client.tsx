@@ -109,6 +109,11 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
   const isMac = useIsMac();
   const kbd = runHint(isMac);
 
+  // Aborts an in-flight query fetch when a new run starts or the editor
+  // unmounts, so navigating away doesn't leave the request hanging.
+  const abortRef = useRef<AbortController | null>(null);
+  useEffect(() => () => abortRef.current?.abort(), []);
+
   // One-shot guard so the cursor-at-end nudge below doesn't fire again on a
   // remount that happens to leave the scaffold untouched.
   const placedCursor = useRef(false);
@@ -225,6 +230,9 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
     setResult(null);
     setActiveBatch(0);
     setTab("results");
+    abortRef.current?.abort();
+    const ac = new AbortController();
+    abortRef.current = ac;
     try {
       const res = await fetch(`/api/sqlserver/${connectionId}/query`, {
         method: "POST",
@@ -234,6 +242,7 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
           database: db,
           statistics: withStats,
         }),
+        signal: ac.signal,
       });
       const data = await res.json();
       if (data.error && !data.batches) {
@@ -261,6 +270,8 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
         at: Date.now(),
       });
     } catch (e) {
+      // A superseded / unmounted run was aborted on purpose — not an error.
+      if (e instanceof DOMException && e.name === "AbortError") return;
       const msg = e instanceof Error ? e.message : String(e);
       setConnError(msg);
       setPhase("err");
@@ -707,7 +718,7 @@ function ResultGrid({
       ) : null}
       {rs.truncated ? (
         <div className="px-3 py-1.5 text-[10px] font-mono text-amber-600 border-t border-border/40">
-          truncated to 1000 rows ({rs.rowCount} total)
+          showing first 1000 rows — more exist (add TOP / WHERE to narrow)
         </div>
       ) : null}
     </div>

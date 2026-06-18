@@ -15,8 +15,6 @@ interface QueryRequest {
   explain?: boolean;
 }
 
-const MAX_ROWS = 500;
-
 export async function POST(req: NextRequest, ctx: RouteContext) {
   const { id, db } = await ctx.params;
   const record = getConnection(id);
@@ -50,19 +48,17 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
     const result = await runQueryMulti(cfg, database, body.sql);
     updateStatus(id, "ok");
     return NextResponse.json({
-      results: result.results.map((r) => {
-        const truncated = r.rows.slice(0, MAX_ROWS);
-        return {
-          statement: r.statement,
-          columns: r.columns,
-          rows: truncated,
-          rowCount: r.rowCount,
-          truncated: r.rows.length > truncated.length,
-          durationMs: r.durationMs,
-          command: r.command,
-          isCommand: r.columns.length === 0,
-        };
-      }),
+      // The driver caps rows via streaming + early stop and sets `truncated`.
+      results: result.results.map((r) => ({
+        statement: r.statement,
+        columns: r.columns,
+        rows: r.rows,
+        rowCount: r.rowCount,
+        truncated: r.truncated ?? false,
+        durationMs: r.durationMs,
+        command: r.command,
+        isCommand: r.columns.length === 0,
+      })),
       errors: result.errors,
     });
   } catch (err) {

@@ -4,9 +4,9 @@ import { postgres } from "./index";
 describe("postgres module", () => {
   it("declares id, optionalDeps and catalog", () => {
     expect(postgres.id).toBe("postgres");
-    expect(postgres.optionalDeps).toEqual(["pg"]);
+    expect(postgres.optionalDeps).toEqual(["pg", "pg-cursor"]);
     expect(postgres.catalog.id).toBe("postgres");
-    expect(postgres.serverPackages).toEqual(["pg"]);
+    expect(postgres.serverPackages).toEqual(["pg", "pg-cursor"]);
   });
   it("summarises a connection record", () => {
     const summary = postgres.summary({
