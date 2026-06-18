@@ -214,7 +214,7 @@ export function TechGrid({
             // never put a button inside a button.
             const canManageDriver = canInstall && tech.kind !== "tool";
             return (
-              <div key={tech.id} className="group/tile relative">
+              <div key={tech.id} className="tile-wrap relative">
                 <button
                   type="button"
                   onClick={() => (tech.kind === "tool" ? router.push("/loadtest") : setOpenTech(tech))}
@@ -228,7 +228,7 @@ export function TechGrid({
                     <DropdownMenuTrigger
                       aria-label={`${tech.name} driver options`}
                       title="Driver options"
-                      className="absolute top-2.5 left-2.5 grid size-6 place-items-center rounded-md border border-border bg-card/80 text-muted-foreground backdrop-blur-sm transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
+                      className="tile-action absolute top-2.5 left-2.5 grid size-6 place-items-center rounded-md border border-border bg-card/80 text-muted-foreground backdrop-blur-sm hover:bg-muted hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
                         <circle cx="5" cy="12" r="1.6" />

@@ -422,4 +422,17 @@
       0 0 60px 4px oklch(0.7 0.18 320 / 0.3),
       0 18px 38px -14px oklch(0 0 0 / 0.55);
   }
+
+  /* The driver-options (⋯) button is a sibling of the lifting tile, so it must
+     ride the same translateY(-3px) on hover or it visually detaches. Matches the
+     tile-neon transform timing exactly. */
+  .tile-action {
+    transition:
+      transform 200ms ease,
+      background-color 150ms ease,
+      color 150ms ease;
+  }
+  .tile-wrap:hover .tile-action {
+    transform: translateY(-3px);
+  }
 }
