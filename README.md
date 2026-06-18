@@ -148,6 +148,22 @@ All credentials are throwaway and for local dev only. Plug these into the connec
 
 SQL Server runs under `linux/amd64` (Rosetta on Apple Silicon) — startup is ~30s and uses ~2GB RAM.
 
+### Run external services
+
+To connect Baklava to services outside the local compose stack, use `docker run`:
+
+| Tech | Command |
+|---|---|
+| **PostgreSQL** | `docker run -p 5432:5432 -e POSTGRES_PASSWORD=password postgres:latest` |
+| **MySQL** | `docker run -p 3306:3306 -e MYSQL_ROOT_PASSWORD=password mysql:latest` |
+| **MongoDB** | `docker run -p 27017:27017 mongo:latest` |
+| **Kafka** | `docker run -p 9092:9092 -e KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://localhost:9092 -e KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT confluentinc/cp-kafka:latest` |
+| **Redis** | `docker run -p 6379:6379 redis:latest` |
+| **Qdrant** (vector database) | `docker run -p 6333:6333 qdrant/qdrant` |
+| **MinIO** (S3-compatible object storage) | `docker run -p 9000:9000 -p 9001:9001 -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin minio/minio:latest server /minio --console-address ":9001"` |
+
+For Kubernetes, point Baklava to your `~/.kube/config` — no local setup needed.
+
 ## Project layout
 
 ```
