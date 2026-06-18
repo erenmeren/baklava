@@ -24,6 +24,7 @@
     "@ai-sdk/openai": "^3.0.67",
     "@base-ui/react": "^1.4.1",
     "@codemirror/lang-sql": "^6.10.0",
+    "@qdrant/js-client-rest": "^1.18.0",
     "@uiw/react-codemirror": "^4.25.9",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
