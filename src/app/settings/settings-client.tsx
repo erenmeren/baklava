@@ -4,6 +4,7 @@ import { KeyRound, ShieldCheck, Lock } from "lucide-react";
 import { ProviderSettings } from "./provider-settings";
 import { PermissionSettings } from "./permission-settings";
 import { SecuritySettings } from "./security-settings";
+import { ChangePasswordSettings } from "./change-password-settings";
 
 export function SettingsClient() {
   return (
@@ -38,8 +39,9 @@ export function SettingsClient() {
         <TabsContent value="permissions" className="outline-none">
           <PermissionSettings />
         </TabsContent>
-        <TabsContent value="security" className="outline-none">
+        <TabsContent value="security" className="outline-none space-y-6">
           <SecuritySettings />
+          <ChangePasswordSettings />
         </TabsContent>
       </Tabs>
     </div>
