@@ -116,6 +116,14 @@ Terminal-style browser for pods, deployments, services, configmaps, secrets, and
 
 Typed key viewer, CLI, pub/sub, streams, `MONITOR`, cluster topology, ACL, and server info — single-node or cluster.
 
+### Qdrant (vector database)
+
+Sidebar lists collections. Click into a collection for three tabs:
+
+- **Points** — browse points with pagination, toggle to show/hide raw vectors.
+- **Search** — run similarity search and inspect the ranked hits.
+- **Config** — the collection's vector params and configuration.
+
 ### Object storage — Cloudflare R2 · MinIO · Amazon S3
 
 All three are S3-compatible and share **one object-storage workspace** (a file manager) built on a single shared S3 core, so each backend is just a small connection adapter.
@@ -222,13 +230,15 @@ src/
 
 ## Adding another technology
 
-1. Add an entry to `src/lib/tech-catalog.ts` and a `TechId` + config interface in `src/lib/connections/types.ts`.
-2. Drop a driver helper in `src/lib/connections/<tech>.ts` (probe + per-object operations).
-3. If the driver is a native package, add it to `serverExternalPackages` in `next.config.ts`.
-4. Add API routes under `src/app/api/<tech>/`.
-5. Add the connection form at `src/app/<tech>/<tech>-form.tsx` (reused by `ConnectionSheet`).
-6. Add a workspace at `src/app/<tech>/[connectionId]/` with a `layout.tsx` (`WorkspaceShell` + your sidebar) and one page per object kind.
-7. Register the tech in `FIRST_PAGE` (`src/components/connection-tabs.tsx`) and the `FORMS` map (`src/components/connection-sheet.tsx`).
+A technology is a self-contained module under `src/techs/<tech>/`, collected by two registries. Catalog, summaries, `FIRST_PAGE`, secret keys, and health probes all derive from the registry — so adding a tech is create-module + register, not a per-file diff.
+
+1. Add a `TechId` literal and a config interface in `src/lib/connections/types.ts` (the hand-maintained source of truth).
+2. Create `src/techs/<tech>/meta.ts` — client-safe metadata (catalog entry, zod config schema, secret keys, `firstPage`). No driver import.
+3. Create `src/techs/<tech>/index.ts` — spreads meta + adds `driver`. Put the driver helper in `src/lib/connections/<tech>.ts` and **lazy-import** its npm package so the dependency stays optional.
+4. Register in both `src/techs/registry.ts` (full module) and `src/techs/meta-registry.ts` (meta) — one line each.
+5. Add the npm driver to `optionalDependencies` in `package.json`. `serverExternalPackages` is generated from each module's `serverPackages` by `scripts/gen-server-packages.ts` (runs on `predev`/`prebuild`) — **don't** hand-edit `next.config.ts`.
+6. Add API routes under `src/app/api/<tech>/` (`test`, `[id]/...`). Wrap thrown errors with `formatError`.
+7. Build the form at `src/app/<tech>/<tech>-form.tsx` (reused by `ConnectionSheet`) and the workspace at `src/app/<tech>/[connectionId]/` (`layout.tsx` with `WorkspaceShell` + sidebar, one page per object kind).
 
 See [`AGENTS.md`](AGENTS.md) for the full conventions guide (server pages, SSE patterns, driver lifecycle, Base UI notes).
 
