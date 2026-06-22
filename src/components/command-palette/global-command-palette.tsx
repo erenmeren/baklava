@@ -194,7 +194,7 @@ export function GlobalCommandPalette() {
               <img
                 src={`/icons/${c.tech}.svg`}
                 alt=""
-                className="size-3.5 dark:invert opacity-80"
+                className="size-3.5 dark:brightness-0 dark:invert opacity-80"
               />
               <span className="flex-1 truncate">{c.name}</span>
               <span className="text-[11px] text-muted-foreground truncate max-w-[40%]">

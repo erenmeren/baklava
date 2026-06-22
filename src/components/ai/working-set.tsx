@@ -35,7 +35,7 @@ export function WorkingSet({
         return (
           <span key={c.id} className="inline-flex items-center gap-1 rounded-full border border-border bg-card px-2 py-0.5 text-xs">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={`/icons/${c.tech}.svg`} alt="" className="size-3 dark:invert opacity-80" />
+            <img src={`/icons/${c.tech}.svg`} alt="" className="size-3 dark:brightness-0 dark:invert opacity-80" />
             <span className="font-medium">{c.name}</span>
             <PolicyChip id={c.id} tech={c.tech} policy={p} label={modeLabel} onChange={onPolicyChange} />
             <button onClick={() => onRemove(c.id)} title="Remove" className="text-muted-foreground hover:text-foreground">

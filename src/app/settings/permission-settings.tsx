@@ -142,7 +142,7 @@ function ConnectionPolicy({
     <Card className="gap-0 py-0">
       <CardHeader className="flex-row items-center gap-2.5 border-b py-3">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={`/icons/${conn.tech}.svg`} alt="" className="size-4 opacity-80 dark:invert" />
+        <img src={`/icons/${conn.tech}.svg`} alt="" className="size-4 opacity-80 dark:brightness-0 dark:invert" />
         <CardTitle className="text-sm">{conn.name}</CardTitle>
         <Badge variant="outline" className="text-muted-foreground">
           {conn.tech}

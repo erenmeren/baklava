@@ -98,7 +98,7 @@ export function HealthCard({
     >
       <div className="flex items-center gap-2.5">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={`/icons/${conn.tech}.svg`} alt="" className="size-4 opacity-80 dark:invert" />
+        <img src={`/icons/${conn.tech}.svg`} alt="" className="size-4 opacity-80 dark:brightness-0 dark:invert" />
         <span className="truncate text-sm font-medium">{conn.name}</span>
         <span
           className={cn("ml-auto size-2 rounded-full", status ? DOT[status] : "bg-muted-foreground/40 animate-pulse")}
