@@ -1,9 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  isAuthEnabled,
-  setAuthEnabled,
-  mustChangePassword,
-} from "@/lib/auth/store";
+import { isAuthEnabled, setAuthEnabled } from "@/lib/auth/store";
 
 export const runtime = "nodejs";
 
@@ -13,10 +9,7 @@ export const runtime = "nodejs";
 // protection); the user is sent to /login afterwards.
 
 export async function GET() {
-  return NextResponse.json({
-    enabled: isAuthEnabled(),
-    mustChange: mustChangePassword(),
-  });
+  return NextResponse.json({ enabled: isAuthEnabled() });
 }
 
 export async function POST(req: NextRequest) {

@@ -16,7 +16,7 @@ import { SettingsTrigger } from "@/components/settings-trigger";
 import { DashboardTrigger } from "@/components/dashboard-trigger";
 import { LockButton } from "@/components/lock-button";
 import { SESSION_COOKIE, verifySessionToken } from "@/lib/auth/session";
-import { mustChangePassword, isAuthEnabled } from "@/lib/auth/store";
+import { needsSetup, isAuthEnabled } from "@/lib/auth/store";
 import Link from "next/link";
 
 // Fonts are vendored into public/fonts/ so builds never reach out to
@@ -56,13 +56,13 @@ export default async function RootLayout({
     theme === "dark" ? "dark" : theme === "light" ? "light" : "";
 
   // App chrome (tabs, palette, settings…) renders when the gate is off, or for
-  // an authenticated session that has cleared the bootstrap password — the
-  // /login screen and the forced change flow show a bare card instead.
+  // an authenticated session on a configured console — the /login screen and the
+  // first-run create-password flow show a bare card instead.
   const authEnabled = isAuthEnabled();
   const showChrome =
     !authEnabled ||
     (verifySessionToken(cookieStore.get(SESSION_COOKIE)?.value) &&
-      !mustChangePassword());
+      !needsSetup());
 
   return (
     <html

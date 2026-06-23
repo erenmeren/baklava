@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyPassword, mustChangePassword } from "@/lib/auth/store";
+import { verifyPassword } from "@/lib/auth/store";
 import {
   SESSION_COOKIE,
   createSessionToken,
@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
   }
 
   attempts.delete(key);
-  const res = NextResponse.json({ ok: true, mustChange: mustChangePassword() });
+  const res = NextResponse.json({ ok: true });
   res.cookies.set(
     SESSION_COOKIE,
     createSessionToken(),

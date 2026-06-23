@@ -1,10 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  setPassword,
-  verifyPassword,
-  mustChangePassword,
-  DEFAULT_BOOTSTRAP_PASSWORD,
-} from "@/lib/auth/store";
+import { setPassword, verifyPassword } from "@/lib/auth/store";
 import {
   SESSION_COOKIE,
   createSessionToken,
@@ -14,9 +9,10 @@ import {
 
 export const runtime = "nodejs";
 
-const MIN_LENGTH = 8;
-
-// Reaching this route already requires a valid session (enforced by proxy.ts).
+// Voluntary password rotation from Settings → Security. Reaching this route
+// already requires a valid session (enforced by proxy.ts), and we re-prove the
+// current password so a hijacked open tab can't silently rotate it. Any
+// non-empty new password is accepted — no length or composition rules.
 export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => ({}))) as {
     newPassword?: unknown;
@@ -27,25 +23,16 @@ export async function POST(req: NextRequest) {
   const currentPassword =
     typeof body.currentPassword === "string" ? body.currentPassword : "";
 
-  const forced = mustChangePassword();
-  // A voluntary change (not the forced bootstrap one) must re-prove the current
-  // password, so a hijacked open tab can't silently rotate it.
-  if (!forced && !verifyPassword(currentPassword)) {
+  if (!verifyPassword(currentPassword)) {
     return NextResponse.json(
       { error: "Current password is incorrect" },
       { status: 401 },
     );
   }
 
-  if (newPassword.length < MIN_LENGTH) {
+  if (!newPassword) {
     return NextResponse.json(
-      { error: `New password must be at least ${MIN_LENGTH} characters` },
-      { status: 400 },
-    );
-  }
-  if (newPassword === DEFAULT_BOOTSTRAP_PASSWORD) {
-    return NextResponse.json(
-      { error: "Choose a different password from the default" },
+      { error: "Enter a new password" },
       { status: 400 },
     );
   }

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { SESSION_COOKIE, verifySessionToken } from "@/lib/auth/session";
-import { mustChangePassword, isAuthEnabled } from "@/lib/auth/store";
+import { needsSetup, isAuthEnabled } from "@/lib/auth/store";
 
 // Next 16 renamed `middleware` → `proxy`. It defaults to the Node.js runtime,
 // so it can verify the HMAC-signed session cookie against the on-disk secret
@@ -10,21 +10,30 @@ import { mustChangePassword, isAuthEnabled } from "@/lib/auth/store";
 // Reachable without a valid session.
 const PUBLIC_PAGES = ["/login"];
 const PUBLIC_APIS = ["/api/auth/login", "/api/auth/logout"];
-
-function isAuthApi(pathname: string): boolean {
-  return pathname.startsWith("/api/auth/");
-}
+const SETUP_API = "/api/auth/setup";
 
 export function proxy(req: NextRequest): NextResponse {
   // Gate turned off in Settings → let everything through.
   if (!isAuthEnabled()) return NextResponse.next();
 
   const { pathname } = req.nextUrl;
-  const authed = verifySessionToken(req.cookies.get(SESSION_COOKIE)?.value);
-  const mustChange = authed && mustChangePassword();
 
-  // Already signed in and not mid-bootstrap → keep them out of /login.
-  if (authed && !mustChange && pathname === "/login") {
+  // No password configured yet → confine everything to the setup flow (the
+  // /login page renders the create-password form; the setup API is allowed).
+  if (needsSetup()) {
+    if (pathname === "/login" || pathname === SETUP_API) {
+      return NextResponse.next();
+    }
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json({ error: "Setup required" }, { status: 403 });
+    }
+    return NextResponse.redirect(new URL("/login", req.url));
+  }
+
+  const authed = verifySessionToken(req.cookies.get(SESSION_COOKIE)?.value);
+
+  // Already signed in → keep them out of /login.
+  if (authed && pathname === "/login") {
     return NextResponse.redirect(new URL("/", req.url));
   }
 
@@ -35,18 +44,6 @@ export function proxy(req: NextRequest): NextResponse {
     if (isPublic) return NextResponse.next();
     if (pathname.startsWith("/api/")) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    return NextResponse.redirect(new URL("/login", req.url));
-  }
-
-  // Authenticated but still on the bootstrap password: confine to the change
-  // flow (the /login page renders the change form; change-password API allowed).
-  if (mustChange && pathname !== "/login" && !isAuthApi(pathname)) {
-    if (pathname.startsWith("/api/")) {
-      return NextResponse.json(
-        { error: "Password change required" },
-        { status: 403 },
-      );
     }
     return NextResponse.redirect(new URL("/login", req.url));
   }

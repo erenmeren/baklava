@@ -34,12 +34,12 @@ A global **⌘K command palette** jumps you to any connection, section, or objec
 
 Connections persist to `~/.baklava/connections.json` (chmod `600`) so they survive restarts. Override the location with `BAKLAVA_DATA_DIR`. Passwords are stored in plaintext — the same posture as `~/.kube/config`, `~/.docker/config.json`, or `~/.aws/credentials`.
 
-## Security & the default password
+## Security & the password gate
 
 Baklava can read every stored credential and run destructive queries, so when the server is reachable from a network it sits behind a **single shared password gate** (one password, no usernames).
 
-- **First run seeds the password to `password123`** and flags it for change. The very first sign-in **forces you to set a new one** before you can do anything.
-- **Set your own from the start** with the `BAKLAVA_INITIAL_PASSWORD` environment variable. A password you chose is trusted, so the forced-change step is skipped:
+- **There is no default password.** On first run the console is unconfigured, and the first visit **prompts you to create one** before anything is reachable. Any non-empty password works — there are no length or composition rules.
+- **Set one up front** with the `BAKLAVA_INITIAL_PASSWORD` environment variable to skip the create-password screen:
 
   ```bash
   BAKLAVA_INITIAL_PASSWORD='choose-something-strong' npm run dev

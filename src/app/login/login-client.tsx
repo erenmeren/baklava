@@ -15,11 +15,10 @@ import {
 import { BrandMark } from "@/components/brand-mark";
 import { Loader2 } from "lucide-react";
 
-type Mode = "login" | "change";
+type Mode = "login" | "setup";
 
-export function LoginClient({ mode: initialMode }: { mode: Mode }) {
+export function LoginClient({ mode }: { mode: Mode }) {
   const router = useRouter();
-  const [mode, setMode] = useState<Mode>(initialMode);
   const [password, setPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -41,11 +40,6 @@ export function LoginClient({ mode: initialMode }: { mode: Mode }) {
         setError(data.error || "Sign-in failed");
         return;
       }
-      if (data.mustChange) {
-        setPassword("");
-        setMode("change");
-        return;
-      }
       router.replace("/");
       router.refresh();
     } catch (err) {
@@ -55,24 +49,18 @@ export function LoginClient({ mode: initialMode }: { mode: Mode }) {
     }
   }
 
-  async function submitChange(e: React.FormEvent) {
+  async function submitSetup(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     if (newPassword !== confirm) {
       setError("Passwords don't match");
       return;
     }
-    if (newPassword.length < 8) {
-      setError("New password must be at least 8 characters");
-      return;
-    }
     setBusy(true);
     try {
-      const res = await fetch("/api/auth/change-password", {
+      const res = await fetch("/api/auth/setup", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        // currentPassword is unused on the forced first change, but the server
-        // ignores it in that case.
         body: JSON.stringify({ newPassword }),
       });
       const data = await res.json().catch(() => ({}));
@@ -97,12 +85,12 @@ export function LoginClient({ mode: initialMode }: { mode: Mode }) {
           <span className="font-semibold tracking-tight">baklava</span>
         </div>
         <CardTitle className="pt-2">
-          {mode === "login" ? "Sign in" : "Choose a new password"}
+          {mode === "login" ? "Sign in" : "Create a password"}
         </CardTitle>
         <CardDescription>
           {mode === "login"
             ? "Enter the password to access this console."
-            : "Set a password to replace the default before continuing."}
+            : "Set a password to protect this console."}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -128,9 +116,9 @@ export function LoginClient({ mode: initialMode }: { mode: Mode }) {
             </Button>
           </form>
         ) : (
-          <form onSubmit={submitChange} className="space-y-4">
+          <form onSubmit={submitSetup} className="space-y-4">
             <div className="space-y-1.5">
-              <Label htmlFor="newPassword">New password</Label>
+              <Label htmlFor="newPassword">Password</Label>
               <Input
                 id="newPassword"
                 type="password"
@@ -163,7 +151,7 @@ export function LoginClient({ mode: initialMode }: { mode: Mode }) {
               {busy ? (
                 <Loader2 className="size-4 animate-spin" />
               ) : (
-                "Set password & continue"
+                "Create password & continue"
               )}
             </Button>
           </form>

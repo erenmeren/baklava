@@ -5,7 +5,7 @@ import fs from "node:fs";
 import { createHmac } from "node:crypto";
 
 // Point the auth store at a throwaway dir BEFORE importing it (DATA_DIR is read
-// at module load). Seeded with the bootstrap default (no BAKLAVA_INITIAL_PASSWORD).
+// at module load). No BAKLAVA_INITIAL_PASSWORD → starts unconfigured.
 const TMP = path.join(
   os.tmpdir(),
   `baklava-auth-test-${process.pid}-${Date.now()}`,
@@ -26,20 +26,21 @@ beforeAll(async () => {
 });
 
 describe("auth store", () => {
-  it("seeds the bootstrap password and forces a change", () => {
-    expect(store.verifyPassword("password123")).toBe(true);
-    expect(store.verifyPassword("wrong")).toBe(false);
-    expect(store.mustChangePassword()).toBe(true);
+  it("starts unconfigured with no default password", () => {
+    expect(store.needsSetup()).toBe(true);
+    // There is no default to sign in with.
+    expect(store.verifyPassword("password123")).toBe(false);
+    expect(store.verifyPassword("")).toBe(false);
     // Persisted with 0600 perms.
     const mode = fs.statSync(path.join(TMP, "auth.json")).mode & 0o777;
     expect(mode).toBe(0o600);
   });
 
-  it("rotates the password and clears the forced-change flag", () => {
-    store.setPassword("a-strong-secret");
-    expect(store.verifyPassword("a-strong-secret")).toBe(true);
+  it("accepts any non-empty password on setup (no length rules)", () => {
+    store.setPassword("x"); // a single character is allowed
+    expect(store.verifyPassword("x")).toBe(true);
     expect(store.verifyPassword("password123")).toBe(false);
-    expect(store.mustChangePassword()).toBe(false);
+    expect(store.needsSetup()).toBe(false);
   });
 
   it("toggles the password gate on and off (defaults on)", () => {

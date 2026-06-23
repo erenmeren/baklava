@@ -12,23 +12,23 @@ import { scryptSync, randomBytes, timingSafeEqual } from "node:crypto";
 // password gate (no usernames): one scrypt-hashed password + a random session
 // signing secret, persisted alongside connections.json under ~/.baklava.
 //
-// Bootstrap: on first run the password is seeded to `password123` (override with
-// BAKLAVA_INITIAL_PASSWORD) and `mustChange` is set, so the very first sign-in
-// forces a new password. When BAKLAVA_INITIAL_PASSWORD is set we trust it and
-// skip the forced change.
+// Bootstrap: there is NO default password. On first run the console is
+// "unconfigured" (passwordHash is empty) and the first visit prompts the user to
+// create one. Setting BAKLAVA_INITIAL_PASSWORD configures it up front instead.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const DATA_DIR =
   process.env.BAKLAVA_DATA_DIR || path.join(os.homedir(), ".baklava");
 const FILE = path.join(DATA_DIR, "auth.json");
-const DEFAULT_PASSWORD = "password123";
 const SCRYPT_KEYLEN = 64;
 
 export interface AuthState {
   version: 1;
   salt: string; // hex
-  passwordHash: string; // hex (scrypt of password+salt)
+  passwordHash: string; // hex (scrypt of password+salt), or "" when unconfigured
   secret: string; // hex — HMAC key for session tokens
+  /** Legacy flag from the old bootstrap-default flow. New files set it false; an
+   *  old file with it true is treated as unconfigured (see needsSetup). */
   mustChange: boolean;
   /** When false, the password gate is disabled and every request is allowed.
    *  Absent in older auth.json files → treated as enabled. */
@@ -46,14 +46,15 @@ function hashPassword(password: string, saltHex: string): string {
 
 function freshState(): AuthState {
   const salt = randomBytes(16).toString("hex");
-  const seed = process.env.BAKLAVA_INITIAL_PASSWORD || DEFAULT_PASSWORD;
+  const seed = process.env.BAKLAVA_INITIAL_PASSWORD;
   return {
     version: 1,
     salt,
-    passwordHash: hashPassword(seed, salt),
+    // No public default: without a deployer-provided password the console is
+    // unconfigured and the first visit prompts the user to create one.
+    passwordHash: seed ? hashPassword(seed, salt) : "",
     secret: randomBytes(32).toString("hex"),
-    // A deployer-chosen password is trusted; the public default must be changed.
-    mustChange: !process.env.BAKLAVA_INITIAL_PASSWORD,
+    mustChange: false,
     enabled: true,
     updatedAt: Date.now(),
   };
@@ -105,9 +106,12 @@ export function getAuthSecret(): string {
   return load().secret;
 }
 
-/** True while the bootstrap default password is still in place. */
-export function mustChangePassword(): boolean {
-  return load().mustChange;
+/** True when no password has been configured yet — the first run (or a legacy
+ *  bootstrap-default file). The first visit must create one before anything is
+ *  reachable. */
+export function needsSetup(): boolean {
+  const s = load();
+  return s.passwordHash === "" || s.mustChange === true;
 }
 
 /** Whether the password gate is active. Defaults to true for older files. */
@@ -121,9 +125,11 @@ export function setAuthEnabled(enabled: boolean): void {
   persist({ ...s, enabled, updatedAt: Date.now() });
 }
 
-/** Constant-time check of a candidate password against the stored hash. */
+/** Constant-time check of a candidate password against the stored hash.
+ *  Always false while unconfigured (there is nothing to match against). */
 export function verifyPassword(password: string): boolean {
   const s = load();
+  if (s.passwordHash === "" || s.mustChange === true) return false;
   const candidate = Buffer.from(hashPassword(password, s.salt), "hex");
   const stored = Buffer.from(s.passwordHash, "hex");
   return (
@@ -131,8 +137,9 @@ export function verifyPassword(password: string): boolean {
   );
 }
 
-/** Set a new password, clearing the forced-change flag. Secret is preserved so
- *  the caller's freshly issued session stays valid. */
+/** Set the password (first-time setup or a later rotation), marking the console
+ *  configured. Secret is preserved so the caller's freshly issued session stays
+ *  valid. */
 export function setPassword(newPassword: string): void {
   const s = load();
   const salt = randomBytes(16).toString("hex");
@@ -144,6 +151,3 @@ export function setPassword(newPassword: string): void {
     updatedAt: Date.now(),
   });
 }
-
-/** The bootstrap default, exported so routes can reject keeping it. */
-export const DEFAULT_BOOTSTRAP_PASSWORD = DEFAULT_PASSWORD;

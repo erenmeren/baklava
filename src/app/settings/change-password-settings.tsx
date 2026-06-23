@@ -14,8 +14,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-const MIN_LENGTH = 8;
-
 export function ChangePasswordSettings() {
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
@@ -28,10 +26,6 @@ export function ChangePasswordSettings() {
     setError(null);
     if (next !== confirm) {
       setError("New passwords don't match");
-      return;
-    }
-    if (next.length < MIN_LENGTH) {
-      setError(`New password must be at least ${MIN_LENGTH} characters`);
       return;
     }
     setSaving(true);
