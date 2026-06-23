@@ -130,7 +130,7 @@ export function LoginClient({ mode }: { mode: Mode }) {
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="confirm">Confirm new password</Label>
+              <Label htmlFor="confirm">Confirm password</Label>
               <Input
                 id="confirm"
                 type="password"

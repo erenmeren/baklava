@@ -1,246 +1,123 @@
 # Baklava
 
-**One console for your whole backend.** Baklava is an open-source ops dashboard for the tools you already run — Docker, Postgres, Kafka, Kubernetes, and more — each modeled on the dedicated app you'd otherwise reach for (Docker Desktop, pgAdmin, kafka-ui, SSMS, RedisInsight, Compass, k9s, an S3 browser). Stop juggling a dozen tabs and native apps; manage everything from one place.
+**One console for your whole backend.**
+
+Baklava is a free, open-source dashboard for the infrastructure you already run — Docker, databases, Kafka, Kubernetes, Redis, object storage, and more. Each one gets a workspace modeled on the dedicated app you'd normally reach for, so you stop juggling Docker Desktop, pgAdmin, kafka-ui, RedisInsight, an S3 browser, and a dozen browser tabs. It all lives in one place, on your machine.
+
+![Baklava home — every technology in one grid](docs/images/02-home.png)
+
+---
+
+## Get started in two minutes
+
+You need [Node.js](https://nodejs.org) 20+ and (optionally) [Docker](https://www.docker.com/products/docker-desktop/).
 
 ```bash
 npm install
 npm run dev
-# → http://localhost:3000
 ```
 
-That's it. Docker works out of the box; for everything else you add a connection in the UI.
+Open **http://localhost:3000**.
+
+The first time you open Baklava, it asks you to **create a password**. There's no default — you pick one, and it's stored (hashed) only on your machine. Any password works; there are no length rules.
+
+![Create a password on first run](docs/images/01-setup.png)
+
+That's it. Docker works immediately. For everything else, you add a connection in the UI.
+
+---
+
+## How to use it
+
+**1. Pick a technology** from the home grid and add a connection. You fill in the host, port, and credentials, then hit **Test** — a successful test saves it. (Docker needs nothing; it uses your local Docker automatically.)
+
+**2. Open the connection** to land in a full workspace — sidebar, tables, detail views — shaped like the tool you already know.
+
+For example, the **Docker** workspace is a Portainer-grade view of your containers, images, volumes, networks, and stacks, with logs, stats, and a real terminal one click away:
+
+![Docker workspace — containers, images, stacks, and more](docs/images/04-docker.png)
+
+And the **PostgreSQL** workspace feels like pgAdmin — a live health dashboard, a schema tree, table browsers, and a SQL editor with autocomplete:
+
+![PostgreSQL workspace — live dashboard and schema tree](docs/images/05-postgres.png)
+
+**3. Jump anywhere with ⌘K.** Press **⌘K / Ctrl+K** (or the search pill in the header) to hop to any connection, section, or object, or to run quick actions like adding a connection or toggling the theme.
+
+![The ⌘K command palette](docs/images/03-palette.png)
 
 ---
 
 ## What's integrated
 
-| Category | Technologies |
-|---|---|
-| **Runtime** | Docker |
-| **Database** | PostgreSQL · MySQL · SQL Server · MongoDB |
-| **Streaming** | Kafka |
-| **Orchestration** | Kubernetes |
-| **Cache** | Redis |
-| **Vector** | Qdrant |
-| **Object storage** | Cloudflare R2 · MinIO · Amazon S3 |
+| Category | Technologies | Modeled on |
+|---|---|---|
+| **Runtime** | Docker | Docker Desktop / Portainer |
+| **Database** | PostgreSQL · MySQL · SQL Server · MongoDB | pgAdmin · phpMyAdmin · SSMS · Compass |
+| **Streaming** | Kafka | kafka-ui |
+| **Orchestration** | Kubernetes | k9s |
+| **Cache** | Redis | RedisInsight |
+| **Vector** | Qdrant | — |
+| **Object storage** | Cloudflare R2 · MinIO · Amazon S3 | an S3 file browser |
 
-A global **⌘K command palette** jumps you to any connection, section, or object from anywhere.
-
-## How it works
-
-1. **Pick a technology** from the home grid.
-2. **Configure and test** a connection. A successful test saves it.
-3. **Open** a saved connection to land in a full **workspace** — sidebar, tables, detail views — shaped like the dedicated tool for that tech.
-
-Connections persist to `~/.baklava/connections.json` (chmod `600`) so they survive restarts. Override the location with `BAKLAVA_DATA_DIR`. Passwords are stored in plaintext — the same posture as `~/.kube/config`, `~/.docker/config.json`, or `~/.aws/credentials`.
-
-## Security & the password gate
-
-Baklava can read every stored credential and run destructive queries, so when the server is reachable from a network it sits behind a **single shared password gate** (one password, no usernames).
-
-- **There is no default password.** On first run the console is unconfigured, and the first visit **prompts you to create one** before anything is reachable. Any non-empty password works — there are no length or composition rules.
-- **Set one up front** with the `BAKLAVA_INITIAL_PASSWORD` environment variable to skip the create-password screen:
-
-  ```bash
-  BAKLAVA_INITIAL_PASSWORD='choose-something-strong' npm run dev
-  ```
-
-- **Change it later** in **Settings → Security**, and **Lock console** (in the header) signs you out.
-- **Turn the gate off** in **Settings → Security** — handy on a trusted localhost machine where the login prompt is just friction. Leave it **on** for anything exposed to a network.
-
-The password is scrypt-hashed and stored in `~/.baklava/auth.json` (chmod `600`, next to your connections). It never leaves the server.
+Each workspace gives you the everyday operations you'd expect: browse and edit data, run queries, watch logs and metrics, manage objects, and perform the destructive actions (drop, delete, prune) behind clear confirmations.
 
 ---
 
-## Workspaces
+## Your data stays on your machine
 
-### Docker (Portainer-grade)
+Baklava has no cloud, no account, and no telemetry. Connections are saved to `~/.baklava/connections.json` (readable only by you) so they survive restarts. Set `BAKLAVA_DATA_DIR` to store them somewhere else.
 
-Sidebar: Containers · Images · Volumes · Networks · Stacks · Registries · Events · System.
+Connection passwords are kept in plain text on disk — the same approach as `~/.kube/config`, `~/.docker/config.json`, or `~/.aws/credentials`. Keep the file private.
 
-- **Containers** — live-refreshing table (name, image, state, ports, age) with per-row Start / Stop / Restart / Remove, plus a **Create container** form (image picker, ports, env, volumes, restart policy, auto-start). Click into a container for 10 tabs:
-  - **Overview**, **Logs** (auto-tails 400 lines), **Stats** (CPU / memory / network & block I/O / PIDs, refreshing every 3s)
-  - **Terminal** — a true bidirectional xterm.js shell (SSE out, POST in, resize support)
-  - **Exec** — one-shot run-a-command form for quick checks
-  - **Files** — file browser with breadcrumbs and click-to-preview (busybox-compatible)
-  - **Networks** — per-network IP / gateway / MAC / aliases, with connect & disconnect
-  - **Environment**, **Mounts**, and the full **Inspect** JSON
-- **Images** — list with repo:tag, ID, size, age. **Search Docker Hub** (official-image badges, pull & star counts, tag browsing), **pull any tag** with layer-by-layer SSE progress, and **build from a Dockerfile** with streaming `docker build` output (no local context needed). Plus pull-by-ref and force-remove.
-- **Volumes** — list, create, remove.
-- **Networks** — list, **create** (bridge / overlay / macvlan / ipvlan, optional subnet, internal flag), remove (built-ins protected).
-- **Stacks** — paste a `docker-compose.yml`, **validate** to preview the deployment plan (services, networks, volumes, ports, dependency order), then **deploy** with live SSE progress. Stack pages link into individual containers and offer stack-level Start / Stop / Restart / Remove. Everything is labelled `baklava.stack.name` so teardown stays clean. Private registry creds are auto-attached during deploy.
-- **Registries** — per-connection credential store (Docker Hub / GHCR / Quay / ECR, one-click presets). Baklava attaches the right creds to each pull by image host. Creds never touch disk.
-- **Events** — live `docker events` over SSE, with type-coded badges, a filter, and pause/resume.
-- **System** — KPI dashboard (running/stopped containers, image count, CPUs, memory, versions), full daemon detail, and **Reclaim disk** prune cards (containers / images / volumes / networks / build cache).
+### The password gate
 
-### PostgreSQL (pgAdmin-style)
+Because Baklava can read every stored credential and run destructive queries, it sits behind a **single shared password** (one password, no usernames) whenever it's reachable over a network.
 
-Tree sidebar: connection → databases → schemas → tables / views / functions / sequences.
+- **You create the password on first run** — there is no default to forget or leak.
+- **Change it** anytime in **Settings → Security**, and use **Lock console** in the header to sign out.
+- **Turn the gate off** in **Settings → Security** if you're on a trusted machine and the prompt is just friction. Leave it **on** for anything exposed to a network.
+- Prefer to set it up front? Start with `BAKLAVA_INITIAL_PASSWORD='your-password' npm run dev` to skip the create-password screen.
 
-- **Overview dashboard** — signal-driven KPI strip (connections, blockers, idle-in-txn, TPS sparkline + rollback ratio, cache hit, total size), a health-badge row that appears only when something trips a threshold, and a two-column body: top slow queries (`pg_stat_statements`), blocker chains, active sessions with KILL/cancel, bloat hotspots, databases, and top tables.
-- **Table tabs** — Data (paginated, 100/page with total count), Structure, Indexes, Constraints (PK / FK / UNIQUE / CHECK / EXCLUDE), Foreign keys (with on-update / on-delete actions).
-- **SQL editor** per database — Cmd/Ctrl+Enter to run, results capped at 500 rows, schema-aware autocomplete, dialect-specific keywords, and recent-query history.
-
-### Kafka (kafka-ui-style)
-
-Sidebar: Overview · Topics · Consumer groups · Brokers.
-
-- **Overview** — mission-control dashboard: broker pulse, big stats (topics / partitions / messages / groups), under-replicated call-outs, top-volume leaderboard. Auto-refreshes every 15s.
-- **Topics** — dense list with message-count bars, partition-skew sparklines, and ISR health. Click in for Partitions, Messages (text filter + live tail + detail drawer with pretty JSON & headers), Produce, and Configs. Schema Registry aware (Avro / JSON Schema / Protobuf via the Confluent magic byte).
-- **Consumer groups** — lag column with severity bar, member count, topics assigned, and consumption + ETA-to-drain. Click in for member detail, per-partition offset/lag, a partition heatmap, and reset-offsets.
-- **Brokers** — list with controller badge.
-
-### SQL Server (SSMS-style)
-
-Tree sidebar: connection → databases → schemas → all 9 SSMS object categories (tables / views / procedures / functions / sequences / user-defined types / table types / synonyms / triggers), each with a `+` to create.
-
-- **Overview dashboard** — mirrors the Postgres layout: 6 tone-coded KPI tiles, a conditional Signals row, and a two-column body (top queries from the plan cache, blocked sessions, active sessions with KILL, databases, top wait classes with the benign-waits filter). Refresh defaults to **Off** so an idle tab is quiet.
-- **Create dialogs** on every schema group — structured forms for Tables / Sequences / Synonyms / UDTs / Table Types, plus a CodeMirror T-SQL editor with per-kind scaffolds for Views / Procedures / Functions / Triggers.
-- **Tables** — Data / Structure / Indexes / Foreign keys / Triggers, with a FORCE drop dialog for databases.
-- Dedicated server-level pages: **Activity / Locks / Top queries / Query Store / Index maintenance / Security / Backup**.
-- **SQL editor** per database — MSSQL dialect, curated keywords & types, schema-aware autocomplete, `GO` batch splits, and a `STATISTICS IO/TIME` toggle.
-
-### MySQL (phpMyAdmin-style)
-
-Databases → tables, a CodeMirror SQL editor, row-level CRUD, indexes, and a live process list with KILL.
-
-### MongoDB (Compass-style)
-
-Databases → collections, a document browser with EJSON filtering, an aggregation-pipeline runner, indexes, and server / replica-set / current-op pages.
-
-### Kubernetes (k9s-style)
-
-Terminal-style browser for pods, deployments, services, configmaps, secrets, and namespaces — with a `:`-triggered command runner, pod logs, exec, and an in-browser shell.
-
-### Redis (RedisInsight-style)
-
-Typed key viewer, CLI, pub/sub, streams, `MONITOR`, cluster topology, ACL, and server info — single-node or cluster.
-
-### Qdrant (vector database)
-
-Sidebar lists collections. Click into a collection for three tabs:
-
-- **Points** — browse points with pagination, toggle to show/hide raw vectors.
-- **Search** — run similarity search and inspect the ranked hits.
-- **Config** — the collection's vector params and configuration.
-
-### Object storage — Cloudflare R2 · MinIO · Amazon S3
-
-All three are S3-compatible and share **one object-storage workspace** (a file manager) built on a single shared S3 core, so each backend is just a small connection adapter.
-
-- **Connect** — R2 (account ID + access key + secret), MinIO (`host:port` or full URL + Use-SSL toggle + access/secret + region), Amazon S3 (region + access key + secret + optional STS session token). Each form **Tests** by listing buckets before saving; secrets are redacted and never returned over the API.
-- **Buckets** — sidebar list with create / delete.
-- **File manager** (per bucket) — breadcrumb navigation, object table (name · size · last-modified · storage class), **upload** (streaming multipart), **download** (presigned), **copy presigned link**, **copy / rename / move**, multi-select **bulk delete**, **new folder**, and an **object detail drawer** (size, content-type, ETag, metadata, headers).
-- **Settings** (per bucket) — **CORS** and **lifecycle** editors (R2 + S3; MinIO notes that CORS is configured server-side), plus a read-only **public-access** panel linking to the provider's dashboard.
-
-## Command palette
-
-Press **⌘K / Ctrl+K** (or the **⌘K** pill in the header) from anywhere to:
-
-- jump to any saved connection's workspace (recent-first),
-- jump to a section of the connection you're in (Tables, Topics, Buckets, Pods, …),
-- search objects in the active connection (tables on PostgreSQL / MySQL / SQL Server),
-- run quick actions (new connection, go home, toggle theme).
-
-Kubernetes keeps its own `:`-triggered k9s-style command runner alongside the global palette.
+The password is hashed (scrypt) and stored in `~/.baklava/auth.json`. It never leaves the server.
 
 ---
 
-## Try it out
+## Want demo data to explore?
 
-### Local test stack
-
-A `compose.yaml` at the project root spins up Postgres, Kafka, and SQL Server:
+A `compose.yaml` at the project root spins up Postgres, Kafka, and SQL Server so you have something real to click through:
 
 ```bash
-docker compose up -d           # everything
-docker compose up -d postgres  # just one service
-docker compose down -v         # stop + wipe data
+docker compose up -d           # start everything
+bash seed/all.sh               # fill it with demo data
+docker compose down -v         # stop and wipe when you're done
 ```
 
-Then seed demo data so the workspaces have something to browse:
-
-```bash
-bash seed/all.sh               # docker stack + pg/kafka/sqlserver data
-bash seed/postgres.sh          # just one tech
-```
-
-See [`seed/README.md`](seed/README.md) for what each script creates (one of every SSMS object in SQL Server, a keyed Kafka stream, a labelled three-container Docker stack, and a 250-row storefront schema in Postgres).
-
-**Connection details** — all throwaway, local-dev only. Plug them into the connection forms:
+This gives you a 250-row storefront in Postgres, a keyed Kafka stream, and a labelled Docker stack. Then add these connections in the UI (all local, throwaway):
 
 | Tech | Host | Port | User | Password | Notes |
 |---|---|---:|---|---|---|
-| **Docker** | — | — | — | — | uses `unix:///var/run/docker.sock` automatically |
+| **Docker** | — | — | — | — | detected automatically |
 | **PostgreSQL** | localhost | 5432 | `postgres` | `Baklava123!` | database `demo` |
 | **Kafka** | — | — | — | — | broker `localhost:9092` |
-| **SQL Server** | localhost | 1433 | `sa` | `Baklava123!` | encrypt: on, trustServerCertificate: on |
+| **SQL Server** | localhost | 1433 | `sa` | `Baklava123!` | encrypt on, trust server cert |
 
-> SQL Server runs under `linux/amd64` (Rosetta on Apple Silicon) — startup is ~30s and uses ~2GB RAM.
+See [`seed/README.md`](seed/README.md) for exactly what each script creates.
 
-### Spin up other services
+Pointing at a service you already run? Any standard connection works — for example:
 
-To point Baklava at services outside the compose stack:
+```bash
+docker run -p 6379:6379 redis:latest          # Redis
+docker run -p 27017:27017 mongo:latest        # MongoDB
+docker run -p 6333:6333 qdrant/qdrant         # Qdrant
+```
 
-| Tech | Command |
-|---|---|
-| **PostgreSQL** | `docker run -p 5432:5432 -e POSTGRES_PASSWORD=password postgres:latest` |
-| **MySQL** | `docker run -p 3306:3306 -e MYSQL_ROOT_PASSWORD=password mysql:latest` |
-| **MongoDB** | `docker run -p 27017:27017 mongo:latest` |
-| **Kafka** | `docker run -p 9092:9092 -e KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://localhost:9092 -e KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT confluentinc/cp-kafka:latest` |
-| **Redis** | `docker run -p 6379:6379 redis:latest` |
-| **Qdrant** | `docker run -p 6333:6333 qdrant/qdrant` |
-| **MinIO** | `docker run -p 9000:9000 -p 9001:9001 -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin minio/minio:latest server /minio --console-address ":9001"` |
-
-For Kubernetes, point Baklava at your `~/.kube/config` — no local setup needed.
+For Kubernetes, Baklava reads your existing `~/.kube/config` — no setup needed.
 
 ---
 
-## Stack
+## Contributing
 
-- **Next.js 16** (App Router) + **React 19** + **TypeScript**
-- **Tailwind CSS v4** + **shadcn/ui** (Base UI primitives) + Lucide icons + Sonner toasts
-- **CodeMirror** (`@uiw/react-codemirror` + `@codemirror/lang-sql`) for SQL editors; **xterm.js** for the Docker terminal
-- Drivers: `dockerode`, `kafkajs`, `pg`, `mysql2`, `mssql`, `mongodb`, `ioredis`, `@kubernetes/client-node`, and `@aws-sdk/client-s3` (+ `s3-request-presigner` / `lib-storage`) for the S3-compatible stores
-
-## Project layout
-
-```
-src/
-  app/
-    page.tsx                              # home grid
-    docker/[connectionId]/               # workspace shell + sidebar, one page per object
-    postgres/[connectionId]/             # tree sidebar (db > schema > table) + SQL editor
-    kafka/[connectionId]/                # topics / consumer-groups / brokers
-    sqlserver/[connectionId]/            # tree sidebar (db > schema > 9 group kinds)
-    api/                                  # all server routes
-  components/
-    workspace/                            # shared workspace shell, sidebar, page chrome
-    sql/                                  # shared SQL editor toolkit
-    ui/                                   # shadcn components
-  lib/
-    tech-catalog.ts                       # registry of integrated technologies
-    sql/                                  # format, completions, themes, dialect keywords
-    auth/                                 # single-password gate (store + session)
-    connections/
-      store.ts                            # in-memory store on globalThis, persisted to disk
-      server.ts                           # requireConnection() for server pages
-      docker.ts · kafka.ts · postgres.ts · sqlserver.ts · …  # per-tech driver helpers
-```
-
-## Adding another technology
-
-A technology is a self-contained module under `src/techs/<tech>/`, collected by two registries. Catalog, summaries, `FIRST_PAGE`, secret keys, and health probes all derive from the registry — so adding a tech is create-module + register, not a per-file diff.
-
-1. Add a `TechId` literal and a config interface in `src/lib/connections/types.ts` (the hand-maintained source of truth).
-2. Create `src/techs/<tech>/meta.ts` — client-safe metadata (catalog entry, zod config schema, secret keys, `firstPage`). No driver import.
-3. Create `src/techs/<tech>/index.ts` — spreads meta + adds `driver`. Put the driver helper in `src/lib/connections/<tech>.ts` and **lazy-import** its npm package so the dependency stays optional.
-4. Register in both `src/techs/registry.ts` (full module) and `src/techs/meta-registry.ts` (meta) — one line each.
-5. Add the npm driver to `optionalDependencies` in `package.json`. `serverExternalPackages` is generated from each module's `serverPackages` by `scripts/gen-server-packages.ts` (runs on `predev`/`prebuild`) — **don't** hand-edit `next.config.ts`.
-6. Add API routes under `src/app/api/<tech>/` (`test`, `[id]/...`). Wrap thrown errors with `formatError`.
-7. Build the form at `src/app/<tech>/<tech>-form.tsx` (reused by `ConnectionSheet`) and the workspace at `src/app/<tech>/[connectionId]/` (`layout.tsx` with `WorkspaceShell` + sidebar, one page per object kind).
-
-See [`AGENTS.md`](AGENTS.md) for the full conventions guide (server pages, SSE patterns, driver lifecycle, Base UI notes).
+Baklava is built with Next.js 16, React 19, and TypeScript. Want to run it from source, understand the architecture, or add a new technology? See **[CONTRIBUTING.md](CONTRIBUTING.md)**.
 
 ## License
 
