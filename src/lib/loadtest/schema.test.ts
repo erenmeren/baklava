@@ -23,10 +23,19 @@ describe("loadTestConfigSchema", () => {
     ).toThrow();
   });
 
-  it("rejects a non-URL baseUrl", () => {
+  it("normalizes a scheme-less baseUrl by defaulting to http://", () => {
+    const cfg = loadTestConfigSchema.parse({
+      target: { baseUrl: "localhost:3000" },
+      requests: [{ name: "a", path: "/" }],
+      profile: { type: "constant", vus: 1, duration: "1s" },
+    });
+    expect(cfg.target.baseUrl).toBe("http://localhost:3000");
+  });
+
+  it("rejects a baseUrl that is not a valid URL even after normalizing", () => {
     expect(() =>
       loadTestConfigSchema.parse({
-        target: { baseUrl: "not-a-url" },
+        target: { baseUrl: "not a url" },
         requests: [{ name: "a", path: "/" }],
         profile: { type: "constant", vus: 1, duration: "1s" },
       }),
