@@ -7,9 +7,10 @@ import { Sparkline } from "@/components/workspace/sparkline";
 import { RelativeTime } from "@/components/workspace/relative-time";
 import { StatusPill } from "@/components/loadtest/status-pill";
 import { ResultDashboard } from "@/components/loadtest/result-dashboard";
+import { RunExportButtons } from "@/components/loadtest/run-export-buttons";
 import type { RunSummary, LoadTestRun } from "@/lib/loadtest/store";
 
-export function HistoryClient({ testId }: { testId: string }) {
+export function HistoryClient({ testId, testName }: { testId: string; testName: string }) {
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<LoadTestRun | null>(null);
@@ -67,7 +68,10 @@ export function HistoryClient({ testId }: { testId: string }) {
 
         {selected ? (
           <div>
-            <h3 className="text-sm font-semibold mb-2">Run detail</h3>
+            <div className="flex items-center justify-between gap-3 mb-2">
+              <h3 className="text-sm font-semibold">Run detail</h3>
+              <RunExportButtons testId={testId} testName={testName} run={selected} />
+            </div>
             {selected.result ? (
               <ResultDashboard result={selected.result} />
             ) : selected.status === "error" ? (

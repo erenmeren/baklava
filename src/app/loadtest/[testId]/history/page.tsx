@@ -1,6 +1,8 @@
+import { requireLoadTest } from "@/lib/loadtest/server";
 import { HistoryClient } from "./history-client";
 
 export default async function HistoryPage({ params }: { params: Promise<{ testId: string }> }) {
   const { testId } = await params;
-  return <HistoryClient testId={testId} />;
+  const test = requireLoadTest(testId);
+  return <HistoryClient testId={testId} testName={test.name} />;
 }
