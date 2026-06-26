@@ -45,7 +45,10 @@ export interface PublicLoadTest {
   lastRun?: RunSummary;
 }
 
-const MAX_RUNS = 50;
+// Cap on retained runs per test. Generous so history is effectively unlimited
+// for normal use, while keeping ~/.baklava/loadtests.json from growing without
+// bound. Oldest runs are trimmed first (see appendRun).
+const MAX_RUNS = 500;
 
 const DATA_DIR = process.env.BAKLAVA_DATA_DIR || path.join(os.homedir(), ".baklava");
 const FILE = path.join(DATA_DIR, "loadtests.json");

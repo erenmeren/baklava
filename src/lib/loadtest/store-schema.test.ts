@@ -24,8 +24,10 @@ describe("savedLoadTestConfigSchema", () => {
     ).toEqual({ type: "apiKey", header: "X-Key", value: "v" });
   });
 
-  it("rejects a non-URL baseUrl and an empty requests array", () => {
-    expect(() => savedLoadTestConfigSchema.parse({ ...base, target: { baseUrl: "nope" } })).toThrow();
+  it("normalizes a scheme-less baseUrl and rejects a truly invalid one + empty requests", () => {
+    expect(savedLoadTestConfigSchema.parse({ ...base, target: { baseUrl: "localhost:8080" } }).target.baseUrl)
+      .toBe("http://localhost:8080");
+    expect(() => savedLoadTestConfigSchema.parse({ ...base, target: { baseUrl: "no spaces allowed" } })).toThrow();
     expect(() => savedLoadTestConfigSchema.parse({ ...base, requests: [] })).toThrow();
   });
 

@@ -70,15 +70,15 @@ describe("loadtest store", () => {
     expect(updated?.config.auth).toEqual({ type: "bearer", token: "new-token" });
   });
 
-  it("appends runs, caps history at 50, and reports newest first", async () => {
+  it("appends runs, caps history at 500, and reports newest first", async () => {
     const s = await freshStore(dataDir);
     const saved = s.saveLoadTest({ name: "T", config: CONFIG });
     let last;
-    for (let i = 0; i < 55; i++) {
+    for (let i = 0; i < 505; i++) {
       last = s.appendRun(saved.id, { startedAt: 1000 + i, status: "passed" });
     }
     const runs = s.listRuns(saved.id);
-    expect(runs).toHaveLength(50);
+    expect(runs).toHaveLength(500);
     expect(runs[0].id).toBe(last!.id);
   });
 

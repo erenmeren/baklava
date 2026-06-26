@@ -1,9 +1,28 @@
 import { z } from "zod";
 import { metricKey } from "./script-gen";
+import { normalizeBaseUrl } from "./url";
 
 export const httpMethodSchema = z.enum([
   "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS",
 ]);
+
+// Target base URL: accept a scheme-less host (e.g. "localhost:3000") by
+// defaulting to http://, then require a valid http(s) URL. Plain z.url() wrongly
+// accepts "localhost:200" (it reads "localhost:" as the scheme), which k6 then
+// rejects with `unsupported protocol scheme`.
+export const baseUrlSchema = z
+  .string()
+  .trim()
+  .min(1, "Base URL is required")
+  .transform(normalizeBaseUrl)
+  .refine((v) => {
+    try {
+      const u = new URL(v);
+      return u.protocol === "http:" || u.protocol === "https:";
+    } catch {
+      return false;
+    }
+  }, "Enter a valid URL, e.g. https://api.example.com or localhost:3000");
 
 export const requestCheckSchema = z.object({
   status: z.number().int().optional(),
@@ -94,7 +113,7 @@ export const loadTestConfigSchema = z
   .object({
     name: z.string().default("loadtest"),
     target: z.object({
-      baseUrl: z.url(),
+      baseUrl: baseUrlSchema,
       headers: z.record(z.string(), z.string()).optional(),
     }),
     requests: z.array(requestStepSchema).min(1),

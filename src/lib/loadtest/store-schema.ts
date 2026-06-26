@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { profileSchema, requestStepSchema, thresholdsSchema } from "./schema";
+import { baseUrlSchema, profileSchema, requestStepSchema, thresholdsSchema } from "./schema";
 import { metricKey } from "./script-gen";
 
 // UI-facing auth model: holds LITERAL secret values (stored at rest in a 0600
@@ -16,7 +16,7 @@ export const savedAuthSchema = z.discriminatedUnion("type", [
 export const savedLoadTestConfigSchema = z
   .object({
     target: z.object({
-      baseUrl: z.url(),
+      baseUrl: baseUrlSchema,
       headers: z.record(z.string(), z.string()).optional(),
     }),
     requests: z.array(requestStepSchema).min(1),

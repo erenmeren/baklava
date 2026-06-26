@@ -97,6 +97,10 @@ export function LoadTestForm({ initial, onSaved }: { initial?: PublicLoadTest; o
             <div className="space-y-1">
               <Label>Base URL</Label>
               <Input value={state.target.baseUrl} onChange={(e) => setState((s) => ({ ...s, target: { ...s.target, baseUrl: e.target.value } }))} placeholder="https://api.example.com" />
+              <p className="text-xs text-muted-foreground">
+                Include the scheme (defaults to <code>http://</code> if omitted). A local server like{" "}
+                <code>localhost:3000</code> works — it&apos;s reached via the Docker host gateway.
+              </p>
             </div>
             <div className="space-y-1">
               <Label>Default headers</Label>
