@@ -8,6 +8,7 @@ import { RelativeTime } from "@/components/workspace/relative-time";
 import { StatusPill } from "@/components/loadtest/status-pill";
 import { ResultDashboard } from "@/components/loadtest/result-dashboard";
 import { RunExportButtons } from "@/components/loadtest/run-export-buttons";
+import { round2 } from "@/lib/loadtest/format";
 import type { RunSummary, LoadTestRun } from "@/lib/loadtest/store";
 
 export function HistoryClient({ testId, testName }: { testId: string; testName: string }) {
@@ -59,7 +60,7 @@ export function HistoryClient({ testId, testName }: { testId: string; testName: 
                 <span className="text-xs text-muted-foreground"><RelativeTime value={r.startedAt} /></span>
                 <div className="flex-1" />
                 <span className="text-xs tabular-nums text-muted-foreground">
-                  {r.p95 != null ? `p95 ${r.p95}ms` : "—"} · {r.rps != null ? `${r.rps.toFixed(1)} rps` : "—"} · {r.errorRate != null ? `${(r.errorRate * 100).toFixed(1)}%` : "—"}
+                  {r.p95 != null ? `p95 ${round2(r.p95)}ms` : "—"} · {r.rps != null ? `${r.rps.toFixed(1)} rps` : "—"} · {r.errorRate != null ? `${(r.errorRate * 100).toFixed(1)}%` : "—"}
                 </span>
               </Card>
             </button>

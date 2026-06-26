@@ -6,6 +6,7 @@
 // never prints token/password values.
 import { formatBytes } from "@/components/workspace/format";
 import { describeAuth, describeProfile, describeThresholds, profileLabel } from "./describe";
+import { round2 } from "./format";
 import type { LoadTest, LoadTestRun } from "./store";
 import type { LatencyStats } from "./results";
 
@@ -219,12 +220,12 @@ function metricGrid(doc: Doc, left: number, width: number, items: Array<[string,
 
 function latencyTable(doc: Doc, left: number, width: number, l: LatencyStats) {
   const rows: Array<[string, string]> = [
-    ["avg", `${l.avg}ms`],
-    ["p50", `${l.p50}ms`],
-    ["p90", `${l.p90}ms`],
-    ["p95", `${l.p95}ms`],
-    ["p99", `${l.p99}ms`],
-    ["max", `${l.max}ms`],
+    ["avg", `${round2(l.avg)}ms`],
+    ["p50", `${round2(l.p50)}ms`],
+    ["p90", `${round2(l.p90)}ms`],
+    ["p95", `${round2(l.p95)}ms`],
+    ["p99", `${round2(l.p99)}ms`],
+    ["max", `${round2(l.max)}ms`],
   ];
   const colW = width / rows.length;
   const y = doc.y;
@@ -264,7 +265,7 @@ function perRequestTable(doc: Doc, left: number, width: number, requests: Array<
     ensureSpace(doc, 16);
     const y = doc.y;
     const l = r.latency;
-    const vals = [r.name, `${l.avg}`, `${l.p90}`, `${l.p95}`, `${l.p99}`, `${l.max}`];
+    const vals = [r.name, `${round2(l.avg)}`, `${round2(l.p90)}`, `${round2(l.p95)}`, `${round2(l.p99)}`, `${round2(l.max)}`];
     cols.forEach((c, i) => {
       const isName = c.key === "name";
       doc.fillColor(isName ? COLOR.text : COLOR.muted).font(isName ? "Helvetica" : "Helvetica").fontSize(9)

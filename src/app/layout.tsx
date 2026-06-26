@@ -14,6 +14,7 @@ import { PaletteTrigger } from "@/components/command-palette/palette-trigger";
 import { AssistantTrigger } from "@/components/ai/assistant-trigger";
 import { SettingsTrigger } from "@/components/settings-trigger";
 import { DashboardTrigger } from "@/components/dashboard-trigger";
+import { LoadTestTrigger } from "@/components/loadtest-trigger";
 import { LockButton } from "@/components/lock-button";
 import { SESSION_COOKIE, verifySessionToken } from "@/lib/auth/session";
 import { needsSetup, isAuthEnabled } from "@/lib/auth/store";
@@ -99,6 +100,7 @@ export default async function RootLayout({
                   {/* Destinations read as one group */}
                   <div className="flex items-center gap-0.5">
                     <DashboardTrigger />
+                    <LoadTestTrigger />
                     <AssistantTrigger />
                     <SettingsTrigger />
                     {authEnabled ? <LockButton /> : null}
