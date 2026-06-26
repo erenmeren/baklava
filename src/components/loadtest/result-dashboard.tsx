@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import type { LoadTestResult } from "@/lib/loadtest/results";
+import { round2 } from "@/lib/loadtest/format";
 import { formatBytes } from "@/components/workspace/format";
 
 function Metric({ label, value, sub }: { label: string; value: string; sub?: string }) {
@@ -30,10 +31,10 @@ export function ResultDashboard({ result }: { result: LoadTestResult }) {
         <Metric label="RPS" value={result.rps.toFixed(1)} />
         <Metric label="Error rate" value={errorPct} />
         <Metric label="Max VUs" value={String(result.vusMax)} />
-        <Metric label="p50" value={`${result.latency.p50}ms`} />
-        <Metric label="p95" value={`${result.latency.p95}ms`} />
-        <Metric label="p99" value={`${result.latency.p99}ms`} />
-        <Metric label="Max" value={`${result.latency.max}ms`} />
+        <Metric label="p50" value={`${round2(result.latency.p50)}ms`} />
+        <Metric label="p95" value={`${round2(result.latency.p95)}ms`} />
+        <Metric label="p99" value={`${round2(result.latency.p99)}ms`} />
+        <Metric label="Max" value={`${round2(result.latency.max)}ms`} />
       </div>
 
       <div className="text-xs text-muted-foreground">
@@ -55,7 +56,7 @@ export function ResultDashboard({ result }: { result: LoadTestResult }) {
                 <TableRow key={r.name}>
                   <TableCell className="font-mono text-xs">{r.name}</TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {r.latency.p95 != null ? `${r.latency.p95}ms` : "—"}
+                    {r.latency.p95 != null ? `${round2(r.latency.p95)}ms` : "—"}
                   </TableCell>
                 </TableRow>
               ))}
