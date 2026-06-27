@@ -52,6 +52,8 @@ Every route file should start with `export const runtime = "nodejs";` (we need N
 
 **AI tool gate** (`src/lib/ai/gate.ts`): beyond per-connection policy + approval, `wrapExecute` enforces a persisted global kill switch (`~/.baklava/ai-controls.json`, toggled from the assistant header) plus in-memory per-session rate limit, destructive circuit breaker, and tool-call budget (`src/lib/ai/limits.ts`); reads are never blocked by the kill switch or breaker.
 
+**Egress policy** (`src/lib/net/egress.ts`): user-supplied target hosts (load-test URL, health reachability probe) pass through `assertHostAllowed`, which resolves the hostname, pins the resulting IP, and blocks cloud-metadata ranges (`169.254.169.254`, `fd00:ec2::254`) and link-local addresses; private/loopback targets are allowed; `BAKLAVA_EGRESS_ALLOW=<ip,ip>` re-allows specific IPs.
+
 ### SSE / streaming routes
 
 The pattern (see `src/app/api/docker/[id]/events/route.ts`, `.../stacks/deploy/route.ts`, `.../images/{build,pull}-stream/route.ts`):

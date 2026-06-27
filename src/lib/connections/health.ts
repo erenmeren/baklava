@@ -1,6 +1,7 @@
 import "server-only";
 import net from "node:net";
 import { formatError } from "@/lib/errors";
+import { assertHostAllowed } from "@/lib/net/egress";
 import type {
   ConnectionRecord,
   DockerConfig,
@@ -157,7 +158,9 @@ function tcpProbe(host: string, port: number, ms: number): Promise<void> {
 async function reachabilityOnly(conn: ConnectionRecord): Promise<ProbeBody> {
   const ep = endpointOf(conn.config);
   if (!ep) return { summary: "No endpoint to probe", metrics: [] };
-  await tcpProbe(ep.host, ep.port, PROBE_TIMEOUT_MS);
+  // Block metadata/link-local; pin to the validated IP to avoid DNS rebinding.
+  const ips = await assertHostAllowed(ep.host);
+  await tcpProbe(ips[0], ep.port, PROBE_TIMEOUT_MS);
   return { summary: `Reachable · ${ep.host}:${ep.port}`, metrics: [] };
 }
 

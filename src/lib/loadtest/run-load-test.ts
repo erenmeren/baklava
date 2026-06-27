@@ -1,8 +1,10 @@
 import { formatError } from "@/lib/errors";
+import { assertHostAllowed } from "@/lib/net/egress";
 import type { Executor, Progress } from "./executor";
 import { parseSummary, type LoadTestResult } from "./results";
 import { generateK6Script } from "./script-gen";
 import { loadTestConfigSchema, requiredEnvVars } from "./schema";
+import { normalizeBaseUrl } from "./url";
 
 export interface RunOptions {
   /** Override the execution backend (defaults to K6DockerExecutor). */
@@ -19,6 +21,13 @@ export async function runLoadTest(
   opts: RunOptions = {},
 ): Promise<LoadTestResult> {
   const config = loadTestConfigSchema.parse(input);
+
+  // SSRF guard: block metadata/link-local targets before launching k6.
+  // Private/loopback stay allowed (the localhost→host.docker.internal rewrite
+  // is the intended "test my local service" path).
+  const targetHost = new URL(normalizeBaseUrl(config.target.baseUrl)).hostname;
+  await assertHostAllowed(targetHost);
+
   const script = generateK6Script(config);
 
   const env = opts.env ?? process.env;

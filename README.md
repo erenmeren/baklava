@@ -100,6 +100,10 @@ The `/assistant` page lets you run a natural-language agent over your connection
 - **Global kill switch** — the **Pause AI** toggle in the assistant header writes to `~/.baklava/ai-controls.json` and survives process restart. When paused, all non-read AI actions are blocked across every session; reads still go through.
 - **Stop button** — aborts the current in-flight run immediately.
 
+### Egress safety (SSRF protection)
+
+The server blocks outbound connections to cloud-metadata endpoints (e.g. `169.254.169.254`, `fd00:ec2::254`) and link-local addresses when those addresses come from user-supplied input — specifically the load-test target URL and the health reachability probe. The host is resolved first and the resulting IP is pinned for the actual connection, so DNS rebinding attacks can't slip a blocked address past the check after the initial lookup. Private and loopback addresses (your machine, your LAN) are intentionally **not** blocked, so you can test and monitor local services as normal. If you genuinely need to reach a specific blocked address (e.g. from inside a container network), set `BAKLAVA_EGRESS_ALLOW=<ip,ip>` to re-allow those exact IPs.
+
 ### Sessions
 
 Signing in creates a **server-side session** stored in `~/.baklava/sessions.json`. You can view and revoke individual devices under **Settings → Active sessions**, or sign out all other devices at once.
