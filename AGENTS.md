@@ -14,7 +14,7 @@ Open-source unified ops console for 12 technologies: Docker · PostgreSQL · MyS
 - Tailwind v4, shadcn/ui (`base-nova` style — components wrap `@base-ui/react/*`, NOT classic Radix)
 - Drivers: `dockerode`, `kafkajs`, `pg`
 - Editors: `@uiw/react-codemirror` (SQL editor) and `@xterm/xterm` + `@xterm/addon-fit` (container terminal)
-- No DB. Connections live in an in-memory store on `globalThis` and are mirrored to `~/.baklava/connections.json` (override with `BAKLAVA_DATA_DIR`) so they survive Next.js restarts; the JSON files are **encrypted at rest** (AES-256-GCM envelope; master key resolved via `BAKLAVA_MASTER_KEY` env → OS keychain → `~/.baklava/master.key`). Per-connection volatile state (terminal sessions, registries, etc.) still vanishes on restart.
+- No DB. Connections live in an in-memory store on `globalThis` and are mirrored to `~/.baklava/connections.json` (override with `BAKLAVA_DATA_DIR`) so they survive Next.js restarts; the JSON files are **encrypted at rest** (AES-256-GCM envelope; master key resolved via `BAKLAVA_MASTER_KEY` env → OS keychain → `~/.baklava/master.key`). Per-connection volatile state (terminal sessions, registries, etc.) still vanishes on restart. **Auth sessions** are server-side records in `~/.baklava/sessions.json` (revocable; sliding 7d idle / 30d absolute cap); the auth cookie carries `<sessionId>.<hmac>` — not the password hash.
 
 ## Routing model
 
