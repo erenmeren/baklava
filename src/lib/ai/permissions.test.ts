@@ -43,14 +43,14 @@ describe("permissions", () => {
     ).toBe(true);
   });
 
-  it("autonomous mode can opt out of destructive confirmation explicitly", () => {
+  it("autonomous mode CANNOT opt out of destructive confirmation (non-disableable)", () => {
     expect(
       needsApproval("destructive", {
         ...autonomous,
         destructive: true,
         confirmDestructive: false,
       }),
-    ).toBe(false);
+    ).toBe(true);
   });
 });
 
