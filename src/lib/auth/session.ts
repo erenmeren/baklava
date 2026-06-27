@@ -1,50 +1,45 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { getAuthSecret } from "./store";
+import { createSession, verifySession, revokeSession } from "./sessions";
 
-// Stateless signed session token: `<payloadB64url>.<hmacB64url>`. The payload
-// carries only an expiry — there are no users, just "is this an authenticated
-// session". Signed with the per-install secret from the auth store, so tokens
-// can't be forged without reading ~/.baklava/auth.json (mode 0600).
+// The cookie carries `<sessionId>.<hmac(sessionId)>`. The HMAC (per-install auth
+// secret) is a cheap pre-filter to reject forged/garbage ids before a store
+// lookup; the server-side record is the source of truth, so logout and the
+// device list can actually revoke a session.
 
 export const SESSION_COOKIE = "baklava_session";
-export const SESSION_MAX_AGE_S = 60 * 60 * 24 * 30; // 30 days
+export const SESSION_MAX_AGE_S = 60 * 60 * 24 * 30; // cookie max-age; idle slide enforced server-side
 
-interface SessionPayload {
-  exp: number; // ms epoch
+function sign(id: string): string {
+  return createHmac("sha256", getAuthSecret()).update(id).digest("base64url");
 }
 
-function sign(payloadB64: string): string {
-  return createHmac("sha256", getAuthSecret())
-    .update(payloadB64)
-    .digest("base64url");
+export function sessionIdFromToken(token: string | undefined | null): string | null {
+  if (!token) return null;
+  const dot = token.indexOf(".");
+  if (dot <= 0) return null;
+  const id = token.slice(0, dot);
+  const sig = token.slice(dot + 1);
+  const a = Buffer.from(sig);
+  const b = Buffer.from(sign(id));
+  if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
+  return id;
 }
 
-export function createSessionToken(): string {
-  const payload: SessionPayload = { exp: Date.now() + SESSION_MAX_AGE_S * 1000 };
-  const payloadB64 = Buffer.from(JSON.stringify(payload)).toString("base64url");
-  return `${payloadB64}.${sign(payloadB64)}`;
+export function createSessionToken(userAgent = ""): string {
+  const rec = createSession(userAgent);
+  return `${rec.id}.${sign(rec.id)}`;
 }
 
 export function verifySessionToken(token: string | undefined | null): boolean {
-  if (!token) return false;
-  const dot = token.indexOf(".");
-  if (dot <= 0) return false;
-  const payloadB64 = token.slice(0, dot);
-  const sig = token.slice(dot + 1);
+  const id = sessionIdFromToken(token);
+  if (!id) return false;
+  return verifySession(id);
+}
 
-  const expected = sign(payloadB64);
-  const a = Buffer.from(sig);
-  const b = Buffer.from(expected);
-  if (a.length !== b.length || !timingSafeEqual(a, b)) return false;
-
-  try {
-    const payload = JSON.parse(
-      Buffer.from(payloadB64, "base64url").toString("utf8"),
-    ) as SessionPayload;
-    return typeof payload.exp === "number" && Date.now() < payload.exp;
-  } catch {
-    return false;
-  }
+export function revokeSessionToken(token: string | undefined | null): void {
+  const id = sessionIdFromToken(token);
+  if (id) revokeSession(id);
 }
 
 /** Cookie options. `secure` is set only over HTTPS so the cookie still works on
