@@ -13,6 +13,7 @@ import { dropMongoClient } from "@/lib/connections/mongo";
 import { dropR2Client } from "@/lib/connections/r2";
 import { dropMinioClient } from "@/lib/connections/minio";
 import { dropS3Client } from "@/lib/connections/s3-aws";
+import { dropPostgresPools } from "@/lib/connections/postgres";
 import { deletePolicy } from "@/lib/ai/policy-store";
 
 export const runtime = "nodejs";
@@ -68,6 +69,7 @@ export async function PATCH(req: Request, ctx: RouteContext) {
 
 export async function DELETE(_req: Request, ctx: RouteContext) {
   const { id } = await ctx.params;
+  const record = getConnection(id);
   const ok = deleteConnection(id);
   if (!ok) {
     return NextResponse.json({ error: "Connection not found" }, { status: 404 });
@@ -80,6 +82,9 @@ export async function DELETE(_req: Request, ctx: RouteContext) {
   dropR2Client(id);
   dropMinioClient(id);
   dropS3Client(id);
+  if (record?.tech === "postgres") {
+    dropPostgresPools(record.config as import("@/lib/connections/types").PostgresConfig);
+  }
   deletePolicy(id);
   return NextResponse.json({ ok: true });
 }

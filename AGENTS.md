@@ -97,7 +97,7 @@ Wire format: `event: <name>\ndata: <json>\n\n`. Client uses `EventSource` + `add
 3. **Free-form SQL fragments** — column data-types, `DEFAULT` expressions, `USING` clauses, partial-index `WHERE`, `DROP FUNCTION` arg signatures — must go through `requireNoStatementTerminator(value, fieldName)`, which rejects `;`. `;` is the only character that lets pg's simple-query path execute a second statement, so blocking it is the SQLi guard for these fields.
 4. **User-pasted SQL in the query editor** (`runQuery`) is intentionally unrestricted — that's the feature.
 
-**Known design gap (deferred)**: `withClient` opens a fresh `pg.Client` per call (TCP+TLS+auth round-trip every time). The intended architecture is a cached `pg.Pool` per connection record with `pool.end()` in `deleteConnection`. Don't propose this as a quick fix in-flight — it touches every postgres exported function.
+**Connection pooling**: `withClient` acquires a client from a cached `pg.Pool` per connection+database (globalThis-keyed by host/port/user/ssl/password-hash, `max:5`, `idleTimeoutMillis:30000`, `pool.on('error')` guarded, `release(true)` to discard a client after an error). `dropPostgresPools(config)` ends all pools for a connection and is called from the `DELETE /api/connections/[id]` cascade.
 
 ## UI conventions (base-ui, not Radix)
 

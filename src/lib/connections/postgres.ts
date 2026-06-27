@@ -1,4 +1,4 @@
-import type { Client as PgClient, ClientConfig } from "pg"; // type-only — erased at build, safe when pg absent
+import type { Client as PgClient, ClientConfig, Pool as PgPool, PoolClient } from "pg"; // type-only — erased at build, safe when pg absent
 import { DriverNotInstalledError } from "@/techs/contract";
 
 let pgMod: typeof import("pg") | null = null;
@@ -18,6 +18,7 @@ async function getPgCursor(): Promise<typeof import("pg-cursor").default> {
     throw new DriverNotInstalledError("postgres", "pg-cursor");
   }
 }
+import { createHash } from "node:crypto";
 import type { PostgresConfig } from "./types";
 
 function buildClientConfig(
@@ -38,18 +39,99 @@ function buildClientConfig(
   };
 }
 
-async function withClient<T>(
+// ── Connection pooling ───────────────────────────────────────────────────────
+// One pg.Pool per (connection identity + database), cached on globalThis so it
+// survives Next dev HMR. Replaces the old new-Client-per-call.
+
+interface PgPoolCache {
+  byKey: Map<string, PgPool>;
+}
+const poolCacheKey = Symbol.for("baklava.pgPools");
+function poolCache(): PgPoolCache {
+  const g = globalThis as unknown as Record<symbol, PgPoolCache>;
+  if (!g[poolCacheKey]) g[poolCacheKey] = { byKey: new Map() };
+  return g[poolCacheKey];
+}
+
+function poolIdentity(config: PostgresConfig): string {
+  const pw = createHash("sha256").update(config.password ?? "").digest("hex").slice(0, 16);
+  return [config.host, config.port, config.user, config.ssl ? 1 : 0, pw].join(" ");
+}
+function poolKey(config: PostgresConfig, database: string | undefined): string {
+  return `${poolIdentity(config)} ${database || config.database}`;
+}
+
+async function getPool(config: PostgresConfig, database: string | undefined): Promise<PgPool> {
+  const cache = poolCache();
+  const key = poolKey(config, database);
+  let pool = cache.byKey.get(key);
+  if (!pool) {
+    const { Pool } = await getPg();
+    pool = new Pool({ ...buildClientConfig(config, database), max: 5, idleTimeoutMillis: 30000 });
+    // Idle client errors (server restart / dropped socket) emit 'error' on the
+    // pool; unhandled it crashes the process. Log and continue — next acquire reconnects.
+    pool.on("error", (err) => console.warn("[baklava] pg pool error:", err.message));
+    cache.byKey.set(key, pool);
+  }
+  return pool;
+}
+
+export async function withClient<T>(
   config: PostgresConfig,
   database: string | undefined,
   fn: (client: PgClient) => Promise<T>
 ): Promise<T> {
-  const { Client } = await getPg();
-  const client: PgClient = new Client(buildClientConfig(config, database));
-  await client.connect();
+  const pool = await getPool(config, database);
+  const client: PoolClient = await pool.connect();
   try {
-    return await fn(client);
-  } finally {
-    await client.end().catch(() => undefined);
+    const result = await fn(client as unknown as PgClient);
+    // Reset session state (search_path, SET vars, temp tables, prepared
+    // statements) before returning the connection to the pool — otherwise a
+    // SET from one borrow leaks into the next. DISCARD ALL also errors if the
+    // connection is still inside a transaction, so a caller that returned
+    // without committing/rolling back makes the reset throw → we destroy it
+    // rather than hand a dirty connection to the next borrower.
+    try {
+      await client.query("DISCARD ALL");
+      client.release();
+    } catch {
+      client.release(true);
+    }
+    return result;
+  } catch (err) {
+    client.release(true); // destroy a possibly mid-transaction/aborted connection
+    throw err;
+  }
+}
+
+/** End and evict every pool for a connection identity (all its databases). */
+export function dropPostgresPools(config: PostgresConfig): void {
+  const cache = poolCache();
+  const prefix = `${poolIdentity(config)} `;
+  for (const [key, pool] of cache.byKey) {
+    if (key.startsWith(prefix)) {
+      cache.byKey.delete(key);
+      void pool.end().catch(() => undefined);
+    }
+  }
+}
+
+// ── Test seams ──────────────────────────────────────────────────────────────
+export function getPoolForTests(config: PostgresConfig, database: string | undefined) {
+  return getPool(config, database);
+}
+export function _injectPoolForTests(
+  config: PostgresConfig,
+  database: string | undefined,
+  pool: PgPool
+): void {
+  poolCache().byKey.set(poolKey(config, database), pool);
+}
+export async function _endAllPostgresPoolsForTests(): Promise<void> {
+  const cache = poolCache();
+  for (const [key, pool] of cache.byKey) {
+    cache.byKey.delete(key);
+    await pool.end().catch(() => undefined);
   }
 }
 
@@ -2307,10 +2389,11 @@ export async function runQueryMulti(
   opts?: { searchPath?: string },
 ): Promise<MultiQueryResult> {
   return withClient(config, database, async (client) => {
-    // Apply per-call search_path on this fresh client (fresh client per
-    // withClient call means SETs are scoped to this run). Whitelisted +
-    // quoted, then runs silently — not reported in `out` so the user's
-    // multi-result panel only shows their own statements.
+    // Apply per-call search_path for this run. The connection is pooled, but
+    // withClient runs DISCARD ALL before returning it to the pool, so this SET
+    // does not leak into the next borrow. Whitelisted + quoted, then runs
+    // silently — not reported in `out` so the user's multi-result panel only
+    // shows their own statements.
     if (opts?.searchPath && opts.searchPath.trim()) {
       const sp = validateIdentifier(opts.searchPath.trim(), "Schema");
       await client.query(`SET search_path TO ${quoteIdent(sp)}, public`);
