@@ -22,6 +22,14 @@ describe("classifyIp", () => {
     expect(classifyIp("fd12::1")).toBe("private");
     expect(classifyIp("2606:4700::1")).toBe("public");
   });
+  it("classifies IPv4-mapped IPv6 in all spellings (SSRF bypass guard)", () => {
+    expect(classifyIp("::ffff:169.254.169.254")).toBe("metadata");
+    expect(classifyIp("::ffff:a9fe:a9fe")).toBe("metadata");
+    expect(classifyIp("0:0:0:0:0:ffff:169.254.169.254")).toBe("metadata");
+    expect(classifyIp("::ffff:127.0.0.1")).toBe("loopback");
+    expect(classifyIp("::ffff:10.0.0.1")).toBe("private");
+    expect(classifyIp("::ffff:8.8.8.8")).toBe("public");
+  });
 });
 
 describe("assertHostAllowed", () => {

@@ -1,6 +1,7 @@
 import "server-only";
 import dns from "node:dns/promises";
 import net from "node:net";
+import ipaddr from "ipaddr.js";
 
 export type IpCategory = "metadata" | "link-local" | "loopback" | "private" | "public";
 
@@ -16,23 +17,32 @@ export class EgressBlockedError extends Error {
 }
 
 export function classifyIp(ip: string): IpCategory {
-  if (net.isIPv4(ip)) {
-    if (ip === "169.254.169.254") return "metadata";
-    const o = ip.split(".").map(Number);
-    if (o[0] === 127 || o[0] === 0) return "loopback";
-    if (o[0] === 169 && o[1] === 254) return "link-local";
-    if (o[0] === 10) return "private";
-    if (o[0] === 172 && o[1] >= 16 && o[1] <= 31) return "private";
-    if (o[0] === 192 && o[1] === 168) return "private";
-    if (o[0] === 100 && o[1] >= 64 && o[1] <= 127) return "private";
+  let addr;
+  try {
+    addr = ipaddr.parse(ip);
+  } catch {
+    // Inputs come pre-validated (net.isIP literals or DNS results); an
+    // unparseable value here is unexpected. Treat as public (the caller only
+    // ever blocks the known-bad categories).
     return "public";
   }
-  const a = ip.toLowerCase();
-  if (a === "::1") return "loopback";
-  if (a === "fd00:ec2::254") return "metadata";
-  if (a.startsWith("::ffff:")) return classifyIp(a.slice("::ffff:".length));
-  if (/^fe[89ab]/.test(a)) return "link-local";
-  if (a.startsWith("fc") || a.startsWith("fd")) return "private";
+  // Unwrap IPv4-mapped IPv6 (::ffff:a.b.c.d in any spelling) to the embedded v4
+  // so a mapped metadata/loopback address can't masquerade as public.
+  if (addr.kind() === "ipv6") {
+    const v6 = addr as ipaddr.IPv6;
+    if (v6.isIPv4MappedAddress()) addr = v6.toIPv4Address();
+  }
+  // AWS instance-metadata addresses are specific IPs inside broader ranges
+  // (169.254.169.254 ∈ link-local; fd00:ec2::254 ∈ unique-local) — name them
+  // explicitly. Both are always blocked regardless of category.
+  if (addr.kind() === "ipv4" && addr.toString() === "169.254.169.254") return "metadata";
+  if (addr.kind() === "ipv6" && (addr as ipaddr.IPv6).toNormalizedString() === "fd00:ec2:0:0:0:0:0:254") {
+    return "metadata";
+  }
+  const range = addr.range();
+  if (range === "loopback" || range === "unspecified") return "loopback";
+  if (range === "linkLocal") return "link-local";
+  if (range === "private" || range === "uniqueLocal" || range === "carrierGradeNat") return "private";
   return "public";
 }
 
