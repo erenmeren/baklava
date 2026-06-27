@@ -20,15 +20,20 @@ export function writeSecretFileSync(file: string, plaintext: string): void {
 
   // Never overwrite an existing file we cannot reproduce. Back it up once:
   // legacy plaintext, or an envelope we can't decrypt (lost/changed key).
+  // Only the read may be absent (ENOENT); a backup-write failure must NOT be
+  // swallowed — let it throw so we never overwrite without having backed up.
+  let existing: string | undefined;
   try {
-    const existing = fs.readFileSync(file, "utf8");
+    existing = fs.readFileSync(file, "utf8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+  }
+  if (existing !== undefined) {
     if (!isEnvelope(existing)) {
       backupOnce(`${file}.pre-encryption.bak`, existing);
     } else if (!canDecrypt(existing)) {
       backupOnce(`${file}.unreadable.bak`, existing);
     }
-  } catch {
-    /* no existing file — nothing to back up */
   }
 
   const envelope = encryptEnvelope(plaintext, resolveKeyMaterial().material, getInstallSalt());
