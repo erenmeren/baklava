@@ -2,6 +2,12 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import os from "node:os";
 import fs from "node:fs";
 import path from "node:path";
+import { readSecretFileSync } from "@/lib/crypto/secret-file";
+
+// ai.json is encrypted at rest; decrypt it to assert on persisted contents.
+function readAiJson(dir: string) {
+  return JSON.parse(readSecretFileSync(path.join(dir, "ai.json"))!);
+}
 
 async function freshStore() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "baklava-ai-"));
@@ -29,7 +35,7 @@ describe("ai settings store", () => {
     const { mod, dir } = await freshStore();
     mod.setAgentName("  Jarvis  ");
     expect(mod.getSettings().agentName).toBe("Jarvis");
-    const raw = JSON.parse(fs.readFileSync(path.join(dir, "ai.json"), "utf8"));
+    const raw = readAiJson(dir);
     expect(raw.agentName).toBe("Jarvis");
     mod.setAgentName("x".repeat(100));
     expect(mod.getSettings().agentName.length).toBe(60);
@@ -46,7 +52,7 @@ describe("ai settings store", () => {
     const { mod, dir } = await freshStore();
     mod.saveProvider("anthropic", { apiKey: "sk-secret", model: "claude-sonnet-4-6" });
     mod.setActiveProvider("anthropic");
-    const raw = JSON.parse(fs.readFileSync(path.join(dir, "ai.json"), "utf8"));
+    const raw = readAiJson(dir);
     expect(raw.providers.anthropic.apiKey).toBe("sk-secret");
     expect(raw.activeProvider).toBe("anthropic");
   });
