@@ -3,7 +3,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { readSecretFileSync, writeSecretFileSync } from "./secret-file";
-import { _resetKeyCacheForTests } from "./master-key";
+import { _resetKeyCacheForTests, resolveKeyMaterial } from "./master-key";
+import { decryptEnvelope } from "./envelope";
 
 let dir: string;
 let file: string;
@@ -49,5 +50,24 @@ describe("secret-file", () => {
     const firstBak = fs.readFileSync(bak, "utf8");
     writeSecretFileSync(file, JSON.stringify({ now: "again" }));
     expect(fs.readFileSync(bak, "utf8")).toBe(firstBak);
+  });
+
+  it("backs up an undecryptable envelope instead of destroying it (key change)", () => {
+    process.env.BAKLAVA_MASTER_KEY = "key-A";
+    _resetKeyCacheForTests();
+    writeSecretFileSync(file, JSON.stringify({ secret: "from-key-A" }));
+
+    // Simulate a different/lost key on the next write.
+    process.env.BAKLAVA_MASTER_KEY = "key-B";
+    _resetKeyCacheForTests();
+    writeSecretFileSync(file, JSON.stringify({ secret: "from-key-B" }));
+
+    const bak = `${file}.unreadable.bak`;
+    expect(fs.existsSync(bak)).toBe(true);
+    // The original ciphertext is preserved and still decrypts with key-A.
+    process.env.BAKLAVA_MASTER_KEY = "key-A";
+    _resetKeyCacheForTests();
+    const recovered = decryptEnvelope(fs.readFileSync(bak, "utf8"), resolveKeyMaterial().material);
+    expect(recovered).toBe(JSON.stringify({ secret: "from-key-A" }));
   });
 });

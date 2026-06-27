@@ -18,11 +18,14 @@ export function readSecretFileSync(file: string): string | null {
 export function writeSecretFileSync(file: string, plaintext: string): void {
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
 
-  // One-time backup of a pre-encryption plaintext file.
+  // Never overwrite an existing file we cannot reproduce. Back it up once:
+  // legacy plaintext, or an envelope we can't decrypt (lost/changed key).
   try {
     const existing = fs.readFileSync(file, "utf8");
     if (!isEnvelope(existing)) {
-      fs.writeFileSync(`${file}.pre-encryption.bak`, existing, { mode: 0o600 });
+      backupOnce(`${file}.pre-encryption.bak`, existing);
+    } else if (!canDecrypt(existing)) {
+      backupOnce(`${file}.unreadable.bak`, existing);
     }
   } catch {
     /* no existing file — nothing to back up */
@@ -32,4 +35,18 @@ export function writeSecretFileSync(file: string, plaintext: string): void {
   const tmp = `${file}.tmp`;
   fs.writeFileSync(tmp, envelope, { mode: 0o600 });
   fs.renameSync(tmp, file);
+}
+
+function backupOnce(bakPath: string, content: string): void {
+  if (fs.existsSync(bakPath)) return; // don't clobber an earlier backup
+  fs.writeFileSync(bakPath, content, { mode: 0o600 });
+}
+
+function canDecrypt(envelopeText: string): boolean {
+  try {
+    decryptEnvelope(envelopeText, resolveKeyMaterial().material);
+    return true;
+  } catch {
+    return false;
+  }
 }
