@@ -6,6 +6,7 @@ import { getSettings } from "@/lib/ai/settings";
 import { modelFor } from "@/lib/ai/providers";
 import { getPolicy } from "@/lib/ai/policy-store";
 import { isAiSupported } from "@/lib/ai/supported";
+import { scoreAction } from "@/lib/ai/risk";
 import { buildConversationTools, type ConversationConnection } from "@/lib/ai/conversation-tools";
 import { runAgent } from "@/lib/ai/agent";
 import { createPending } from "@/lib/ai/pending";
@@ -65,7 +66,8 @@ export async function POST(req: Request) {
         sessionId,
         emit,
         awaitApproval: async (toolCallId, tool, args, connection) => {
-          sse("approval-needed", { toolCallId, tool: tool.name, category: tool.category, args, connection, sessionId });
+          const risk = scoreAction(tool.name, tool.category, args);
+          sse("approval-needed", { toolCallId, tool: tool.name, category: tool.category, args, connection, sessionId, risk });
           return createPending(sessionId, toolCallId);
         },
       });

@@ -50,7 +50,7 @@ Every route file should start with `export const runtime = "nodejs";` (we need N
 
 **Cascading deletes**: `DELETE /api/connections/[id]` calls `deleteConnection(id)` *and* `dropConnectionSessions(id)` — adding more globalThis state means adding another teardown call here too.
 
-**AI tool gate** (`src/lib/ai/gate.ts`): beyond per-connection policy + approval, `wrapExecute` enforces a persisted global kill switch (`~/.baklava/ai-controls.json`, toggled from the assistant header) plus in-memory per-session rate limit, destructive circuit breaker, and tool-call budget (`src/lib/ai/limits.ts`); reads are never blocked by the kill switch or breaker.
+**AI tool gate** (`src/lib/ai/gate.ts`): beyond per-connection policy + approval, `wrapExecute` enforces a persisted global kill switch (`~/.baklava/ai-controls.json`, toggled from the assistant header) plus in-memory per-session rate limit, destructive circuit breaker, and tool-call budget (`src/lib/ai/limits.ts`); reads are never blocked by the kill switch or breaker. **Destructive approval is non-disableable** — `needsApproval` in `src/lib/ai/permissions.ts` always returns `true` for destructive actions regardless of mode; each approval carries a `risk` assessment (low/medium/high + reasons) from `src/lib/ai/risk.ts`, and high-risk approvals require typing the connection name before the Approve button enables.
 
 **Egress policy** (`src/lib/net/egress.ts`): user-supplied target hosts (load-test URL, health reachability probe) pass through `assertHostAllowed`, which resolves the hostname, pins the resulting IP, and blocks cloud-metadata ranges (`169.254.169.254`, `fd00:ec2::254`) and link-local addresses; private/loopback targets are allowed; `BAKLAVA_EGRESS_ALLOW=<ip,ip>` re-allows specific IPs.
 

@@ -139,7 +139,7 @@ describe("autonomous mode at the gate", () => {
     expect(exec).toHaveBeenCalled();
   });
 
-  it("autonomous + destructive + confirmDestructive:false: awaitApproval NOT called, exec IS called", async () => {
+  it("autonomous + destructive + confirmDestructive:false: still requires approval (non-disableable)", async () => {
     const exec = vi.fn(async () => ({ ok: true }));
     const c = ctx({
       policy: { mode: "autonomous", read: true, write: true, destructive: true, confirmDestructive: false },
@@ -147,7 +147,7 @@ describe("autonomous mode at the gate", () => {
     });
     const run = wrapExecute(tool("destructive", exec), c);
     await run({}, "tc-6");
-    expect(c.awaitApproval).not.toHaveBeenCalled();
+    expect(c.awaitApproval).toHaveBeenCalled();
     expect(exec).toHaveBeenCalled();
   });
 });

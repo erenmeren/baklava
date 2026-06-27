@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import { Eye, SquarePen, Trash2, ShieldAlert, Lock } from "lucide-react";
+import { Eye, SquarePen, Trash2, Lock } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -135,8 +135,6 @@ function ConnectionPolicy({
   onChange: (patch: Partial<Policy>) => void;
 }) {
   const autonomous = policy.mode === "autonomous";
-  // needsApproval defaults destructive-confirm to ON unless explicitly false.
-  const confirmDestructive = policy.confirmDestructive !== false;
 
   return (
     <Card className="gap-0 py-0">
@@ -193,17 +191,12 @@ function ConnectionPolicy({
         {/* mode-dependent footer */}
         <Separator className="my-2.5" />
         {autonomous ? (
-          <label className="flex cursor-pointer items-center gap-2.5 px-1.5">
-            <ShieldAlert className="size-3.5 shrink-0 text-muted-foreground" />
-            <span className="flex-1 text-sm">
-              Still ask before destructive actions
-            </span>
-            <Switch
-              size="sm"
-              checked={confirmDestructive}
-              onCheckedChange={(v: boolean) => onChange({ confirmDestructive: v })}
-            />
-          </label>
+          <p className="px-1.5 text-sm text-muted-foreground">
+            In <span className="font-medium text-foreground">Autonomous</span> mode, writes run
+            automatically. Destructive actions{" "}
+            <span className="font-medium text-foreground">always</span> require your approval — this
+            can&apos;t be turned off.
+          </p>
         ) : (
           <p className="px-1.5 text-sm text-muted-foreground">
             In <span className="font-medium text-foreground">Ask-first</span> mode, every write or

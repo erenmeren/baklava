@@ -5,6 +5,10 @@ export interface PermissionPolicy {
   read: boolean;
   write: boolean;
   destructive: boolean;
+  /**
+   * Kept for back-compat but no longer has any effect: destructive actions
+   * always require approval regardless of this flag (non-disableable).
+   */
   confirmDestructive?: boolean;
   /**
    * Kubernetes only: when true, k8s_get_yaml returns Secret values verbatim.
@@ -27,7 +31,6 @@ export function isAllowed(category: ToolCategory, policy: PermissionPolicy): boo
 
 export function needsApproval(category: ToolCategory, policy: PermissionPolicy): boolean {
   if (category === "read") return false;
-  if (policy.mode === "confirm") return true;
-  if (category === "destructive") return policy.confirmDestructive !== false;
-  return false;
+  if (category === "destructive") return true; // non-disableable: destructive always confirms
+  return policy.mode === "confirm"; // write
 }
