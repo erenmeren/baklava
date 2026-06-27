@@ -29,7 +29,7 @@ function fakeExecutor(captured: { script?: string; env?: Record<string, string> 
 
 const baseConfig = {
   name: "demo",
-  target: { baseUrl: "https://api.example.com" },
+  target: { baseUrl: "http://127.0.0.1:8080" },
   requests: [{ name: "home", path: "/" }],
   profile: { type: "constant", vus: 2, duration: "5s" },
   thresholds: { p95: 500 },
