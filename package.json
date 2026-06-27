@@ -16,7 +16,8 @@
     "test:integration": "BAKLAVA_INTEGRATION=1 vitest run --project=integration",
     "test:e2e": "playwright test",
     "test:e2e:install": "playwright install --with-deps chromium",
-    "loadtest": "tsx scripts/loadtest.ts"
+    "loadtest": "tsx scripts/loadtest.ts",
+    "baklava:show-key": "tsx scripts/show-master-key.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.81",
