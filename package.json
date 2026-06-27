@@ -51,6 +51,7 @@
     "@aws-sdk/lib-storage": "^3.1057.0",
     "@aws-sdk/s3-request-presigner": "^3.1057.0",
     "@kubernetes/client-node": "^1.4.0",
+    "@napi-rs/keyring": "^1.1.6",
     "@qdrant/js-client-rest": "^1.18.0",
     "avsc": "^5.7.9",
     "bson": "^7.2.0",
