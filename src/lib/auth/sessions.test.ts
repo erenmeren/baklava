@@ -71,4 +71,20 @@ describe("sessions store", () => {
     const list = listSessions(now + 2000);
     expect(list.map((r) => r.userAgent)).toEqual(["new", "old"]);
   });
+
+  it("prunes expired records from disk on list and create", () => {
+    const now = 1_000_000_000_000;
+    createSession("ghost", now);
+    const past = now + 30 * 24 * 60 * 60 * 1000 + 1; // beyond absolute cap
+    expect(listSessions(past)).toHaveLength(0);
+    const onDisk = JSON.parse(
+      fs.readFileSync(path.join(dir, "sessions.json"), "utf8"),
+    ) as unknown[];
+    expect(onDisk).toHaveLength(0);
+    createSession("fresh", past);
+    const after = JSON.parse(
+      fs.readFileSync(path.join(dir, "sessions.json"), "utf8"),
+    ) as Array<{ userAgent: string }>;
+    expect(after.map((r) => r.userAgent)).toEqual(["fresh"]);
+  });
 });

@@ -56,8 +56,23 @@ function isActive(r: SessionRecord, now: number): boolean {
   return now <= r.expiresAt && now <= r.lastSeenAt + IDLE_MS;
 }
 
+// Drop expired records so sessions.json doesn't accumulate dead devices that
+// never return to trigger their own per-id eviction in verifySession.
+function pruneExpired(store: Store, now: number): boolean {
+  let changed = false;
+  for (const [id, r] of store.byId) {
+    if (!isActive(r, now)) {
+      store.byId.delete(id);
+      store.lastPersistById.delete(id);
+      changed = true;
+    }
+  }
+  return changed;
+}
+
 export function createSession(userAgent: string, now: number = Date.now()): SessionRecord {
   const store = load();
+  pruneExpired(store, now);
   const rec: SessionRecord = {
     id: randomBytes(18).toString("base64url"),
     createdAt: now,
@@ -112,7 +127,9 @@ export function revokeAllExcept(keepId: string | null): void {
 }
 
 export function listSessions(now: number = Date.now()): SessionRecord[] {
-  return [...load().byId.values()]
+  const store = load();
+  if (pruneExpired(store, now)) persist(store);
+  return [...store.byId.values()]
     .filter((r) => isActive(r, now))
     .sort((a, b) => b.lastSeenAt - a.lastSeenAt);
 }
