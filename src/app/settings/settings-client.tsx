@@ -5,6 +5,7 @@ import { ProviderSettings } from "./provider-settings";
 import { PermissionSettings } from "./permission-settings";
 import { SecuritySettings } from "./security-settings";
 import { ChangePasswordSettings } from "./change-password-settings";
+import { ActiveSessions } from "./active-sessions";
 
 export function SettingsClient() {
   return (
@@ -41,6 +42,7 @@ export function SettingsClient() {
         </TabsContent>
         <TabsContent value="security" className="outline-none space-y-6">
           <SecuritySettings />
+          <ActiveSessions />
           <ChangePasswordSettings />
         </TabsContent>
       </Tabs>
