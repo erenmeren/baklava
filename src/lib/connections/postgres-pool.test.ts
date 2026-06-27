@@ -65,4 +65,34 @@ describe("postgres pool cache", () => {
     ).rejects.toThrow("boom");
     expect(release).toHaveBeenCalledWith(true);
   });
+
+  it("resets session state with DISCARD ALL before reuse; destroys if reset fails", async () => {
+    // Success: DISCARD ALL runs, then a clean release back to the pool.
+    const release = vi.fn();
+    const query = vi.fn(async () => ({}));
+    const fakePool = {
+      connect: vi.fn(async () => ({ query, release })),
+      end: vi.fn(async () => {}),
+      on: vi.fn(),
+    } as unknown as Awaited<ReturnType<typeof getPoolForTests>>;
+    _injectPoolForTests(cfg, "app", fakePool);
+    await withClient(cfg, "app", async () => "ok");
+    expect(query).toHaveBeenCalledWith("DISCARD ALL");
+    expect(release).toHaveBeenCalledWith();
+
+    // Reset fails (e.g. connection left in a transaction) → destroy it.
+    const release2 = vi.fn();
+    const query2 = vi.fn(async (q: string) => {
+      if (q === "DISCARD ALL") throw new Error("DISCARD ALL cannot run inside a transaction block");
+      return {};
+    });
+    const fakePool2 = {
+      connect: vi.fn(async () => ({ query: query2, release: release2 })),
+      end: vi.fn(async () => {}),
+      on: vi.fn(),
+    } as unknown as Awaited<ReturnType<typeof getPoolForTests>>;
+    _injectPoolForTests(cfg, "app", fakePool2);
+    await withClient(cfg, "app", async () => "ok");
+    expect(release2).toHaveBeenCalledWith(true);
+  });
 });

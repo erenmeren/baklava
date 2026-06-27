@@ -85,7 +85,18 @@ export async function withClient<T>(
   const client: PoolClient = await pool.connect();
   try {
     const result = await fn(client as unknown as PgClient);
-    client.release();
+    // Reset session state (search_path, SET vars, temp tables, prepared
+    // statements) before returning the connection to the pool — otherwise a
+    // SET from one borrow leaks into the next. DISCARD ALL also errors if the
+    // connection is still inside a transaction, so a caller that returned
+    // without committing/rolling back makes the reset throw → we destroy it
+    // rather than hand a dirty connection to the next borrower.
+    try {
+      await client.query("DISCARD ALL");
+      client.release();
+    } catch {
+      client.release(true);
+    }
     return result;
   } catch (err) {
     client.release(true); // destroy a possibly mid-transaction/aborted connection
@@ -2378,10 +2389,11 @@ export async function runQueryMulti(
   opts?: { searchPath?: string },
 ): Promise<MultiQueryResult> {
   return withClient(config, database, async (client) => {
-    // Apply per-call search_path on this fresh client (fresh client per
-    // withClient call means SETs are scoped to this run). Whitelisted +
-    // quoted, then runs silently — not reported in `out` so the user's
-    // multi-result panel only shows their own statements.
+    // Apply per-call search_path for this run. The connection is pooled, but
+    // withClient runs DISCARD ALL before returning it to the pool, so this SET
+    // does not leak into the next borrow. Whitelisted + quoted, then runs
+    // silently — not reported in `out` so the user's multi-result panel only
+    // shows their own statements.
     if (opts?.searchPath && opts.searchPath.trim()) {
       const sp = validateIdentifier(opts.searchPath.trim(), "Schema");
       await client.query(`SET search_path TO ${quoteIdent(sp)}, public`);
