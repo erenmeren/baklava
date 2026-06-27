@@ -1,4 +1,4 @@
-import type { Client as PgClient, ClientConfig } from "pg"; // type-only — erased at build, safe when pg absent
+import type { Client as PgClient, ClientConfig, Pool as PgPool, PoolClient } from "pg"; // type-only — erased at build, safe when pg absent
 import { DriverNotInstalledError } from "@/techs/contract";
 
 let pgMod: typeof import("pg") | null = null;
@@ -18,6 +18,7 @@ async function getPgCursor(): Promise<typeof import("pg-cursor").default> {
     throw new DriverNotInstalledError("postgres", "pg-cursor");
   }
 }
+import { createHash } from "node:crypto";
 import type { PostgresConfig } from "./types";
 
 function buildClientConfig(
@@ -38,18 +39,88 @@ function buildClientConfig(
   };
 }
 
-async function withClient<T>(
+// ── Connection pooling ───────────────────────────────────────────────────────
+// One pg.Pool per (connection identity + database), cached on globalThis so it
+// survives Next dev HMR. Replaces the old new-Client-per-call.
+
+interface PgPoolCache {
+  byKey: Map<string, PgPool>;
+}
+const poolCacheKey = Symbol.for("baklava.pgPools");
+function poolCache(): PgPoolCache {
+  const g = globalThis as unknown as Record<symbol, PgPoolCache>;
+  if (!g[poolCacheKey]) g[poolCacheKey] = { byKey: new Map() };
+  return g[poolCacheKey];
+}
+
+function poolIdentity(config: PostgresConfig): string {
+  const pw = createHash("sha256").update(config.password ?? "").digest("hex").slice(0, 16);
+  return [config.host, config.port, config.user, config.ssl ? 1 : 0, pw].join(" ");
+}
+function poolKey(config: PostgresConfig, database: string | undefined): string {
+  return `${poolIdentity(config)} ${database || config.database}`;
+}
+
+async function getPool(config: PostgresConfig, database: string | undefined): Promise<PgPool> {
+  const cache = poolCache();
+  const key = poolKey(config, database);
+  let pool = cache.byKey.get(key);
+  if (!pool) {
+    const { Pool } = await getPg();
+    pool = new Pool({ ...buildClientConfig(config, database), max: 5, idleTimeoutMillis: 30000 });
+    // Idle client errors (server restart / dropped socket) emit 'error' on the
+    // pool; unhandled it crashes the process. Log and continue — next acquire reconnects.
+    pool.on("error", (err) => console.warn("[baklava] pg pool error:", err.message));
+    cache.byKey.set(key, pool);
+  }
+  return pool;
+}
+
+export async function withClient<T>(
   config: PostgresConfig,
   database: string | undefined,
   fn: (client: PgClient) => Promise<T>
 ): Promise<T> {
-  const { Client } = await getPg();
-  const client: PgClient = new Client(buildClientConfig(config, database));
-  await client.connect();
+  const pool = await getPool(config, database);
+  const client: PoolClient = await pool.connect();
   try {
-    return await fn(client);
-  } finally {
-    await client.end().catch(() => undefined);
+    const result = await fn(client as unknown as PgClient);
+    client.release();
+    return result;
+  } catch (err) {
+    client.release(true); // destroy a possibly mid-transaction/aborted connection
+    throw err;
+  }
+}
+
+/** End and evict every pool for a connection identity (all its databases). */
+export function dropPostgresPools(config: PostgresConfig): void {
+  const cache = poolCache();
+  const prefix = `${poolIdentity(config)} `;
+  for (const [key, pool] of cache.byKey) {
+    if (key.startsWith(prefix)) {
+      cache.byKey.delete(key);
+      void pool.end().catch(() => undefined);
+    }
+  }
+}
+
+// ── Test seams ──────────────────────────────────────────────────────────────
+export function getPoolForTests(config: PostgresConfig, database: string | undefined) {
+  return getPool(config, database);
+}
+export function _injectPoolForTests(
+  config: PostgresConfig,
+  database: string | undefined,
+  pool: PgPool
+): void {
+  poolCache().byKey.set(poolKey(config, database), pool);
+}
+export async function _endAllPostgresPoolsForTests(): Promise<void> {
+  const cache = poolCache();
+  for (const [key, pool] of cache.byKey) {
+    cache.byKey.delete(key);
+    await pool.end().catch(() => undefined);
   }
 }
 
