@@ -1,9 +1,14 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { z } from "zod";
 import { wrapExecute } from "./gate";
 import { DEFAULT_POLICY } from "./permissions";
 import type { AiTool } from "./tools/types";
 import * as audit from "./audit";
+import { setKillSwitch, _resetControlsForTests } from "./kill-switch";
+import { _resetLimitsForTests } from "./limits";
 
 vi.mock("./audit", () => ({ appendAudit: vi.fn() }));
 
@@ -144,5 +149,45 @@ describe("autonomous mode at the gate", () => {
     await run({}, "tc-6");
     expect(c.awaitApproval).not.toHaveBeenCalled();
     expect(exec).toHaveBeenCalled();
+  });
+});
+
+describe("gate kill switch + limits", () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "bk-gate-"));
+    process.env.BAKLAVA_DATA_DIR = dir;
+    _resetControlsForTests();
+    _resetLimitsForTests();
+  });
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+    delete process.env.BAKLAVA_DATA_DIR;
+  });
+
+  it("blocks non-read tools when the kill switch is on; allows reads", async () => {
+    setKillSwitch(true);
+    const writeExec = vi.fn(async () => ({ ok: true }));
+    const c = ctx({ policy: { mode: "autonomous", read: true, write: true, destructive: true, confirmDestructive: false } });
+    const wrun = wrapExecute(tool("write", writeExec), c);
+    const r = (await wrun({}, "k1")) as { error?: string };
+    expect(r.error).toMatch(/paused|kill/i);
+    expect(writeExec).not.toHaveBeenCalled();
+    const readExec = vi.fn(async () => ({ rows: [] }));
+    const rrun = wrapExecute(tool("read", readExec), c);
+    await rrun({}, "k2");
+    expect(readExec).toHaveBeenCalled();
+  });
+
+  it("blocks once the destructive breaker trips", async () => {
+    const exec = vi.fn(async () => ({ ok: true }));
+    const c = ctx({ policy: { mode: "autonomous", read: true, write: true, destructive: true, confirmDestructive: false } });
+    const run = wrapExecute(tool("destructive", exec), c);
+    let blockedReason = "";
+    for (let i = 0; i < 30; i++) {
+      const res = (await run({}, `d${i}`)) as { error?: string };
+      if (res.error) { blockedReason = res.error; break; }
+    }
+    expect(blockedReason).toMatch(/destructive|rate|budget/i);
   });
 });
