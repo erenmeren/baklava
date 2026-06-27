@@ -1,8 +1,8 @@
 import "server-only";
-import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { redactConfig } from "@/lib/connections/store";
+import { readSecretFileSync, writeSecretFileSync } from "@/lib/crypto/secret-file";
 
 export type ProviderId = "anthropic" | "openai" | "google";
 
@@ -40,7 +40,9 @@ const globalKey = Symbol.for("baklava.aiSettings");
 
 function loadFromDisk(): AiSettings {
   try {
-    const raw = JSON.parse(fs.readFileSync(file(), "utf8")) as Partial<AiSettings>;
+    const text = readSecretFileSync(file());
+    if (text == null) return emptySettings();
+    const raw = JSON.parse(text) as Partial<AiSettings>;
     return {
       activeProvider: raw.activeProvider ?? null,
       providers: raw.providers ?? {},
@@ -63,10 +65,7 @@ function getStore(): { settings: AiSettings } {
 
 function persist(): void {
   try {
-    fs.mkdirSync(dataDir(), { recursive: true, mode: 0o700 });
-    const tmp = `${file()}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(getStore().settings, null, 2), { mode: 0o600 });
-    fs.renameSync(tmp, file());
+    writeSecretFileSync(file(), JSON.stringify(getStore().settings, null, 2));
   } catch (err) {
     console.error(`[baklava] could not persist ${file()}:`, err);
   }
