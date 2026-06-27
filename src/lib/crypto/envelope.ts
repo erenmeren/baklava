@@ -16,8 +16,20 @@ interface Envelope {
   data: GcmPart; // plaintext encrypted under DEK
 }
 
+const kekCacheKey = Symbol.for("baklava.kekCache");
+function kekCache(): Map<string, Buffer> {
+  const g = globalThis as unknown as Record<symbol, Map<string, Buffer>>;
+  if (!g[kekCacheKey]) g[kekCacheKey] = new Map();
+  return g[kekCacheKey];
+}
 function deriveKek(material: Buffer, salt: Buffer): Buffer {
-  return scryptSync(material, salt, KEYLEN, SCRYPT);
+  const cacheId = `${material.toString("hex")}:${salt.toString("hex")}`;
+  const cache = kekCache();
+  const hit = cache.get(cacheId);
+  if (hit) return hit;
+  const kek = scryptSync(material, salt, KEYLEN, SCRYPT);
+  cache.set(cacheId, kek);
+  return kek;
 }
 
 function gcmEncrypt(key: Buffer, plaintext: Buffer): GcmPart {
@@ -42,8 +54,7 @@ export function isEnvelope(text: string): boolean {
   }
 }
 
-export function encryptEnvelope(plaintext: string, material: Buffer): string {
-  const salt = randomBytes(16);
+export function encryptEnvelope(plaintext: string, material: Buffer, salt: Buffer = randomBytes(16)): string {
   const kek = deriveKek(material, salt);
   const dek = randomBytes(KEYLEN);
   const env: Envelope = {

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { decryptEnvelope, encryptEnvelope, isEnvelope } from "./envelope";
-import { resolveKeyMaterial } from "./master-key";
+import { getInstallSalt, resolveKeyMaterial } from "./master-key";
 
 export function readSecretFileSync(file: string): string | null {
   let text: string;
@@ -31,7 +31,7 @@ export function writeSecretFileSync(file: string, plaintext: string): void {
     /* no existing file — nothing to back up */
   }
 
-  const envelope = encryptEnvelope(plaintext, resolveKeyMaterial().material);
+  const envelope = encryptEnvelope(plaintext, resolveKeyMaterial().material, getInstallSalt());
   const tmp = `${file}.tmp`;
   fs.writeFileSync(tmp, envelope, { mode: 0o600 });
   fs.renameSync(tmp, file);

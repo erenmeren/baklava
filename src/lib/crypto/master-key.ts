@@ -76,6 +76,26 @@ export function resolveKeyMaterial(opts?: {
   return (g[cacheKey] = { material: Buffer.from(fileKey, "utf8"), source: "file" });
 }
 
+const saltCacheKey = Symbol.for("baklava.installSalt");
+
+export function getInstallSalt(): Buffer {
+  const g = globalThis as unknown as Record<symbol, Buffer>;
+  if (g[saltCacheKey]) return g[saltCacheKey];
+  const saltFile = path.join(dataDir(), "master.salt");
+  let salt: Buffer;
+  try {
+    salt = Buffer.from(fs.readFileSync(saltFile, "utf8").trim(), "hex");
+  } catch {
+    salt = randomBytes(16);
+    fs.mkdirSync(dataDir(), { recursive: true, mode: 0o700 });
+    fs.writeFileSync(saltFile, salt.toString("hex"), { mode: 0o600 });
+  }
+  return (g[saltCacheKey] = salt);
+}
+
 export function _resetKeyCacheForTests(): void {
-  delete (globalThis as unknown as Record<symbol, unknown>)[cacheKey];
+  const g = globalThis as unknown as Record<symbol, unknown>;
+  delete g[cacheKey];
+  delete g[Symbol.for("baklava.installSalt")];
+  delete g[Symbol.for("baklava.kekCache")];
 }
