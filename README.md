@@ -90,6 +90,15 @@ Because Baklava can read every stored credential and run destructive queries, it
 
 The password is hashed (scrypt) and stored in `~/.baklava/auth.json`. It never leaves the server.
 
+### Sessions
+
+Signing in creates a **server-side session** stored in `~/.baklava/sessions.json`. You can view and revoke individual devices under **Settings → Active sessions**, or sign out all other devices at once.
+
+- Sessions expire after **7 days idle** (sliding) or **30 days absolute**, whichever comes first.
+- Signing out revokes the session server-side — deleting the cookie is not enough for a remote attacker to reuse it.
+- **Changing the password invalidates every session** — all devices are signed out immediately.
+- **Upgrading from an older version** signs everyone out once (the session token format changed); just sign in again.
+
 ---
 
 ## Want demo data to explore?
