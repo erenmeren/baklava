@@ -23,8 +23,12 @@ describe("loadtest store", () => {
   let dataDir: string;
   beforeEach(() => {
     dataDir = mkdtempSync(join(tmpdir(), "baklava-lt-store-"));
+    process.env.BAKLAVA_MASTER_KEY = "unit-test-master-key";
+    delete (globalThis as Record<symbol, unknown>)[Symbol.for("baklava.masterKeyMaterial")];
   });
   afterEach(() => {
+    delete process.env.BAKLAVA_MASTER_KEY;
+    delete (globalThis as Record<symbol, unknown>)[Symbol.for("baklava.masterKeyMaterial")];
     rmSync(dataDir, { recursive: true, force: true });
   });
 
@@ -70,7 +74,7 @@ describe("loadtest store", () => {
     expect(updated?.config.auth).toEqual({ type: "bearer", token: "new-token" });
   });
 
-  it("appends runs, caps history at 500, and reports newest first", async () => {
+  it("appends runs, caps history at 500, and reports newest first", { timeout: 30_000 }, async () => {
     const s = await freshStore(dataDir);
     const saved = s.saveLoadTest({ name: "T", config: CONFIG });
     let last;

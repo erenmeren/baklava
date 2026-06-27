@@ -1,6 +1,6 @@
-import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { readSecretFileSync, writeSecretFileSync } from "@/lib/crypto/secret-file";
 import type { LoadTestResult } from "./results";
 import type { SavedAuth, SavedLoadTestConfig } from "./store-schema";
 
@@ -50,8 +50,12 @@ export interface PublicLoadTest {
 // bound. Oldest runs are trimmed first (see appendRun).
 const MAX_RUNS = 500;
 
-const DATA_DIR = process.env.BAKLAVA_DATA_DIR || path.join(os.homedir(), ".baklava");
-const FILE = path.join(DATA_DIR, "loadtests.json");
+function getDataDir() {
+  return process.env.BAKLAVA_DATA_DIR || path.join(os.homedir(), ".baklava");
+}
+function getFile() {
+  return path.join(getDataDir(), "loadtests.json");
+}
 
 interface PersistedShape {
   version: 1;
@@ -60,10 +64,11 @@ interface PersistedShape {
 
 function loadFromDisk(): LoadTest[] {
   try {
-    const raw = fs.readFileSync(FILE, "utf8");
+    const raw = readSecretFileSync(getFile());
+    if (raw == null) return [];
     const data = JSON.parse(raw) as Partial<PersistedShape>;
     if (!Array.isArray(data?.loadtests)) {
-      console.warn(`[baklava] ${FILE} has unexpected shape, ignoring (starting empty)`);
+      console.warn(`[baklava] ${getFile()} has unexpected shape, ignoring (starting empty)`);
       return [];
     }
     for (const t of data.loadtests) {
@@ -77,21 +82,17 @@ function loadFromDisk(): LoadTest[] {
     }
     return data.loadtests;
   } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code;
-    if (code !== "ENOENT") console.warn(`[baklava] could not read ${FILE}:`, err);
+    console.warn(`[baklava] could not read ${getFile()}:`, err);
     return [];
   }
 }
 
 function persistToDisk(records: LoadTest[]): void {
   try {
-    fs.mkdirSync(DATA_DIR, { recursive: true, mode: 0o700 });
     const payload: PersistedShape = { version: 1, loadtests: records };
-    const tmp = `${FILE}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(payload, null, 2), { mode: 0o600 });
-    fs.renameSync(tmp, FILE);
+    writeSecretFileSync(getFile(), JSON.stringify(payload, null, 2));
   } catch (err) {
-    console.error(`[baklava] could not persist ${FILE}:`, err);
+    console.error(`[baklava] could not persist ${getFile()}:`, err);
   }
 }
 
