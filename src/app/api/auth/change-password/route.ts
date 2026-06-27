@@ -6,6 +6,7 @@ import {
   sessionCookieOptions,
   isHttps,
 } from "@/lib/auth/session";
+import { revokeAllExcept } from "@/lib/auth/sessions";
 
 export const runtime = "nodejs";
 
@@ -39,11 +40,14 @@ export async function POST(req: NextRequest) {
 
   setPassword(newPassword);
 
+  // A password change invalidates every existing session (all devices).
+  revokeAllExcept(null);
+
   // Re-issue the session so the change flow lands authenticated.
   const res = NextResponse.json({ ok: true });
   res.cookies.set(
     SESSION_COOKIE,
-    createSessionToken(),
+    createSessionToken(req.headers.get("user-agent") ?? ""),
     sessionCookieOptions(isHttps(req)),
   );
   return res;

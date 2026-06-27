@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
   const res = NextResponse.json({ ok: true });
   res.cookies.set(
     SESSION_COOKIE,
-    createSessionToken(),
+    createSessionToken(req.headers.get("user-agent") ?? ""),
     sessionCookieOptions(isHttps(req)),
   );
   return res;
