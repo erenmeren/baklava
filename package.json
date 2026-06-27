@@ -16,7 +16,8 @@
     "test:integration": "BAKLAVA_INTEGRATION=1 vitest run --project=integration",
     "test:e2e": "playwright test",
     "test:e2e:install": "playwright install --with-deps chromium",
-    "loadtest": "tsx scripts/loadtest.ts"
+    "loadtest": "tsx scripts/loadtest.ts",
+    "baklava:show-key": "tsx scripts/show-master-key.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.81",
@@ -51,6 +52,7 @@
     "@aws-sdk/lib-storage": "^3.1057.0",
     "@aws-sdk/s3-request-presigner": "^3.1057.0",
     "@kubernetes/client-node": "^1.4.0",
+    "@napi-rs/keyring": "^1.1.6",
     "@qdrant/js-client-rest": "^1.18.0",
     "avsc": "^5.7.9",
     "bson": "^7.2.0",

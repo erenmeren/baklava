@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, rmSync, statSync, readFileSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, statSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { readSecretFileSync } from "@/lib/crypto/secret-file";
 
 // The store captures DATA_DIR at module load and caches its state on
 // globalThis. We need to (1) set BAKLAVA_DATA_DIR before the first import,
@@ -11,6 +12,7 @@ async function freshStore(dataDir: string) {
   process.env.BAKLAVA_DATA_DIR = dataDir;
   const sym = Symbol.for("baklava.connectionStore");
   delete (globalThis as Record<symbol, unknown>)[sym];
+  delete (globalThis as Record<symbol, unknown>)[Symbol.for("baklava.masterKeyMaterial")];
   vi.resetModules();
   return import("./store");
 }
@@ -58,7 +60,7 @@ describe("connection store", () => {
       });
       const file = join(dataDir, "connections.json");
       expect(existsSync(file)).toBe(true);
-      const written = JSON.parse(readFileSync(file, "utf8"));
+      const written = JSON.parse(readSecretFileSync(file)!);
       expect(written.version).toBe(1);
       expect(written.connections).toHaveLength(1);
       expect(written.connections[0].name).toBe("Test PG");
@@ -405,7 +407,7 @@ describe("connection store", () => {
       expect(store.deleteConnection(c.id)).toBe(true);
       expect(store.getConnection(c.id)).toBeUndefined();
       const written = JSON.parse(
-        readFileSync(join(dataDir, "connections.json"), "utf8"),
+        readSecretFileSync(join(dataDir, "connections.json"))!,
       );
       expect(written.connections).toEqual([]);
     });

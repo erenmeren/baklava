@@ -67,7 +67,17 @@ Each workspace gives you the everyday operations you'd expect: browse and edit d
 
 Baklava has no cloud, no account, and no telemetry. Connections are saved to `~/.baklava/connections.json` (readable only by you) so they survive restarts. Set `BAKLAVA_DATA_DIR` to store them somewhere else.
 
-Connection passwords are kept in plain text on disk — the same approach as `~/.kube/config`, `~/.docker/config.json`, or `~/.aws/credentials`. Keep the file private.
+### Credential encryption at rest
+
+Connection and load-test secrets in `~/.baklava/*.json` are encrypted with **AES-256-GCM** before being written to disk. The master key is resolved in this order:
+
+- `BAKLAVA_MASTER_KEY` env var — recommended for Docker or headless deployments; set it and you control the key.
+- OS keychain (`@napi-rs/keyring`, installed automatically if supported) — the key is stored in your system credential store.
+- `~/.baklava/master.key` (0600, auto-generated) — used as a fallback; provides no real protection on its own if the file is accessible. Set the env var or use a keychain for stronger guarantees.
+
+On first save after upgrading, any existing plaintext file is backed up to `<file>.pre-encryption.bak`. Verify your connections still work, then delete the backup.
+
+Run `npm run baklava:show-key` to display the active master key for safekeeping. **Losing the key means re-entering all connections** — credentials cannot be recovered without it.
 
 ### The password gate
 

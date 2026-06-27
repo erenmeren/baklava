@@ -1,8 +1,8 @@
-import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { ConnectionRecord, ConnectionStatus, TechId } from "./types";
 import { TECH_META_LIST } from "@/techs/meta-registry";
+import { readSecretFileSync, writeSecretFileSync } from "@/lib/crypto/secret-file";
 
 type AnyRecord = ConnectionRecord<unknown>;
 
@@ -17,9 +17,12 @@ type AnyRecord = ConnectionRecord<unknown>;
 // Override the location with the BAKLAVA_DATA_DIR env var.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const DATA_DIR =
-  process.env.BAKLAVA_DATA_DIR || path.join(os.homedir(), ".baklava");
-const FILE = path.join(DATA_DIR, "connections.json");
+function getDataDir() {
+  return process.env.BAKLAVA_DATA_DIR || path.join(os.homedir(), ".baklava");
+}
+function getFile() {
+  return path.join(getDataDir(), "connections.json");
+}
 
 interface PersistedShape {
   version: 1;
@@ -27,37 +30,32 @@ interface PersistedShape {
 }
 
 function loadFromDisk(): AnyRecord[] {
+  const file = getFile();
   try {
-    const raw = fs.readFileSync(FILE, "utf8");
+    const raw = readSecretFileSync(file);
+    if (raw == null) return [];
     const data = JSON.parse(raw) as Partial<PersistedShape>;
-    // Accept either the current { version: 1, connections } shape or a legacy
-    // { connections: [...] } shape (no version) from earlier experiments.
     if (Array.isArray(data?.connections)) {
       return data.connections as AnyRecord[];
     }
-    console.warn(
-      `[baklava] ${FILE} has unexpected shape, ignoring (starting empty)`
-    );
+    console.warn(`[baklava] ${file} has unexpected shape, ignoring (starting empty)`);
     return [];
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code !== "ENOENT") {
-      console.warn(`[baklava] could not read ${FILE}:`, err);
+      console.warn(`[baklava] could not read ${file}:`, err);
     }
     return [];
   }
 }
 
 function persistToDisk(records: AnyRecord[]): void {
+  const file = getFile();
   try {
-    fs.mkdirSync(DATA_DIR, { recursive: true, mode: 0o700 });
     const payload: PersistedShape = { version: 1, connections: records };
-    const tmp = `${FILE}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(payload, null, 2), { mode: 0o600 });
-    fs.renameSync(tmp, FILE);
+    writeSecretFileSync(file, JSON.stringify(payload, null, 2));
   } catch (err) {
-    // Logging only — don't fail the mutation just because we couldn't write.
-    console.error(`[baklava] could not persist ${FILE}:`, err);
+    console.error(`[baklava] could not persist ${file}:`, err);
   }
 }
 
