@@ -50,6 +50,8 @@ Every route file should start with `export const runtime = "nodejs";` (we need N
 
 **Cascading deletes**: `DELETE /api/connections/[id]` calls `deleteConnection(id)` *and* `dropConnectionSessions(id)` — adding more globalThis state means adding another teardown call here too.
 
+**AI tool gate** (`src/lib/ai/gate.ts`): beyond per-connection policy + approval, `wrapExecute` enforces a persisted global kill switch (`~/.baklava/ai-controls.json`, toggled from the assistant header) plus in-memory per-session rate limit, destructive circuit breaker, and tool-call budget (`src/lib/ai/limits.ts`); reads are never blocked by the kill switch or breaker.
+
 ### SSE / streaming routes
 
 The pattern (see `src/app/api/docker/[id]/events/route.ts`, `.../stacks/deploy/route.ts`, `.../images/{build,pull}-stream/route.ts`):

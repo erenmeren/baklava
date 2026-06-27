@@ -90,6 +90,16 @@ Because Baklava can read every stored credential and run destructive queries, it
 
 The password is hashed (scrypt) and stored in `~/.baklava/auth.json`. It never leaves the server.
 
+### AI assistant safety controls
+
+The `/assistant` page lets you run a natural-language agent over your connections. A few safeguards keep it from going rogue:
+
+- **Per-session budget** — each session is capped at 300 tool calls total; only runaway multi-step loops ever reach it.
+- **Rate limit** — 40 tool calls per 10 seconds per session/connection pair; normal chat is well under this.
+- **Destructive circuit breaker** — if 8 destructive actions fire within 60 seconds the session pauses; reads are never blocked.
+- **Global kill switch** — the **Pause AI** toggle in the assistant header writes to `~/.baklava/ai-controls.json` and survives process restart. When paused, all non-read AI actions are blocked across every session; reads still go through.
+- **Stop button** — aborts the current in-flight run immediately.
+
 ### Sessions
 
 Signing in creates a **server-side session** stored in `~/.baklava/sessions.json`. You can view and revoke individual devices under **Settings → Active sessions**, or sign out all other devices at once.
