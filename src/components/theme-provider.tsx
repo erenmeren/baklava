@@ -11,6 +11,7 @@ import {
 import {
   THEME_COOKIE,
   PALETTE_COOKIE,
+  CRT_COOKIE,
   htmlThemeClasses,
   type Theme,
   type Palette,
@@ -24,6 +25,8 @@ interface ThemeContextValue {
   setTheme: (t: Theme) => void;
   palette: Palette;
   setPalette: (p: Palette) => void;
+  scanlines: boolean;
+  setScanlines: (on: boolean) => void;
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
@@ -53,16 +56,19 @@ function writeCookie(name: string, value: string) {
 interface ProviderProps {
   initialTheme?: Theme;
   initialPalette?: Palette;
+  initialScanlines?: boolean;
   children: React.ReactNode;
 }
 
 export function ThemeProvider({
   initialTheme = "system",
   initialPalette = "classic",
+  initialScanlines = false,
   children,
 }: ProviderProps) {
   const [theme, setThemeState] = useState<Theme>(initialTheme);
   const [palette, setPaletteState] = useState<Palette>(initialPalette);
+  const [scanlines, setScanlinesState] = useState<boolean>(initialScanlines);
   const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() =>
     initialTheme === "system" ? "light" : initialTheme
   );
@@ -104,9 +110,14 @@ export function ThemeProvider({
     });
   }, []);
 
+  const setScanlines = useCallback((on: boolean) => {
+    setScanlinesState(on);
+    writeCookie(CRT_COOKIE, on ? "1" : "0");
+  }, []);
+
   return (
     <ThemeContext.Provider
-      value={{ theme, resolvedTheme, setTheme, palette, setPalette }}
+      value={{ theme, resolvedTheme, setTheme, palette, setPalette, scanlines, setScanlines }}
     >
       {children}
     </ThemeContext.Provider>
@@ -122,6 +133,8 @@ export function useTheme(): ThemeContextValue {
       setTheme: () => undefined,
       palette: "classic",
       setPalette: () => undefined,
+      scanlines: false,
+      setScanlines: () => undefined,
     };
   }
   return ctx;

@@ -50,10 +50,36 @@
     U+A720-A7FF;
 }
 
-/* Re-export Instrument Serif under the CSS variable that the rest of
-   the app references (previously set by next/font/local). */
+/* Chakra Petch (display/headings) + VT323 (CRT flourishes) — vendored woff2,
+   latin subset, used by the Phosphor theme. Self-hosted like the rest. */
+@font-face {
+  font-family: "Chakra Petch";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/fonts/ChakraPetch-600.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Chakra Petch";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/ChakraPetch-700.woff2") format("woff2");
+}
+@font-face {
+  font-family: "VT323";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/VT323-400.woff2") format("woff2");
+}
+
+/* Re-export Instrument Serif + the phosphor display/CRT fonts under the CSS
+   variables the app references (previously set by next/font/local). */
 :root {
   --font-instrument-serif: "Instrument Serif", Georgia, serif;
+  --font-chakra: "Chakra Petch", var(--font-geist-sans), system-ui, sans-serif;
+  --font-crt: "VT323", var(--font-jetbrains-mono), monospace;
 }
 
 
@@ -322,6 +348,76 @@
   --sidebar-ring: #B8761F;
 
   color-scheme: light;
+}
+
+/* ─── Phosphor component treatments (scoped; never touches Classic) ──────────
+   Selectors are `:root.theme-phosphor …` — `html.…` token/scoped rules get
+   stripped by Lightning CSS in this Tailwind v4 + Turbopack setup. */
+
+/* Display type: headings + wordmark in Chakra Petch. */
+:root.theme-phosphor h1,
+:root.theme-phosphor h2,
+:root.theme-phosphor h3 {
+  font-family: var(--font-chakra);
+  letter-spacing: 0.01em;
+}
+
+/* Inputs / search / ⌘K: amber caret for the terminal feel. */
+:root.theme-phosphor input,
+:root.theme-phosphor textarea {
+  caret-color: var(--brand);
+}
+
+/* Keyboard hints in the CRT face (VT323) — a small, sparing terminal flourish. */
+:root.theme-phosphor kbd {
+  font-family: var(--font-crt);
+  font-size: 1.05em;
+  line-height: 1;
+}
+
+/* Primary + brand buttons: subtle amber glow on hover (no glow at rest). */
+:root.theme-phosphor .bg-primary,
+:root.theme-phosphor .bg-brand {
+  transition: box-shadow 160ms ease;
+}
+:root.theme-phosphor .bg-primary:hover,
+:root.theme-phosphor .bg-brand:hover {
+  box-shadow: 0 0 14px rgba(242, 169, 59, 0.35);
+}
+
+/* Console panel chrome: three window dots on workspace headers. The dots span
+   ships in the markup always but is hidden outside Phosphor. */
+:root.theme-phosphor [data-slot="workspace-header"] {
+  position: relative;
+  padding-top: 1.85rem;
+}
+:root.theme-phosphor [data-slot="panel-dots"] {
+  display: block;
+  position: absolute;
+  top: 0.7rem;
+  left: 1.5rem;
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  background: #f2a93b;
+  box-shadow:
+    13px 0 0 #a6c85c,
+    26px 0 0 var(--muted-foreground);
+}
+
+/* CRT scanline overlay — opt-in (default off), readability-first, no motion. */
+.crt-overlay {
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  mix-blend-mode: overlay;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent 0 2px,
+    rgba(0, 0, 0, 0.12) 3px,
+    transparent 4px
+  );
 }
 
 @layer base {

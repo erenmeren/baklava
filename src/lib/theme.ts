@@ -1,5 +1,6 @@
 export const THEME_COOKIE = "baklava-theme";
 export const PALETTE_COOKIE = "baklava-palette";
+export const CRT_COOKIE = "baklava-crt";
 
 export type Theme = "light" | "dark" | "system";
 
@@ -13,6 +14,11 @@ export function readTheme(value: string | undefined): Theme {
 
 export function readPalette(value: string | undefined): Palette {
   return value === "phosphor" ? "phosphor" : "classic";
+}
+
+/** CRT scanline overlay (Phosphor flourish, opt-in). Default off. */
+export function readCrt(value: string | undefined): boolean {
+  return value === "1";
 }
 
 /**
