@@ -35,6 +35,19 @@ function withCookie(url: string, token: string): NextRequest {
   return new NextRequest(url, { headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` } });
 }
 
+/** A plain Request carrying the admin session cookie (for the byId handlers,
+ *  which now enforce connection access — an admin sees/writes everything). */
+function authedReq(
+  token: string,
+  opts: { method?: string; body?: string } = {},
+): Request {
+  return new Request("http://localhost", {
+    method: opts.method,
+    body: opts.body,
+    headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+  });
+}
+
 describe("GET /api/connections", () => {
   let dataDir: string;
   beforeEach(() => {
@@ -159,7 +172,7 @@ describe("GET/PATCH/DELETE /api/connections/[id]", () => {
   });
 
   it("PATCH rejects malformed JSON with 400", async () => {
-    const { idRoute, store } = await freshRoutes(dataDir);
+    const { idRoute, store, adminToken } = await freshRoutes(dataDir);
     const saved = store.saveConnection({
       tech: "postgres",
       name: "x",
@@ -174,10 +187,7 @@ describe("GET/PATCH/DELETE /api/connections/[id]", () => {
       status: "ok",
     });
     const res = await idRoute.PATCH(
-      new Request("http://localhost", {
-        method: "PATCH",
-        body: "{not json",
-      }),
+      authedReq(adminToken, { method: "PATCH", body: "{not json" }),
       { params: Promise.resolve({ id: saved.id }) },
     );
     expect(res.status).toBe(400);
@@ -185,7 +195,7 @@ describe("GET/PATCH/DELETE /api/connections/[id]", () => {
   });
 
   it("PATCH rejects empty patch (nothing to update)", async () => {
-    const { idRoute, store } = await freshRoutes(dataDir);
+    const { idRoute, store, adminToken } = await freshRoutes(dataDir);
     const saved = store.saveConnection({
       tech: "postgres",
       name: "x",
@@ -200,17 +210,14 @@ describe("GET/PATCH/DELETE /api/connections/[id]", () => {
       status: "ok",
     });
     const res = await idRoute.PATCH(
-      new Request("http://localhost", {
-        method: "PATCH",
-        body: JSON.stringify({}),
-      }),
+      authedReq(adminToken, { method: "PATCH", body: JSON.stringify({}) }),
       { params: Promise.resolve({ id: saved.id }) },
     );
     expect(res.status).toBe(400);
   });
 
   it("PATCH renames + flips status to untested + redacts response password", async () => {
-    const { idRoute, store } = await freshRoutes(dataDir);
+    const { idRoute, store, adminToken } = await freshRoutes(dataDir);
     const saved = store.saveConnection({
       tech: "postgres",
       name: "old",
@@ -225,10 +232,7 @@ describe("GET/PATCH/DELETE /api/connections/[id]", () => {
       status: "ok",
     });
     const res = await idRoute.PATCH(
-      new Request("http://localhost", {
-        method: "PATCH",
-        body: JSON.stringify({ name: "new" }),
-      }),
+      authedReq(adminToken, { method: "PATCH", body: JSON.stringify({ name: "new" }) }),
       { params: Promise.resolve({ id: saved.id }) },
     );
     const body = await res.json();
@@ -239,7 +243,7 @@ describe("GET/PATCH/DELETE /api/connections/[id]", () => {
   });
 
   it("PATCH with blank password preserves the existing one (E2E for the edit-mode UX)", async () => {
-    const { idRoute, store } = await freshRoutes(dataDir);
+    const { idRoute, store, adminToken } = await freshRoutes(dataDir);
     const saved = store.saveConnection({
       tech: "postgres",
       name: "x",
@@ -254,7 +258,7 @@ describe("GET/PATCH/DELETE /api/connections/[id]", () => {
       status: "ok",
     });
     await idRoute.PATCH(
-      new Request("http://localhost", {
+      authedReq(adminToken, {
         method: "PATCH",
         body: JSON.stringify({
           config: {
@@ -275,7 +279,7 @@ describe("GET/PATCH/DELETE /api/connections/[id]", () => {
   });
 
   it("DELETE removes the connection and returns ok", async () => {
-    const { idRoute, store } = await freshRoutes(dataDir);
+    const { idRoute, store, adminToken } = await freshRoutes(dataDir);
     const saved = store.saveConnection({
       tech: "postgres",
       name: "x",
@@ -289,7 +293,7 @@ describe("GET/PATCH/DELETE /api/connections/[id]", () => {
       },
       status: "ok",
     });
-    const res = await idRoute.DELETE(new Request("http://localhost"), {
+    const res = await idRoute.DELETE(authedReq(adminToken, { method: "DELETE" }), {
       params: Promise.resolve({ id: saved.id }),
     });
     expect(res.status).toBe(200);

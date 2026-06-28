@@ -14,7 +14,8 @@ import { dropR2Client } from "@/lib/connections/r2";
 import { dropMinioClient } from "@/lib/connections/minio";
 import { dropS3Client } from "@/lib/connections/s3-aws";
 import { dropPostgresPools } from "@/lib/connections/postgres";
-import { dropConnectionGrants } from "@/lib/connections/access";
+import { dropConnectionGrants, effectiveAccess } from "@/lib/connections/access";
+import { getCurrentUser } from "@/lib/auth/current-user";
 import { deletePolicy } from "@/lib/ai/policy-store";
 
 export const runtime = "nodejs";
@@ -23,10 +24,31 @@ interface RouteContext {
   params: Promise<{ id: string }>;
 }
 
-export async function GET(_req: Request, ctx: RouteContext) {
+/**
+ * Belt-and-suspenders RBAC: the proxy already guards connection-scoped paths,
+ * but the route must also be correct in isolation. Returns the effective access
+ * level for the current user, or null if the request is unauthenticated.
+ */
+function accessFor(
+  req: Request,
+  conn: { id: string; ownerId?: string }
+): "none" | "read" | "write" | null {
+  const user = getCurrentUser(req);
+  if (!user) return null;
+  return effectiveAccess({
+    user: { id: user.id, role: user.role },
+    conn: { id: conn.id, ownerId: conn.ownerId },
+  });
+}
+
+export async function GET(req: Request, ctx: RouteContext) {
   const { id } = await ctx.params;
   const record = getConnection(id);
   if (!record) {
+    return NextResponse.json({ error: "Connection not found" }, { status: 404 });
+  }
+  // Hide existence from users who can't access this connection.
+  if (accessFor(req, record) === "none") {
     return NextResponse.json({ error: "Connection not found" }, { status: 404 });
   }
   return NextResponse.json(publicView(record));
@@ -44,6 +66,10 @@ export async function PATCH(req: Request, ctx: RouteContext) {
   const existing = getConnection(id);
   if (!existing) {
     return NextResponse.json({ error: "Connection not found" }, { status: 404 });
+  }
+  // Editing a connection requires write (owner/admin or a write grant).
+  if (accessFor(req, existing) !== "write") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   let body: PatchBody;
   try {
@@ -68,9 +94,16 @@ export async function PATCH(req: Request, ctx: RouteContext) {
   return NextResponse.json(publicView(updated));
 }
 
-export async function DELETE(_req: Request, ctx: RouteContext) {
+export async function DELETE(req: Request, ctx: RouteContext) {
   const { id } = await ctx.params;
   const record = getConnection(id);
+  if (!record) {
+    return NextResponse.json({ error: "Connection not found" }, { status: 404 });
+  }
+  // Deleting a connection requires write (owner/admin or a write grant).
+  if (accessFor(req, record) !== "write") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   const ok = deleteConnection(id);
   if (!ok) {
     return NextResponse.json({ error: "Connection not found" }, { status: 404 });

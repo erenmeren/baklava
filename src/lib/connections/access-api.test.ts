@@ -319,7 +319,7 @@ describe("DELETE /api/connections/[id] drops grants", () => {
     ctx.access.setGrants(ctx.ownedConn.id, { [ctx.stranger.id]: "read" });
     expect(ctx.access.getGrants(ctx.ownedConn.id)).not.toEqual({});
     const res = await ctx.byIdRoute.DELETE(
-      get(`http://localhost/api/connections/${ctx.ownedConn.id}`),
+      get(`http://localhost/api/connections/${ctx.ownedConn.id}`, ctx.ownerToken),
       { params: Promise.resolve({ id: ctx.ownedConn.id }) },
     );
     expect(res.status).toBe(200);
