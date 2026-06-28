@@ -17,8 +17,15 @@ import { Loader2 } from "lucide-react";
 
 type Mode = "login" | "setup";
 
-export function LoginClient({ mode }: { mode: Mode }) {
+export function LoginClient({
+  mode,
+  multiUser = false,
+}: {
+  mode: Mode;
+  multiUser?: boolean;
+}) {
   const router = useRouter();
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -33,7 +40,7 @@ export function LoginClient({ mode }: { mode: Mode }) {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify(multiUser ? { username, password } : { password }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -61,7 +68,7 @@ export function LoginClient({ mode }: { mode: Mode }) {
       const res = await fetch("/api/auth/setup", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ newPassword }),
+        body: JSON.stringify({ username, newPassword }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -96,12 +103,28 @@ export function LoginClient({ mode }: { mode: Mode }) {
       <CardContent>
         {mode === "login" ? (
           <form onSubmit={submitLogin} className="space-y-4">
+            {multiUser ? (
+              <div className="space-y-1.5">
+                <Label htmlFor="username">Username</Label>
+                <Input
+                  id="username"
+                  type="text"
+                  autoFocus
+                  autoComplete="username"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  disabled={busy}
+                />
+              </div>
+            ) : null}
             <div className="space-y-1.5">
               <Label htmlFor="password">Password</Label>
               <Input
                 id="password"
                 type="password"
-                autoFocus
+                autoFocus={!multiUser}
                 autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -111,18 +134,38 @@ export function LoginClient({ mode }: { mode: Mode }) {
             {error ? (
               <p className="text-sm text-rose-500">{error}</p>
             ) : null}
-            <Button type="submit" className="w-full" disabled={busy || !password}>
+            <Button
+              type="submit"
+              className="w-full"
+              disabled={busy || !password || (multiUser && !username)}
+            >
               {busy ? <Loader2 className="size-4 animate-spin" /> : "Sign in"}
             </Button>
           </form>
         ) : (
           <form onSubmit={submitSetup} className="space-y-4">
             <div className="space-y-1.5">
+              <Label htmlFor="username">Username</Label>
+              <Input
+                id="username"
+                type="text"
+                autoFocus
+                autoComplete="username"
+                autoCapitalize="none"
+                spellCheck={false}
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                disabled={busy}
+              />
+              <p className="text-xs text-muted-foreground">
+                You&apos;ll sign in with this. You can add more users later.
+              </p>
+            </div>
+            <div className="space-y-1.5">
               <Label htmlFor="newPassword">Password</Label>
               <Input
                 id="newPassword"
                 type="password"
-                autoFocus
                 autoComplete="new-password"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
@@ -146,7 +189,7 @@ export function LoginClient({ mode }: { mode: Mode }) {
             <Button
               type="submit"
               className="w-full"
-              disabled={busy || !newPassword || !confirm}
+              disabled={busy || !username || !newPassword || !confirm}
             >
               {busy ? (
                 <Loader2 className="size-4 animate-spin" />
