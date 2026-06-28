@@ -243,6 +243,20 @@ export function updateConnection(
   return updated;
 }
 
+/**
+ * Reassign a connection's owner. Used when an owning user is deleted — their
+ * connections are handed to the acting admin so they don't become orphaned
+ * (legacy `ownerId`-less rows are admin-only). Persists. Returns false if the
+ * connection doesn't exist.
+ */
+export function reassignOwner(connectionId: string, newOwnerId: string): boolean {
+  const existing = getStore().byId.get(connectionId);
+  if (!existing) return false;
+  getStore().byId.set(connectionId, { ...existing, ownerId: newOwnerId });
+  flush();
+  return true;
+}
+
 export function deleteConnection(id: string): boolean {
   const deleted = getStore().byId.delete(id);
   if (deleted) flush();
