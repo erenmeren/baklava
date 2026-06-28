@@ -404,6 +404,18 @@
     animation: status-pulse 2.4s ease-in-out infinite;
   }
 
+  /* Terminal-cursor blink for the brand mark (chevron + block cursor). */
+  @keyframes bk-blink {
+    0%, 49% { opacity: 1; }
+    50%, 100% { opacity: 0; }
+  }
+  .bk-blink {
+    animation: bk-blink 1.1s steps(1) infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .bk-blink { animation: none; }
+  }
+
   /* Multi-color neon hover used by home tiles — lifted from the
      baklava-ui prototype so tiles glow with a soft chromatic ring. */
   .tile-neon {
