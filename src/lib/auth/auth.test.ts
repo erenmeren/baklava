@@ -54,12 +54,12 @@ describe("auth store", () => {
 
 describe("session tokens", () => {
   it("round-trips a freshly signed token", () => {
-    const token = session.createSessionToken();
+    const token = session.createSessionToken("u");
     expect(session.verifySessionToken(token)).toBe(true);
   });
 
   it("rejects tampered, malformed, and empty tokens", () => {
-    const token = session.createSessionToken();
+    const token = session.createSessionToken("u");
     expect(session.verifySessionToken(token + "x")).toBe(false);
     expect(session.verifySessionToken("not-a-token")).toBe(false);
     expect(session.verifySessionToken("")).toBe(false);

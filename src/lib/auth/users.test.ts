@@ -185,7 +185,7 @@ describe("users store — migration from legacy single password", () => {
 
     // Seed a session that the migration must revoke.
     const sessions = await import("./sessions");
-    const sess = sessions.createSession("test-agent");
+    const sess = sessions.createSession("legacy-user", "test-agent");
     expect(sessions.verifySession(sess.id)).toBe(true);
 
     // First load of the users store triggers migration.
