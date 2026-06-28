@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Settings2, Send, Square, Pause, Play } from "lucide-react";
+import { Settings2, Send, Square, Pause, Play, ListChecks } from "lucide-react";
 import type { ConnectionRecord } from "@/lib/connections/types";
 import { isAiSupported } from "@/lib/ai/supported";
 import { messageText } from "@/lib/ai/message-content";
@@ -10,6 +10,7 @@ import { WorkingSet, type PolicyView } from "@/components/ai/working-set";
 import { SlashPicker } from "@/components/ai/slash-picker";
 import { MessageList, type ChatMessage, type ToolChip } from "@/components/ai/message-list";
 import { ApprovalCard, type PendingApproval } from "@/components/ai/approval-card";
+import { PlanCard, type ProposedPlan } from "@/components/ai/plan-card";
 import { AiSettingsDialog } from "@/components/ai/ai-settings-dialog";
 import { ModelPicker } from "@/components/ai/model-picker";
 
@@ -27,6 +28,8 @@ export function AssistantClient() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [chips, setChips] = useState<ToolChip[]>([]);
   const [pending, setPending] = useState<PendingApproval[]>([]);
+  const [plan, setPlan] = useState<ProposedPlan | null>(null);
+  const [planMode, setPlanMode] = useState(false);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [picker, setPicker] = useState(false);
@@ -34,6 +37,7 @@ export function AssistantClient() {
   const [agentName, setAgentName] = useState("");
   const [aiPaused, setAiPaused] = useState(false);
   const sessionRef = useRef(genId());
+  const planModeRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
   const initedRef = useRef(false);
   // Mirrors activeId so the async auto-open can tell if the user already picked
@@ -67,6 +71,28 @@ export function AssistantClient() {
   useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
   useEffect(() => () => abortRef.current?.abort(), []);
 
+  // Plan mode is per-conversation, persisted to localStorage. Read it whenever
+  // the active conversation changes; default OFF when no conversation/key.
+  useEffect(() => {
+    let next = false;
+    if (activeId) {
+      try { next = localStorage.getItem(`baklava:plan-mode:${activeId}`) === "1"; } catch {}
+    }
+    planModeRef.current = next;
+    setPlanMode(next);
+  }, [activeId]);
+
+  const togglePlanMode = useCallback(() => {
+    setPlanMode((prev) => {
+      const next = !prev;
+      planModeRef.current = next;
+      if (activeId) {
+        try { localStorage.setItem(`baklava:plan-mode:${activeId}`, next ? "1" : "0"); } catch {}
+      }
+      return next;
+    });
+  }, [activeId]);
+
   const setConns = setIds.map((id) => allConns.find((c) => c.id === id)).filter(Boolean) as ConnectionRecord[];
   const candidates = allConns.filter((c) => !setIds.includes(c.id));
 
@@ -85,7 +111,7 @@ export function AssistantClient() {
       if (!res.ok) throw new Error();
       const d = await res.json();
       setActiveId(d.conversation.id);
-      setSetIds([]); setMessages([]); setChips([]); setPending([]);
+      setSetIds([]); setMessages([]); setChips([]); setPending([]); setPlan(null);
       sessionRef.current = genId();
       refreshList();
     } catch {
@@ -114,7 +140,7 @@ export function AssistantClient() {
           .map((m: { role: "user" | "assistant"; content: unknown }) => ({ role: m.role, content: messageText(m.content) }))
           .filter((m: ChatMessage) => m.content.trim().length > 0),
       );
-      setChips([]); setPending([]);
+      setChips([]); setPending([]); setPlan(null);
       sessionRef.current = genId();
     } catch {
       toast.error("Couldn't load that conversation");
@@ -214,6 +240,22 @@ export function AssistantClient() {
     }
   }, [pending]);
 
+  const decidePlan = useCallback(async (toolCallId: string, decision: "approve" | "reject") => {
+    const sessionId = plan?.sessionId ?? sessionRef.current;
+    setPlan(null);
+    try {
+      const res = await fetch("/api/ai/chat/approve", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ sessionId, toolCallId, decision }),
+      });
+      const d = (await res.json().catch(() => ({ ok: false }))) as { ok?: boolean };
+      if (!d.ok) toast.error("Couldn't deliver your decision", { description: "That request may have already ended." });
+    } catch {
+      toast.error("Couldn't deliver your decision");
+    }
+  }, [plan]);
+
   const stop = useCallback(() => { abortRef.current?.abort(); setBusy(false); }, []);
 
   const toggleAiPaused = useCallback(async () => {
@@ -242,6 +284,7 @@ export function AssistantClient() {
     const history = [...messages, userMsg];
     setMessages([...history, { role: "assistant", content: "" }]);
     setInput("");
+    setPlan(null);
     setBusy(true);
     const ac = new AbortController();
     abortRef.current = ac;
@@ -254,6 +297,7 @@ export function AssistantClient() {
           sessionId: sessionRef.current,
           connections: setConns.map((c) => ({ id: c.id, tech: c.tech })),
           userMessage: { role: "user", content: userMsg.content },
+          planMode: planModeRef.current,
         }),
         signal: ac.signal,
       });
@@ -280,6 +324,7 @@ export function AssistantClient() {
           if (event === "text-delta") setMessages((m) => appendLast(m, data.text));
           else if (event === "tool-call") setChips((c) => [...c, { toolCallId: data.toolCallId, tool: data.tool, connection: (data.args as { connection?: string })?.connection }]);
           else if (event === "approval-needed") setPending((p) => [...p, data]);
+          else if (event === "plan") setPlan({ sessionId: sessionRef.current, ...data });
           else if (event === "error") setMessages((m) => patchLast(m, `⚠️ ${data.error}`));
         }
       }
@@ -333,6 +378,7 @@ export function AssistantClient() {
           ) : (
             <>
               <MessageList messages={messages} toolChips={chips} />
+              {plan ? <PlanCard plan={plan} onDecision={decidePlan} /> : null}
               {pending.map((p) => (<ApprovalCard key={p.toolCallId} pending={p} onDecision={decide} />))}
             </>
           )}
@@ -360,8 +406,19 @@ export function AssistantClient() {
               </button>
             )}
           </div>
-          <div className="mt-1.5">
+          <div className="mt-1.5 flex items-center gap-2">
             <ModelPicker onConfigure={() => setSettingsOpen(true)} />
+            <button
+              type="button"
+              onClick={togglePlanMode}
+              aria-pressed={planMode}
+              title={planMode ? "Plan mode on — the assistant proposes a plan before acting" : "Plan mode off"}
+              className={planMode
+                ? "inline-flex items-center gap-1 rounded-md border border-amber-500/40 px-2 py-1 text-xs font-medium bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-900/40 dark:text-amber-400"
+                : "inline-flex items-center gap-1 rounded-md border border-border/60 px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"}
+            >
+              <ListChecks className="size-3" /> Plan mode
+            </button>
           </div>
         </div>
       </section>

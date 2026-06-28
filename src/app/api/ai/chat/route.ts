@@ -9,6 +9,8 @@ import { isAiSupported } from "@/lib/ai/supported";
 import { scoreAction } from "@/lib/ai/risk";
 import { buildConversationTools, type ConversationConnection } from "@/lib/ai/conversation-tools";
 import { runAgent } from "@/lib/ai/agent";
+import { makeProposePlanTool, PLAN_TOOL_NAME } from "@/lib/ai/plan-tool";
+import type { PreparedTool } from "@/lib/ai/prepared";
 import { createPending } from "@/lib/ai/pending";
 import { getConversation, updateConversation } from "@/lib/ai/conversation-store";
 import { getCurrentUser } from "@/lib/auth/current-user";
@@ -23,6 +25,34 @@ interface ChatBody {
   sessionId: string;
   connections: { id: string; tech: TechId }[];
   userMessage: { role: "user"; content: string };
+  planMode?: boolean;
+}
+
+const PLAN_MODE_DIRECTIVE =
+  `PLAN MODE: Before performing ANY write or destructive action, you MUST first call ` +
+  `the \`${PLAN_TOOL_NAME}\` tool with the ordered steps you intend to take, then wait. ` +
+  `Only after it returns { approved: true } may you execute those steps. Pure ` +
+  `read/inspect actions do not require a plan. If it returns { approved: false }, stop ` +
+  `and explain. Note: destructive steps will still require their own per-action approval ` +
+  `during execution.`;
+
+/**
+ * Given the base systemExtra and whether plan mode is on, returns the systemExtra
+ * to send plus any extra tools to append to the agent's tool array. Pulled out as a
+ * pure helper so the assembly is testable without driving the full streaming handler.
+ *
+ * When planMode is off the base is returned untouched and no tools are added — the
+ * behavior is byte-for-byte identical to a request that never had the flag.
+ */
+export function buildPlanAdditions(
+  planMode: boolean | undefined,
+  base: string,
+  ctx: { sessionId: string; emit: (event: string, data: unknown) => void },
+): { systemExtra: string; extraTools: PreparedTool[] } {
+  if (!planMode) return { systemExtra: base, extraTools: [] };
+  const systemExtra = base ? `${base}\n\n${PLAN_MODE_DIRECTIVE}` : PLAN_MODE_DIRECTIVE;
+  const extraTools = [makeProposePlanTool({ sessionId: ctx.sessionId, emit: ctx.emit })];
+  return { systemExtra, extraTools };
 }
 
 export async function POST(req: Request) {
@@ -32,7 +62,7 @@ export async function POST(req: Request) {
   } catch {
     return new Response(JSON.stringify({ error: "Invalid JSON" }), { status: 400 });
   }
-  const { conversationId, sessionId, connections, userMessage } = body;
+  const { conversationId, sessionId, connections, userMessage, planMode } = body;
 
   // Acting user (resolved from the session cookie). Behind the auth proxy this
   // should always be present; if it isn't, fail closed — every connection's
@@ -93,9 +123,19 @@ export async function POST(req: Request) {
         },
       });
 
-      const systemExtra = resolved.length
+      const baseSystemExtra = resolved.length
         ? `Connections in this conversation: ${resolved.map((c) => `${c.name} (${c.tech})`).join(", ")}. You may only act on these.`
         : `No connections are in this conversation yet. Tell the user to add one with "/".`;
+
+      // Plan mode (opt-in per request): appends the PLAN MODE directive and the
+      // propose_plan tool, both wired to the SAME sessionId + emit the route uses
+      // for approvals/SSE so the `plan` event reaches the client on this stream.
+      // When off, systemExtra/tools are identical to a request without the flag.
+      const { systemExtra, extraTools } = buildPlanAdditions(planMode, baseSystemExtra, {
+        sessionId,
+        emit,
+      });
+      const agentTools = extraTools.length ? [...tools, ...extraTools] : tools;
 
       // Load + persist scoped to the acting user. If the conversation isn't
       // owned by this user (or no user resolved), getConversation returns
@@ -119,7 +159,7 @@ export async function POST(req: Request) {
         const { responseMessages } = await runAgent({
           model,
           messages: turnMessages,
-          tools,
+          tools: agentTools,
           stepCap: settings.stepCap,
           emit,
           systemExtra,
