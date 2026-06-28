@@ -137,6 +137,15 @@ export function verifyPassword(password: string): boolean {
   );
 }
 
+/** Read the current legacy single-password hash+salt for the one-time RBAC
+ *  migration. Returns null when unconfigured (empty hash) or pending a forced
+ *  change. Pure read — does not alter stored state. */
+export function getLegacyPasswordForMigration(): { passwordHash: string; salt: string } | null {
+  const s = load();
+  if (s.passwordHash === "" || s.mustChange === true) return null;
+  return { passwordHash: s.passwordHash, salt: s.salt };
+}
+
 /** Set the password (first-time setup or a later rotation), marking the console
  *  configured. Secret is preserved so the caller's freshly issued session stays
  *  valid. */
