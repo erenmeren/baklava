@@ -6,7 +6,14 @@ import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { THEME_COOKIE, readTheme } from "@/lib/theme";
+import { ThemeSelector } from "@/components/theme-selector";
+import {
+  THEME_COOKIE,
+  PALETTE_COOKIE,
+  readTheme,
+  readPalette,
+  htmlThemeClasses,
+} from "@/lib/theme";
 import { BrandMark } from "@/components/brand-mark";
 import { ConnectionTabs } from "@/components/connection-tabs";
 import { GlobalCommandPalette } from "@/components/command-palette/global-command-palette";
@@ -64,8 +71,8 @@ export default async function RootLayout({
 }>) {
   const cookieStore = await cookies();
   const theme = readTheme(cookieStore.get(THEME_COOKIE)?.value);
-  const themeClass =
-    theme === "dark" ? "dark" : theme === "light" ? "light" : "";
+  const palette = readPalette(cookieStore.get(PALETTE_COOKIE)?.value);
+  const themeClass = htmlThemeClasses(theme, palette);
 
   // App chrome (tabs, palette, settings…) renders when the gate is off, or for
   // an authenticated session on a configured console — the /login screen and the
@@ -82,7 +89,7 @@ export default async function RootLayout({
       className={`${geistSans.variable} ${jetbrainsMono.variable} ${themeClass} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-background text-foreground">
-        <ThemeProvider initialTheme={theme}>
+        <ThemeProvider initialTheme={theme} initialPalette={palette}>
           <TooltipProvider delay={150}>
             {showChrome ? (
             <header className="sticky top-0 z-30 border-b border-border/60 bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/65">
@@ -117,7 +124,8 @@ export default async function RootLayout({
                     {authEnabled ? <LockButton /> : null}
                   </div>
                   {/* Appearance is a preference, not a destination — detached */}
-                  <div className="ml-1.5">
+                  <div className="ml-1.5 flex items-center gap-0.5">
+                    <ThemeSelector />
                     <ThemeToggle />
                   </div>
                 </div>

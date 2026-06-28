@@ -233,6 +233,97 @@
   }
 }
 
+/* ─── Phosphor: amber-phosphor CRT terminal (selectable palette) ──────────
+   A second palette axis (class `theme-phosphor` on <html>), independent of the
+   classic light/dark above. The provider always pairs it with an explicit
+   `dark`/`light` class so these win over the system-dark media block. Driven by
+   the same CSS variables so the component layer is shared — see THEME-BRIEF. */
+:root.theme-phosphor {
+  --background: #0E1114;
+  --foreground: #E9E2D2;
+  --card: #181E22;
+  --card-foreground: #E9E2D2;
+  --popover: #181E22;
+  --popover-foreground: #E9E2D2;
+  --primary: #F2A93B;            /* amber — the brand */
+  --primary-foreground: #14181B; /* ink on amber */
+  --secondary: #20272C;
+  --secondary-foreground: #E9E2D2;
+  --muted: #1B2024;
+  --muted-foreground: #7C8A86;
+  /* shadcn --accent is the subtle hover surface, NOT the pistachio brand accent
+     (that stays reserved for success states), so keep it a quiet surface. */
+  --accent: #20272C;
+  --accent-foreground: #E9E2D2;
+  --destructive: #E5614A;        /* warm red, fits the palette */
+  --border: #2C343A;             /* hairline */
+  --input: #2C343A;
+  --ring: #F2A93B;               /* amber focus ring */
+  --chart-1: #F2A93B;
+  --chart-2: #A6C85C;
+  --chart-3: #E5614A;
+  --chart-4: #7C8A86;
+  --chart-5: #B8761F;
+  --radius: 0.625rem;            /* ~10px */
+
+  --brand: #F2A93B;
+  --brand-foreground: #14181B;
+  --brand-muted: #20272C;
+
+  --sidebar: #121619;
+  --sidebar-foreground: #E9E2D2;
+  --sidebar-primary: #F2A93B;
+  --sidebar-primary-foreground: #14181B;
+  --sidebar-accent: #20272C;
+  --sidebar-accent-foreground: #E9E2D2;
+  --sidebar-border: #2C343A;
+  --sidebar-ring: #F2A93B;
+
+  color-scheme: dark;
+}
+
+/* Optional light counterpart of phosphor (parchment + amber-ink). */
+:root.theme-phosphor.light {
+  --background: #F6F1E7;
+  --foreground: #1E2327;
+  --card: #FFFFFF;
+  --card-foreground: #1E2327;
+  --popover: #FFFFFF;
+  --popover-foreground: #1E2327;
+  --primary: #B8761F;
+  --primary-foreground: #FFF8EC;
+  --secondary: #EFE7D6;
+  --secondary-foreground: #1E2327;
+  --muted: #EFE7D6;
+  --muted-foreground: #6B6256;
+  --accent: #EFE7D6;
+  --accent-foreground: #1E2327;
+  --destructive: #C0492F;
+  --border: #E7DFCF;
+  --input: #E7DFCF;
+  --ring: #B8761F;
+  --chart-1: #B8761F;
+  --chart-2: #7A9A3E;
+  --chart-3: #C0492F;
+  --chart-4: #6B6256;
+  --chart-5: #8A5A18;
+
+  --brand: #B8761F;
+  --brand-foreground: #FFF8EC;
+  --brand-muted: #EFE7D6;
+
+  --sidebar: #F1EADB;
+  --sidebar-foreground: #1E2327;
+  --sidebar-primary: #B8761F;
+  --sidebar-primary-foreground: #FFF8EC;
+  --sidebar-accent: #EFE7D6;
+  --sidebar-accent-foreground: #1E2327;
+  --sidebar-border: #E7DFCF;
+  --sidebar-ring: #B8761F;
+
+  color-scheme: light;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
