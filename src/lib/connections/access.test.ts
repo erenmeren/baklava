@@ -9,6 +9,7 @@ import {
   effectiveAccess,
   _resetAccessCacheForTests,
 } from "./access";
+import { saveConnection, listConnectionsForUser } from "./store";
 
 let dir: string;
 beforeEach(() => {
@@ -89,6 +90,36 @@ describe("grants round-trip", () => {
     setGrants("c1", { [member.id]: "write" });
     _resetAccessCacheForTests();
     expect(getGrants("c1")).toEqual({ [member.id]: "write" });
+  });
+});
+
+describe("member who creates a connection (ownerId set, as fixed test routes do)", () => {
+  it("can SEE it via listConnectionsForUser and has write access (owner)", () => {
+    // Simulate the fixed /api/<tech>/test save path: the creating member's id
+    // is recorded as ownerId.
+    const conn = saveConnection({
+      tech: "postgres",
+      name: "my-db",
+      config: { host: "localhost" } as unknown as Record<string, unknown>,
+      status: "ok",
+      ownerId: member.id,
+    });
+
+    // Owner sees their own connection in the RBAC-filtered list...
+    const visibleToOwner = listConnectionsForUser("postgres", member);
+    expect(visibleToOwner.map((c) => c.id)).toContain(conn.id);
+
+    // ...and gets "write" on it without any explicit grant.
+    expect(effectiveAccess({ user: member, conn })).toBe("write");
+
+    // A different member with no grant cannot see it.
+    const visibleToOther = listConnectionsForUser("postgres", other);
+    expect(visibleToOther.map((c) => c.id)).not.toContain(conn.id);
+    expect(effectiveAccess({ user: other, conn })).toBe("none");
+
+    // Admin sees everything.
+    const visibleToAdmin = listConnectionsForUser("postgres", admin);
+    expect(visibleToAdmin.map((c) => c.id)).toContain(conn.id);
   });
 });
 

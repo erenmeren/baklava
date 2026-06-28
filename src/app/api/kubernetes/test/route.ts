@@ -3,6 +3,7 @@ import { saveConnection, publicView } from "@/lib/connections/store";
 import type { KubernetesConfig } from "@/lib/connections/types";
 import { formatError } from "@/lib/errors";
 import { dropKubernetesClient, probe } from "@/lib/connections/kubernetes";
+import { getCurrentUser } from "@/lib/auth/current-user";
 
 export const runtime = "nodejs";
 
@@ -57,6 +58,7 @@ export async function POST(req: NextRequest) {
           name: body.name || "Cluster",
           config: body.config,
           status: "ok",
+          ownerId: getCurrentUser(req)?.id,
         })
       : null;
     return NextResponse.json({

@@ -1,5 +1,23 @@
 import { SESSION_COOKIE, userIdFromToken } from "./session";
 import { getUserById, type UserRecord } from "./users";
+import { isAuthEnabled } from "./store";
+
+// When the password gate is OFF, Baklava is a single-user, full-trust console:
+// the proxy returns early without establishing a session, so there's no cookie
+// to resolve. To keep every getCurrentUser/requireUser/requireAdmin caller
+// working exactly like the pre-RBAC single-user mode, we synthesize a stable
+// admin. `effectiveAccess` already returns "write" for role "admin", so this
+// also makes connection access unrestricted while the gate is off.
+const LOCAL_ADMIN: UserRecord = {
+  id: "__local_admin__",
+  username: "local",
+  role: "admin",
+  disabled: false,
+  createdAt: 0,
+  updatedAt: 0,
+  passwordHash: "",
+  salt: "",
+};
 
 // Resolve the authenticated user from a request's session cookie. The cookie
 // carries `<sessionId>.<hmac>`; userIdFromToken HMAC-verifies it and returns the
@@ -29,6 +47,9 @@ function readCookie(header: string | null, name: string): string | undefined {
 
 /** The current user, or null if the request is unauthenticated/invalid. */
 export function getCurrentUser(req: { headers: Headers }): UserRecord | null {
+  // Gate off = single-user full trust. Act as a synthetic admin so data routes,
+  // the AI gate, and the users/access APIs all behave like pre-RBAC mode.
+  if (!isAuthEnabled()) return LOCAL_ADMIN;
   const token = readCookie(req.headers.get("cookie"), SESSION_COOKIE);
   if (!token) return null;
   const id = userIdFromToken(token);

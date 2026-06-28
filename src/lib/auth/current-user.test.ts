@@ -154,6 +154,37 @@ describe("requireAdmin", () => {
   });
 });
 
+describe("gate off (isAuthEnabled() === false) acts as a synthetic admin", () => {
+  it("getCurrentUser returns the synthetic admin even with no cookie", async () => {
+    const { cu } = await load();
+    const store = await import("./store");
+    store.setAuthEnabled(false);
+    try {
+      const got = cu.getCurrentUser(new Request("http://localhost/x"));
+      expect(got).not.toBeNull();
+      expect(got?.id).toBe("__local_admin__");
+      expect(got?.role).toBe("admin");
+      expect(got?.disabled).toBe(false);
+    } finally {
+      store.setAuthEnabled(true); // restore the gate
+    }
+  });
+
+  it("requireUser and requireAdmin do not throw when the gate is off", async () => {
+    const { cu } = await load();
+    const store = await import("./store");
+    store.setAuthEnabled(false);
+    try {
+      const req = new Request("http://localhost/x");
+      expect(() => cu.requireUser(req)).not.toThrow();
+      expect(() => cu.requireAdmin(req)).not.toThrow();
+      expect(cu.requireAdmin(req).id).toBe("__local_admin__");
+    } finally {
+      store.setAuthEnabled(true);
+    }
+  });
+});
+
 describe("authErrorResponse", () => {
   it("maps an AuthError to a JSON Response with its status", async () => {
     const { cu } = await load();
