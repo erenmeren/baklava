@@ -84,9 +84,8 @@ export async function POST(req: NextRequest) {
   // against a dummy record so the timing matches the user-exists path. We never
   // reveal whether the username exists or the password was simply wrong — the
   // 401 body is identical in every failure case.
-  const ok = user
-    ? !user.disabled && verifyUserPassword(user, password)
-    : (verifyUserPassword(DUMMY_USER, password), false);
+  const passwordOk = verifyUserPassword(user ?? DUMMY_USER, password);
+  const ok = !!user && !user.disabled && passwordOk;
 
   if (!ok || !user) {
     recordFailure(key);

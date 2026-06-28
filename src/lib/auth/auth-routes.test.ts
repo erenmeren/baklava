@@ -168,6 +168,46 @@ describe("auth routes (multi-user)", () => {
     expect(await res.json()).toEqual({ error: "Invalid credentials" });
   });
 
+  it("disabled-user login still runs the scrypt cost path (no timing oracle)", async () => {
+    await runSetup("admin", "hunter2");
+    const users = await import("@/lib/auth/users");
+    const bob = users.createUser({ username: "bob", password: "bobpw", role: "member" });
+    users.updateUser(bob.id, { disabled: true });
+
+    // The login route must verify the password even for a disabled user so the
+    // response timing doesn't reveal that the account is disabled.
+    const spy = vi.spyOn(users, "verifyUserPassword");
+    try {
+      const res = await runLogin({ username: "bob", password: "bobpw" });
+      expect(res.status).toBe(401);
+      expect(await res.json()).toEqual({ error: "Invalid credentials" });
+      expect(spy).toHaveBeenCalled();
+      // it was called against the resolved (disabled) user, not the dummy record
+      expect(spy.mock.calls.some(([u]) => (u as { id?: string })?.id === bob.id)).toBe(
+        true,
+      );
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("disabled-user 401 body is byte-identical to the unknown-user 401", async () => {
+    await runSetup("admin", "hunter2");
+    const { createUser, updateUser } = await import("@/lib/auth/users");
+    const bob = createUser({ username: "bob", password: "bobpw", role: "member" });
+    updateUser(bob.id, { disabled: true });
+
+    const disabled = await runLogin({ username: "bob", password: "bobpw" });
+    const unknown = await runLogin({ username: "ghost", password: "whatever" });
+
+    expect(disabled.status).toBe(401);
+    expect(unknown.status).toBe(401);
+    expect(JSON.stringify(await disabled.json())).toBe(
+      JSON.stringify(await unknown.json()),
+    );
+    expect(cookieToken(disabled)).toBeNull();
+  });
+
   it("change-password verifies current, rotates, and keeps this device logged in", async () => {
     const setup = await runSetup("admin", "hunter2");
     const token = cookieToken(setup)!;
@@ -198,6 +238,34 @@ describe("auth routes (multi-user)", () => {
     expect(oldPw.status).toBe(401);
     const newPw = await runLogin({ username: "admin", password: "new1" });
     expect(newPw.status).toBe(200);
+  });
+
+  it("change-password logs out the user's other devices", async () => {
+    await runSetup("admin", "hunter2");
+    const { getUserByUsername } = await import("@/lib/auth/users");
+    const { createSessionToken, verifySessionToken } = await import(
+      "@/lib/auth/session"
+    );
+    const admin = getUserByUsername("admin")!;
+
+    // Two independent devices for the same user.
+    const tokenA = createSessionToken(admin.id, "device-a");
+    const tokenB = createSessionToken(admin.id, "device-b");
+    expect(verifySessionToken(tokenA)).toBe(true);
+    expect(verifySessionToken(tokenB)).toBe(true);
+
+    // Rotate the password authenticated as device A.
+    const res = await runChangePassword(
+      { currentPassword: "hunter2", newPassword: "new1" },
+      `${SESSION_COOKIE}=${tokenA}`,
+    );
+    expect(res.status).toBe(200);
+
+    // Device B is logged out; device A receives a fresh, valid cookie.
+    expect(verifySessionToken(tokenB)).toBe(false);
+    const freshToken = cookieToken(res);
+    expect(freshToken).toBeTruthy();
+    expect(verifySessionToken(freshToken)).toBe(true);
   });
 
   it("change-password 401s with no session", async () => {
