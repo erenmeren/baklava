@@ -23,6 +23,12 @@ export interface ConnectionRecord<C = unknown> {
   lastError?: string;
   createdAt: number;
   lastTestedAt?: number;
+  /**
+   * User id of the connection's owner (RBAC). Optional for backwards
+   * compatibility — legacy rows written before ownership existed have no
+   * owner and are treated as admin-only by `listConnectionsForUser`.
+   */
+  ownerId?: string;
 }
 
 export interface DockerConfig {
