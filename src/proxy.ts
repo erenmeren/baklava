@@ -131,6 +131,6 @@ export const config = {
   // Run on everything except Next internals and static assets (incl. the public
   // /icons and /fonts dirs). RSC/page/API requests are all gated by the fn.
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|icons|fonts|.*\\.(?:png|jpg|jpeg|gif|svg|webp|ico|woff|woff2|ttf|css|js|map)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|icons|fonts|.*\\.(?:png|jpg|jpeg|gif|svg|webp|ico|woff|woff2|ttf|css|js|map)$).*)",
   ],
 };

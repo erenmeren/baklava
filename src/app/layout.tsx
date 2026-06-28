@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import { cookies } from "next/headers";
 import "./globals.css";
@@ -44,6 +44,17 @@ export const metadata: Metadata = {
   title: "Baklava — one console for every layer of your stack",
   description:
     "Open-source unified UI for Docker, Kafka, PostgreSQL and the rest of your stack. Connect, browse, run.",
+  openGraph: {
+    title: "Baklava — one console for every layer of your stack",
+    description:
+      "Open-source unified UI for Docker, Kafka, PostgreSQL and the rest of your stack. Connect, browse, run.",
+    images: ["/og-image.png"],
+  },
+};
+
+// Brand "ink" background (#1E2327) from the brand pack (baklava-brand/README.md).
+export const viewport: Viewport = {
+  themeColor: "#1E2327",
 };
 
 export default async function RootLayout({
