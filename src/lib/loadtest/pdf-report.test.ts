@@ -4,6 +4,7 @@ import type { LoadTest, LoadTestRun } from "./store";
 
 const test: LoadTest = {
   id: "t1",
+  ownerId: "user-1",
   name: "Checkout API",
   createdAt: 0,
   updatedAt: 0,

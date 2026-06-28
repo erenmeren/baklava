@@ -45,7 +45,7 @@ describe("executeRun", () => {
 
   it("runs, streams progress+result, and persists status from passed", async () => {
     const { store, controller } = await fresh(dataDir);
-    const test = store.saveLoadTest({ name: "T", config: CONFIG });
+    const test = store.saveLoadTest("user-rc", { name: "T", config: CONFIG });
     const events: string[] = [];
     const runner = async (_config: unknown, opts: { onProgress?: (p: { line: string }) => void }) => {
       opts.onProgress?.({ line: "running 1/1" });
@@ -62,12 +62,12 @@ describe("executeRun", () => {
     );
     expect(run.status).toBe("passed");
     expect(events).toEqual(["p:running 1/1", "result"]);
-    expect(store.getRun(test.id, run.id)?.result?.rps).toBe(5);
+    expect(store.getRun(test.id, "user-rc", run.id)?.result?.rps).toBe(5);
   });
 
   it("persists status 'failed' when result.passed is false", async () => {
     const { store, controller } = await fresh(dataDir);
-    const test = store.saveLoadTest({ name: "T", config: CONFIG });
+    const test = store.saveLoadTest("user-rc", { name: "T", config: CONFIG });
     const run = await controller.executeRun(
       test,
       { onProgress: () => {}, onResult: () => {}, onError: () => {} },
@@ -78,7 +78,7 @@ describe("executeRun", () => {
 
   it("emits error and persists 'error' when the runner throws", async () => {
     const { store, controller } = await fresh(dataDir);
-    const test = store.saveLoadTest({ name: "T", config: CONFIG });
+    const test = store.saveLoadTest("user-rc", { name: "T", config: CONFIG });
     let errMsg = "";
     const run = await controller.executeRun(
       test,
@@ -91,12 +91,12 @@ describe("executeRun", () => {
     );
     expect(run.status).toBe("error");
     expect(errMsg).toMatch(/docker down/);
-    expect(store.getRun(test.id, run.id)?.error).toMatch(/docker down/);
+    expect(store.getRun(test.id, "user-rc", run.id)?.error).toMatch(/docker down/);
   });
 
   it("persists 'cancelled' when the signal is aborted", async () => {
     const { store, controller } = await fresh(dataDir);
-    const test = store.saveLoadTest({ name: "T", config: CONFIG });
+    const test = store.saveLoadTest("user-rc", { name: "T", config: CONFIG });
     const ac = new AbortController();
     ac.abort();
     const run = await controller.executeRun(

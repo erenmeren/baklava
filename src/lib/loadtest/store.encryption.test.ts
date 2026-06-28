@@ -20,7 +20,7 @@ afterEach(() => {
 describe("loadtest store encryption", () => {
   it("persists bearer tokens encrypted", async () => {
     const store = await import("./store");
-    store.saveLoadTest({
+    store.saveLoadTest("user-enc", {
       name: "t",
       config: {
         target: { baseUrl: "http://example.com" },
@@ -36,6 +36,6 @@ describe("loadtest store encryption", () => {
 
     delete (globalThis as Record<symbol, unknown>)[Symbol.for("baklava.loadtestStore")];
     const store2 = await import("./store");
-    expect(store2.listLoadTests()[0].name).toBe("t");
+    expect(store2.listLoadTests("user-enc")[0].name).toBe("t");
   });
 });

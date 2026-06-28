@@ -30,7 +30,10 @@ export async function executeRun(
 ): Promise<LoadTestRun> {
   const runner = opts.runner ?? runLoadTest;
   const { config, env } = toEngineConfig(test.config, test.name);
-  const run = appendRun(test.id, { startedAt: Date.now(), status: "running" });
+  // `test` is already the caller-owned record (resolved via getLoadTest in the
+  // route), so its ownerId is the correct scope for the run accessors.
+  const owner = test.ownerId;
+  const run = appendRun(test.id, owner, { startedAt: Date.now(), status: "running" });
 
   try {
     const result = await runner(config, {
@@ -39,17 +42,21 @@ export async function executeRun(
       onProgress: (p) => events.onProgress(p.line),
     });
     events.onResult(result);
-    return updateRun(test.id, run.id, {
+    return updateRun(test.id, owner, run.id, {
       status: result.passed ? "passed" : "failed",
       result,
       finishedAt: Date.now(),
     })!;
   } catch (err) {
     if (opts.signal?.aborted) {
-      return updateRun(test.id, run.id, { status: "cancelled", finishedAt: Date.now() })!;
+      return updateRun(test.id, owner, run.id, { status: "cancelled", finishedAt: Date.now() })!;
     }
     const message = formatError(err);
     events.onError(message);
-    return updateRun(test.id, run.id, { status: "error", error: message, finishedAt: Date.now() })!;
+    return updateRun(test.id, owner, run.id, {
+      status: "error",
+      error: message,
+      finishedAt: Date.now(),
+    })!;
   }
 }

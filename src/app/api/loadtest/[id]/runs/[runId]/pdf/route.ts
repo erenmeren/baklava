@@ -1,3 +1,4 @@
+import { getCurrentUser } from "@/lib/auth/current-user";
 import { getLoadTest, getRun } from "@/lib/loadtest/store";
 import { renderRunPdf } from "@/lib/loadtest/pdf-report";
 import { exportFilename } from "@/lib/loadtest/run-export";
@@ -9,10 +10,12 @@ interface RouteContext {
   params: Promise<{ id: string; runId: string }>;
 }
 
-export async function GET(_req: Request, ctx: RouteContext) {
+export async function GET(req: Request, ctx: RouteContext) {
+  const user = getCurrentUser(req);
+  if (!user) return Response.json({ error: "Not authenticated" }, { status: 401 });
   const { id, runId } = await ctx.params;
-  const test = getLoadTest(id);
-  const run = test ? getRun(id, runId) : undefined;
+  const test = getLoadTest(id, user.id);
+  const run = test ? getRun(id, user.id, runId) : undefined;
   if (!test || !run) {
     return Response.json({ error: "not found" }, { status: 404 });
   }
