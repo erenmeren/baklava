@@ -18,6 +18,10 @@ export default async function globalSetup() {
 
   const ctx = await request.newContext({ baseURL });
   try {
+    // Password-only login: after the RBAC migration the seeded BAKLAVA_INITIAL_PASSWORD
+    // becomes a single `admin` user, and the login route accepts password-only while
+    // exactly one enabled user exists — so this keeps working unchanged. The session
+    // we persist here is that migrated `admin` (the user every spec runs as).
     const res = await ctx.post("/api/auth/login", { data: { password } });
     if (!res.ok()) {
       throw new Error(

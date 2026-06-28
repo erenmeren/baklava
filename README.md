@@ -90,6 +90,21 @@ Because Baklava can read every stored credential and run destructive queries, it
 
 The password is hashed (scrypt) and stored in `~/.baklava/auth.json`. It never leaves the server.
 
+### Users & roles
+
+Baklava supports **multiple users**. Each user has a username, a password, and a **role**:
+
+- **admin** — full control: manages users, sees and edits every connection, and changes console-wide settings.
+- **member** — can only use the connections an admin has granted them, and never sees the **Users** tab.
+
+**Per-connection access.** A connection's owner and any admin always have full (write) access. For everyone else an admin grants **read** or **write** per connection — members only see connections they've been granted, and can't reach others even by guessing the URL.
+
+**Logging in.** You sign in with a **username and password**. As a convenience, while there's only **one** user the login page accepts the password alone (no username needed).
+
+**Upgrading from a single-password install.** The first time a console with an existing password starts on this version, it **auto-migrates** to an admin user named **`admin`** that reuses your existing password — so your current password keeps working, you just sign in as `admin`. (All devices are signed out once during the migration; just sign in again.) Add and manage more users under **Settings → Users** (admins only).
+
+User records live in `~/.baklava/users.json` and access grants in `~/.baklava/connection-access.json`, both **encrypted at rest** like the rest of `~/.baklava`. Passwords are scrypt-hashed and never leave the server.
+
 ### AI assistant safety controls
 
 The `/assistant` page lets you run a natural-language agent over your connections. A few safeguards keep it from going rogue:
