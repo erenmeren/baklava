@@ -18,6 +18,11 @@ export function WorkspacePage({
         className="px-6 py-4 border-b border-border/60 flex items-start justify-between gap-4 shrink-0"
       >
         <span data-slot="panel-dots" aria-hidden className="hidden" />
+        {typeof title === "string" ? (
+          <span data-slot="panel-label" aria-hidden className="hidden">
+            {title}
+          </span>
+        ) : null}
         <div className="min-w-0">
           <h1 className="text-xl font-semibold truncate">{title}</h1>
           {description ? (
