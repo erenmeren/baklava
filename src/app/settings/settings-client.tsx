@@ -47,8 +47,8 @@ export function SettingsClient() {
           </p>
         ) : null}
         <p className="mt-1.5 max-w-prose text-sm text-muted-foreground">
-          Connect a model provider and decide, per connection, what the
-          assistant is allowed to do — and when it must ask first.
+          Manage your model provider, per-connection assistant permissions,
+          console security and sessions{me?.role === "admin" ? ", and the people who can sign in" : ""}.
         </p>
       </header>
 

@@ -1,7 +1,7 @@
-import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { scryptSync, randomBytes, timingSafeEqual } from "node:crypto";
+import { readSecretFileSync, writeSecretFileSync } from "@/lib/crypto/secret-file";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Single-password auth state.
@@ -44,6 +44,14 @@ function hashPassword(password: string, saltHex: string): string {
   ).toString("hex");
 }
 
+/** Build an ENOENT-coded error so the load() catch routes a missing file to the
+ *  fresh-state seed path (matching the previous fs.readFileSync ENOENT behavior). */
+function makeEnoent(): NodeJS.ErrnoException {
+  const e = new Error("auth.json not found") as NodeJS.ErrnoException;
+  e.code = "ENOENT";
+  return e;
+}
+
 function freshState(): AuthState {
   const salt = randomBytes(16).toString("hex");
   const seed = process.env.BAKLAVA_INITIAL_PASSWORD;
@@ -65,10 +73,10 @@ function freshState(): AuthState {
 const CACHE_KEY = Symbol.for("baklava.authState");
 
 function persist(state: AuthState): void {
-  fs.mkdirSync(DATA_DIR, { recursive: true, mode: 0o700 });
-  const tmp = `${FILE}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(state, null, 2), { mode: 0o600 });
-  fs.renameSync(tmp, FILE);
+  // writeSecretFileSync encrypts to an envelope, writes 0o600 atomically
+  // (temp + rename), creates the data dir, and backs up any legacy plaintext /
+  // unreadable file before overwriting.
+  writeSecretFileSync(FILE, JSON.stringify(state, null, 2));
   (globalThis as Record<symbol, AuthState | undefined>)[CACHE_KEY] = state;
 }
 
@@ -79,7 +87,11 @@ function load(): AuthState {
 
   let state: AuthState;
   try {
-    const parsed = JSON.parse(fs.readFileSync(FILE, "utf8")) as AuthState;
+    // readSecretFileSync decrypts an envelope, transparently passes through a
+    // legacy plaintext file, and returns null when the file is absent (ENOENT).
+    const text = readSecretFileSync(FILE);
+    if (text === null) throw makeEnoent();
+    const parsed = JSON.parse(text) as AuthState;
     if (
       !parsed ||
       typeof parsed.passwordHash !== "string" ||
