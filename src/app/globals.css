@@ -404,6 +404,34 @@
     13px 0 0 #a6c85c,
     26px 0 0 var(--muted-foreground);
 }
+/* Mono "filename"-style window label next to the dots. */
+:root.theme-phosphor [data-slot="panel-label"] {
+  display: block;
+  position: absolute;
+  top: 0.5rem;
+  left: 3.6rem;
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--muted-foreground);
+}
+
+/* Tables & logs: mono data, zebra rows at low opacity. */
+:root.theme-phosphor [data-slot="table"] {
+  font-family: var(--font-mono);
+}
+:root.theme-phosphor [data-slot="table-body"] [data-slot="table-row"]:nth-child(even) {
+  background: color-mix(in oklab, var(--muted) 45%, transparent);
+}
+
+/* Active nav / current page: amber. */
+:root.theme-phosphor [aria-current="page"] {
+  color: var(--brand);
+}
 
 /* CRT scanline overlay — opt-in (default off), readability-first, no motion. */
 .crt-overlay {
