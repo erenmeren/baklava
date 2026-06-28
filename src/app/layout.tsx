@@ -10,10 +10,13 @@ import { ThemeSelector } from "@/components/theme-selector";
 import {
   THEME_COOKIE,
   PALETTE_COOKIE,
+  CRT_COOKIE,
   readTheme,
   readPalette,
+  readCrt,
   htmlThemeClasses,
 } from "@/lib/theme";
+import { CrtOverlay } from "@/components/crt-overlay";
 import { BrandMark } from "@/components/brand-mark";
 import { ConnectionTabs } from "@/components/connection-tabs";
 import { GlobalCommandPalette } from "@/components/command-palette/global-command-palette";
@@ -72,6 +75,7 @@ export default async function RootLayout({
   const cookieStore = await cookies();
   const theme = readTheme(cookieStore.get(THEME_COOKIE)?.value);
   const palette = readPalette(cookieStore.get(PALETTE_COOKIE)?.value);
+  const scanlines = readCrt(cookieStore.get(CRT_COOKIE)?.value);
   const themeClass = htmlThemeClasses(theme, palette);
 
   // App chrome (tabs, palette, settings…) renders when the gate is off, or for
@@ -89,7 +93,12 @@ export default async function RootLayout({
       className={`${geistSans.variable} ${jetbrainsMono.variable} ${themeClass} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-background text-foreground">
-        <ThemeProvider initialTheme={theme} initialPalette={palette}>
+        <ThemeProvider
+          initialTheme={theme}
+          initialPalette={palette}
+          initialScanlines={scanlines}
+        >
+          <CrtOverlay />
           <TooltipProvider delay={150}>
             {showChrome ? (
             <header className="sticky top-0 z-30 border-b border-border/60 bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/65">

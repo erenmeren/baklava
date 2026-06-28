@@ -9,6 +9,8 @@ import {
   DropdownMenuContent,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuCheckboxItem,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
@@ -29,7 +31,7 @@ const PALETTES: { value: Palette; label: string; hint: string; swatch: string[] 
 
 /** Palette switcher (Classic ↔ Phosphor), independent of the light/dark toggle. */
 export function ThemeSelector() {
-  const { palette, setPalette } = useTheme();
+  const { palette, setPalette, scanlines, setScanlines } = useTheme();
 
   return (
     <DropdownMenu>
@@ -76,6 +78,17 @@ export function ThemeSelector() {
             </DropdownMenuRadioItem>
           ))}
         </DropdownMenuRadioGroup>
+        {palette === "phosphor" ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuCheckboxItem
+              checked={scanlines}
+              onCheckedChange={(v) => setScanlines(Boolean(v))}
+            >
+              CRT scanlines
+            </DropdownMenuCheckboxItem>
+          </>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   );
