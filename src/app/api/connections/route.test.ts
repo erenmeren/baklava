@@ -6,15 +6,33 @@ import { NextRequest } from "next/server";
 
 async function freshRoutes(dataDir: string) {
   process.env.BAKLAVA_DATA_DIR = dataDir;
-  const sym = Symbol.for("baklava.connectionStore");
-  delete (globalThis as Record<symbol, unknown>)[sym];
+  for (const name of [
+    "baklava.connectionStore",
+    "baklava.usersStore",
+    "baklava.sessionStore",
+    "baklava.authState",
+    "baklava.connectionAccess",
+  ]) {
+    delete (globalThis as Record<symbol, unknown>)[Symbol.for(name)];
+  }
   vi.resetModules();
-  const [listRoute, idRoute, store] = await Promise.all([
+  const [listRoute, idRoute, store, users, session] = await Promise.all([
     import("./route"),
     import("./[id]/route"),
     import("@/lib/connections/store"),
+    import("@/lib/auth/users"),
+    import("@/lib/auth/session"),
   ]);
-  return { listRoute, idRoute, store };
+  // The list route now requires an authenticated user; seed an admin (who sees
+  // every connection) and hand back a ready-to-use session cookie token.
+  const admin = users.createUser({ username: "admin", password: "pw", role: "admin" });
+  const adminToken = session.createSessionToken(admin.id);
+  return { listRoute, idRoute, store, users, session, adminToken };
+}
+
+const SESSION_COOKIE_NAME = "baklava_session";
+function withCookie(url: string, token: string): NextRequest {
+  return new NextRequest(url, { headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` } });
 }
 
 describe("GET /api/connections", () => {
@@ -26,8 +44,14 @@ describe("GET /api/connections", () => {
     rmSync(dataDir, { recursive: true, force: true });
   });
 
+  it("returns 401 when unauthenticated", async () => {
+    const { listRoute } = await freshRoutes(dataDir);
+    const res = await listRoute.GET(new NextRequest("http://localhost/api/connections"));
+    expect(res.status).toBe(401);
+  });
+
   it("returns the public view of every connection (no plaintext passwords)", async () => {
-    const { listRoute, store } = await freshRoutes(dataDir);
+    const { listRoute, store, adminToken } = await freshRoutes(dataDir);
     store.saveConnection({
       tech: "postgres",
       name: "PG",
@@ -57,7 +81,7 @@ describe("GET /api/connections", () => {
     });
 
     const res = await listRoute.GET(
-      new NextRequest("http://localhost/api/connections"),
+      withCookie("http://localhost/api/connections", adminToken),
     );
     const body = await res.json();
     expect(body.connections).toHaveLength(2);
@@ -70,7 +94,7 @@ describe("GET /api/connections", () => {
   });
 
   it("filters by ?tech=... when provided", async () => {
-    const { listRoute, store } = await freshRoutes(dataDir);
+    const { listRoute, store, adminToken } = await freshRoutes(dataDir);
     store.saveConnection({
       tech: "postgres",
       name: "p",
@@ -84,7 +108,7 @@ describe("GET /api/connections", () => {
       status: "ok",
     });
     const res = await listRoute.GET(
-      new NextRequest("http://localhost/api/connections?tech=postgres"),
+      withCookie("http://localhost/api/connections?tech=postgres", adminToken),
     );
     const body = await res.json();
     expect(body.connections).toHaveLength(1);

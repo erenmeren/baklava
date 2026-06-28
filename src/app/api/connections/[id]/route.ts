@@ -14,6 +14,7 @@ import { dropR2Client } from "@/lib/connections/r2";
 import { dropMinioClient } from "@/lib/connections/minio";
 import { dropS3Client } from "@/lib/connections/s3-aws";
 import { dropPostgresPools } from "@/lib/connections/postgres";
+import { dropConnectionGrants } from "@/lib/connections/access";
 import { deletePolicy } from "@/lib/ai/policy-store";
 
 export const runtime = "nodejs";
@@ -86,5 +87,6 @@ export async function DELETE(_req: Request, ctx: RouteContext) {
     dropPostgresPools(record.config as import("@/lib/connections/types").PostgresConfig);
   }
   deletePolicy(id);
+  dropConnectionGrants(id);
   return NextResponse.json({ ok: true });
 }
