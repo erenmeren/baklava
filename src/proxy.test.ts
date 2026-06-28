@@ -118,6 +118,11 @@ describe("connectionIdFromPath", () => {
     expect(connectionIdFromPath("/api/docker/c2", techIds)).toBe("c2");
   });
 
+  it("matches /api/dashboard/<id>/... (non-tech connection-scoped prefix)", () => {
+    expect(connectionIdFromPath("/api/dashboard/c1/health", techIds)).toBe("c1");
+    expect(connectionIdFromPath("/api/dashboard/c1", techIds)).toBe("c1");
+  });
+
   it("matches workspace pages /<tech>/<id>/...", () => {
     expect(connectionIdFromPath("/postgres/c1/tables", techIds)).toBe("c1");
     expect(connectionIdFromPath("/docker/c2", techIds)).toBe("c2");
@@ -217,6 +222,22 @@ describe("proxy() connection-access gate", () => {
     const ctx = await seed();
     const res = ctx.proxy.proxy(
       req(`http://localhost/api/postgres/does-not-exist/query`, { token: ctx.strangerToken }),
+    );
+    expect(res.headers.get("x-middleware-next")).toBe("1");
+  });
+
+  it("member with no grant hitting another's /api/dashboard/<id>/health → 403", async () => {
+    const ctx = await seed();
+    const res = ctx.proxy.proxy(
+      req(`http://localhost/api/dashboard/${ctx.conn.id}/health`, { token: ctx.strangerToken }),
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it("owner hitting /api/dashboard/<id>/health → passes", async () => {
+    const ctx = await seed();
+    const res = ctx.proxy.proxy(
+      req(`http://localhost/api/dashboard/${ctx.conn.id}/health`, { token: ctx.ownerToken }),
     );
     expect(res.headers.get("x-middleware-next")).toBe("1");
   });

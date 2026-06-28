@@ -26,6 +26,11 @@ export function connectionIdFromPath(
   if (m) return m[1];
   m = pathname.match(/^\/api\/ai\/connections\/([^/]+)(?:\/.*)?$/);
   if (m) return m[1];
+  // Connection-scoped routes whose first path segment is NOT a tech id (so the
+  // generic `/api/<tech>/<id>` branch below won't catch them). Keep this list in
+  // sync with any new such route — see AGENTS.md.
+  m = pathname.match(/^\/api\/dashboard\/([^/]+)(?:\/.*)?$/);
+  if (m) return m[1];
   m = pathname.match(/^\/api\/([^/]+)\/([^/]+)(?:\/.*)?$/);
   if (m && techIds.has(m[1])) return m[2];
   m = pathname.match(/^\/([^/]+)\/([^/]+)(?:\/.*)?$/);
