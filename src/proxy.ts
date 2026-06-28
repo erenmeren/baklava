@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { SESSION_COOKIE, verifySessionToken } from "@/lib/auth/session";
-import { needsSetup, isAuthEnabled } from "@/lib/auth/store";
+import { isAuthEnabled } from "@/lib/auth/store";
+import { needsSetup } from "@/lib/auth/users";
 
 // Next 16 renamed `middleware` → `proxy`. It defaults to the Node.js runtime,
 // so it can verify the HMAC-signed session cookie against the on-disk secret
