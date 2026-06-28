@@ -299,16 +299,23 @@ export function AssistantClient() {
       <section className="flex-1 min-w-0 flex flex-col">
         <header className="flex items-center justify-between gap-2 border-b border-border/60 px-4 py-2">
           <WorkingSet connections={setConns} policies={policies} onRemove={removeConn} onPolicyChange={changePolicy} />
-          <button
-            onClick={() => void toggleAiPaused()}
-            title={aiPaused ? "AI actions paused — click to resume" : "Pause AI actions"}
-            className={aiPaused ? "inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-medium bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-900/40 dark:text-amber-400 shrink-0" : "inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground hover:text-foreground shrink-0"}
-          >
-            {aiPaused ? <><Play className="size-3" /> Resume AI</> : <><Pause className="size-3" /> Pause AI</>}
-          </button>
-          <button onClick={() => setSettingsOpen(true)} title="AI settings" className="text-muted-foreground hover:text-foreground shrink-0">
-            <Settings2 className="size-4" />
-          </button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              onClick={() => void toggleAiPaused()}
+              title={aiPaused ? "AI actions paused — click to resume" : "Pause AI actions"}
+              className={aiPaused ? "inline-flex items-center gap-1 rounded-md border border-amber-500/40 px-2 py-1 text-xs font-medium bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-900/40 dark:text-amber-400" : "inline-flex items-center gap-1 rounded-md border border-border/60 px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"}
+            >
+              {aiPaused ? <><Play className="size-3" /> Resume AI</> : <><Pause className="size-3" /> Pause AI</>}
+            </button>
+            <button
+              onClick={() => setSettingsOpen(true)}
+              title="AI settings"
+              aria-label="AI settings"
+              className="inline-flex items-center justify-center rounded-md border border-border/60 size-7 text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <Settings2 className="size-4" />
+            </button>
+          </div>
         </header>
         <div className="flex-1 min-h-0 overflow-y-auto p-4">
           {loadingConv ? (
@@ -344,11 +351,11 @@ export function AssistantClient() {
               className="flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm"
             />
             {busy ? (
-              <button onClick={stop} className="inline-flex items-center justify-center rounded-md bg-destructive px-3 text-white">
+              <button onClick={stop} title="Stop generating" aria-label="Stop generating" className="inline-flex items-center justify-center rounded-md bg-destructive px-3 text-white">
                 <Square className="size-4" />
               </button>
             ) : (
-              <button onClick={() => void send()} disabled={!input.trim()} className="inline-flex items-center justify-center rounded-md bg-brand px-3 text-white disabled:opacity-50">
+              <button onClick={() => void send()} disabled={!input.trim()} title="Send message" aria-label="Send message" className="inline-flex items-center justify-center rounded-md bg-brand px-3 text-white disabled:opacity-50">
                 <Send className="size-4" />
               </button>
             )}
