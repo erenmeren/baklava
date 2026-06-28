@@ -445,6 +445,70 @@ describe("connection store", () => {
       expect(store.listConnections()).toHaveLength(3);
     });
   });
+
+  // ──────────────────────────────────────────────────────────────────────
+  describe("ownerId + listConnectionsForUser", () => {
+    const admin = { id: "u-admin", role: "admin" as const };
+    const alice = { id: "u-alice", role: "member" as const };
+    const bob = { id: "u-bob", role: "member" as const };
+
+    function resetAccessCache() {
+      delete (globalThis as Record<symbol, unknown>)[
+        Symbol.for("baklava.connectionAccess")
+      ];
+    }
+
+    it("saveConnection records the ownerId when provided", async () => {
+      const store = await freshStore(dataDir);
+      const c = store.saveConnection({
+        tech: "postgres",
+        name: "owned",
+        config: POSTGRES_SAMPLE,
+        status: "ok",
+        ownerId: alice.id,
+      });
+      expect(c.ownerId).toBe(alice.id);
+      expect(store.getConnection(c.id)?.ownerId).toBe(alice.id);
+    });
+
+    it("admin sees all connections regardless of owner", async () => {
+      resetAccessCache();
+      const store = await freshStore(dataDir);
+      store.saveConnection({ tech: "postgres", name: "a", config: POSTGRES_SAMPLE, status: "ok", ownerId: alice.id });
+      store.saveConnection({ tech: "postgres", name: "b", config: POSTGRES_SAMPLE, status: "ok", ownerId: bob.id });
+      store.saveConnection({ tech: "postgres", name: "legacy", config: POSTGRES_SAMPLE, status: "ok" });
+      expect(store.listConnectionsForUser(undefined, admin)).toHaveLength(3);
+    });
+
+    it("member sees owned ∪ granted, legacy (no owner) excluded", async () => {
+      resetAccessCache();
+      const store = await freshStore(dataDir);
+      const access = await import("./access");
+      access._resetAccessCacheForTests();
+
+      const owned = store.saveConnection({ tech: "postgres", name: "owned", config: POSTGRES_SAMPLE, status: "ok", ownerId: alice.id });
+      const granted = store.saveConnection({ tech: "postgres", name: "granted", config: POSTGRES_SAMPLE, status: "ok", ownerId: bob.id });
+      store.saveConnection({ tech: "postgres", name: "bobs", config: POSTGRES_SAMPLE, status: "ok", ownerId: bob.id });
+      store.saveConnection({ tech: "postgres", name: "legacy", config: POSTGRES_SAMPLE, status: "ok" });
+
+      access.setGrants(granted.id, { [alice.id]: "read" });
+
+      const visible = store.listConnectionsForUser(undefined, alice);
+      const ids = visible.map((c) => c.id).sort();
+      expect(ids).toEqual([owned.id, granted.id].sort());
+    });
+
+    it("member listing respects the tech filter", async () => {
+      resetAccessCache();
+      const store = await freshStore(dataDir);
+      const access = await import("./access");
+      access._resetAccessCacheForTests();
+      store.saveConnection({ tech: "postgres", name: "p", config: POSTGRES_SAMPLE, status: "ok", ownerId: alice.id });
+      store.saveConnection({ tech: "kafka", name: "k", config: KAFKA_SAMPLE, status: "ok", ownerId: alice.id });
+      expect(store.listConnectionsForUser("postgres", alice)).toHaveLength(1);
+      expect(store.listConnectionsForUser("kafka", alice)).toHaveLength(1);
+    });
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

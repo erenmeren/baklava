@@ -13,7 +13,7 @@ interface LayoutProps {
 
 export default async function LoadTestWorkspaceLayout({ params, children }: LayoutProps) {
   const { testId } = await params;
-  const test = requireLoadTest(testId);
+  const test = await requireLoadTest(testId);
   const tech = getTech("loadtest")!;
   return (
     <WorkspaceShell

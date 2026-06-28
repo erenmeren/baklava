@@ -3,6 +3,7 @@ import { probePostgres } from "@/lib/connections/postgres";
 import { saveConnection, publicView } from "@/lib/connections/store";
 import type { PostgresConfig } from "@/lib/connections/types";
 import { formatError } from "@/lib/errors";
+import { getCurrentUser } from "@/lib/auth/current-user";
 
 export const runtime = "nodejs";
 
@@ -34,6 +35,7 @@ export async function POST(req: NextRequest) {
           name: body.name || "Postgres",
           config: body.config,
           status: "ok",
+          ownerId: getCurrentUser(req)?.id,
         })
       : null;
     return NextResponse.json({

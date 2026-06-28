@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { getAuthSecret } from "./store";
-import { createSession, verifySession, revokeSession } from "./sessions";
+import { createSession, verifySession, getSession, revokeSession } from "./sessions";
 
 // The cookie carries `<sessionId>.<hmac(sessionId)>`. The HMAC (per-install auth
 // secret) is a cheap pre-filter to reject forged/garbage ids before a store
@@ -26,8 +26,8 @@ export function sessionIdFromToken(token: string | undefined | null): string | n
   return id;
 }
 
-export function createSessionToken(userAgent = ""): string {
-  const rec = createSession(userAgent);
+export function createSessionToken(userId: string, userAgent = ""): string {
+  const rec = createSession(userId, userAgent);
   return `${rec.id}.${sign(rec.id)}`;
 }
 
@@ -35,6 +35,14 @@ export function verifySessionToken(token: string | undefined | null): boolean {
   const id = sessionIdFromToken(token);
   if (!id) return false;
   return verifySession(id);
+}
+
+/** Parse + HMAC-verify the token, then return the bound userId from the live
+ *  server record (null if the signature is bad or the session is inactive). */
+export function userIdFromToken(token: string | undefined | null): string | null {
+  const id = sessionIdFromToken(token);
+  if (!id) return null;
+  return getSession(id)?.userId ?? null;
 }
 
 export function revokeSessionToken(token: string | undefined | null): void {

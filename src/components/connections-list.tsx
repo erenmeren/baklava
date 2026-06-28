@@ -21,9 +21,11 @@ import {
   Circle,
   ArrowRight,
   Pencil,
+  UsersRound,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { ConnectionRecord, TechId } from "@/lib/connections/types";
+import { AccessDialog } from "@/components/connections/access-dialog";
 
 interface Props {
   tech: TechId;
@@ -45,6 +47,10 @@ export function ConnectionsList({
   const [loading, setLoading] = useState(true);
   const [confirm, setConfirm] = useState<ConnectionRecord | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [me, setMe] = useState<{ id: string; role: "admin" | "member" } | null>(
+    null
+  );
+  const [accessFor, setAccessFor] = useState<ConnectionRecord | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -62,6 +68,21 @@ export function ConnectionsList({
   useEffect(() => {
     load();
   }, [load, refreshKey]);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await fetch("/api/users/me", { cache: "no-store" });
+        if (!res.ok) return;
+        const data = (await res.json()) as {
+          user: { id: string; role: "admin" | "member" };
+        };
+        if (data.user) setMe({ id: data.user.id, role: data.user.role });
+      } catch {
+        /* non-fatal — access controls just won't show */
+      }
+    })();
+  }, []);
 
   const remove = async () => {
     if (!confirm) return;
@@ -131,6 +152,16 @@ export function ConnectionsList({
                 Open
                 <ArrowRight className="size-3.5" />
               </Button>
+              {me && (me.role === "admin" || r.ownerId === me.id) ? (
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => setAccessFor(r)}
+                  title="Manage access"
+                >
+                  <UsersRound className="size-4" />
+                </Button>
+              ) : null}
               {onEdit ? (
                 <Button
                   size="icon"
@@ -183,6 +214,17 @@ export function ConnectionsList({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {accessFor ? (
+        <AccessDialog
+          connectionId={accessFor.id}
+          connectionName={accessFor.name}
+          open={!!accessFor}
+          onOpenChange={(o) => {
+            if (!o) setAccessFor(null);
+          }}
+        />
+      ) : null}
     </>
   );
 }

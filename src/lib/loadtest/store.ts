@@ -17,6 +17,12 @@ export interface LoadTestRun {
 
 export interface LoadTest {
   id: string;
+  /** Owner of this load test. Load tests are personal: only the owner may
+   *  list/read/run/update/delete them (admins do NOT cross-browse). Empty
+   *  string ("") marks an ownerless legacy row (persisted before per-user
+   *  scoping existed) — those are fail-closed invisible to everyone, since no
+   *  real viewer id is ever "". */
+  ownerId: string;
   name: string;
   config: SavedLoadTestConfig;
   createdAt: number;
@@ -72,6 +78,10 @@ function loadFromDisk(): LoadTest[] {
       return [];
     }
     for (const t of data.loadtests) {
+      // Legacy rows (pre per-user scoping) have no ownerId. Normalise to "" so
+      // the strict-ownership filter treats them as ownerless → invisible to
+      // every real user (fail closed; never leak another user's load test).
+      if (typeof t.ownerId !== "string") t.ownerId = "";
       for (const r of t.runs ?? []) {
         if (r.status === "running") {
           r.status = "error";
@@ -197,18 +207,42 @@ export function publicLoadTest(test: LoadTest): PublicLoadTest {
   };
 }
 
-export function listLoadTests(): LoadTest[] {
-  return [...getStore().byId.values()];
+// All accessors below are viewer-scoped. Load tests are personal: a viewer only
+// ever sees / mutates tests they own. A non-owner (or an empty viewer id from an
+// unauthenticated request, or a legacy ownerless row) is treated exactly as if
+// the test did not exist — the routes turn that into a 404 to avoid an existence
+// oracle. Fail closed: an empty viewer id never matches anything.
+
+/** Internal: resolve a test only if `viewerUserId` owns it. */
+function ownedTest(id: string, viewerUserId: string): LoadTest | undefined {
+  if (!viewerUserId) return undefined;
+  const test = getStore().byId.get(id);
+  if (!test || test.ownerId !== viewerUserId) return undefined;
+  return test;
 }
 
-export function getLoadTest(id: string): LoadTest | undefined {
-  return getStore().byId.get(id);
+/** Does `viewerUserId` own load test `id`? Fail closed: empty id never matches. */
+export function ownsLoadTest(id: string, viewerUserId: string): boolean {
+  return ownedTest(id, viewerUserId) !== undefined;
 }
 
-export function saveLoadTest(input: { name: string; config: SavedLoadTestConfig }): LoadTest {
+export function listLoadTests(viewerUserId: string): LoadTest[] {
+  if (!viewerUserId) return [];
+  return [...getStore().byId.values()].filter((t) => t.ownerId === viewerUserId);
+}
+
+export function getLoadTest(id: string, viewerUserId: string): LoadTest | undefined {
+  return ownedTest(id, viewerUserId);
+}
+
+export function saveLoadTest(
+  ownerId: string,
+  input: { name: string; config: SavedLoadTestConfig },
+): LoadTest {
   const now = Date.now();
   const record: LoadTest = {
     id: genId(),
+    ownerId,
     name: input.name,
     config: input.config,
     createdAt: now,
@@ -222,9 +256,10 @@ export function saveLoadTest(input: { name: string; config: SavedLoadTestConfig 
 
 export function updateLoadTest(
   id: string,
+  viewerUserId: string,
   patch: { name?: string; config?: SavedLoadTestConfig },
 ): LoadTest | undefined {
-  const existing = getStore().byId.get(id);
+  const existing = ownedTest(id, viewerUserId);
   if (!existing) return undefined;
   const config = patch.config
     ? { ...patch.config, auth: mergeAuth(existing.config.auth, patch.config.auth) }
@@ -240,7 +275,8 @@ export function updateLoadTest(
   return updated;
 }
 
-export function deleteLoadTest(id: string): boolean {
+export function deleteLoadTest(id: string, viewerUserId: string): boolean {
+  if (!ownedTest(id, viewerUserId)) return false;
   const deleted = getStore().byId.delete(id);
   if (deleted) flush();
   return deleted;
@@ -248,9 +284,10 @@ export function deleteLoadTest(id: string): boolean {
 
 export function appendRun(
   testId: string,
+  viewerUserId: string,
   input: { startedAt: number; status: RunStatus },
 ): LoadTestRun {
-  const test = getStore().byId.get(testId);
+  const test = ownedTest(testId, viewerUserId);
   if (!test) throw new Error(`load test not found: ${testId}`);
   const run: LoadTestRun = { id: genId(), startedAt: input.startedAt, status: input.status };
   test.runs.push(run);
@@ -261,10 +298,11 @@ export function appendRun(
 
 export function updateRun(
   testId: string,
+  viewerUserId: string,
   runId: string,
   patch: Partial<Pick<LoadTestRun, "status" | "finishedAt" | "result" | "error">>,
 ): LoadTestRun | undefined {
-  const test = getStore().byId.get(testId);
+  const test = ownedTest(testId, viewerUserId);
   if (!test) return undefined;
   const run = test.runs.find((r) => r.id === runId);
   if (!run) return undefined;
@@ -273,12 +311,16 @@ export function updateRun(
   return { ...run };
 }
 
-export function listRuns(testId: string): LoadTestRun[] {
-  const test = getStore().byId.get(testId);
+export function listRuns(testId: string, viewerUserId: string): LoadTestRun[] {
+  const test = ownedTest(testId, viewerUserId);
   if (!test) return [];
   return [...test.runs].reverse();
 }
 
-export function getRun(testId: string, runId: string): LoadTestRun | undefined {
-  return getStore().byId.get(testId)?.runs.find((r) => r.id === runId);
+export function getRun(
+  testId: string,
+  viewerUserId: string,
+  runId: string,
+): LoadTestRun | undefined {
+  return ownedTest(testId, viewerUserId)?.runs.find((r) => r.id === runId);
 }

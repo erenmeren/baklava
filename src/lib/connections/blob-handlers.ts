@@ -4,6 +4,7 @@ import { Readable } from "node:stream";
 import type { CORSRule, LifecycleRule, S3Client } from "@aws-sdk/client-s3";
 import { getConnection, saveConnection, publicView } from "@/lib/connections/store";
 import { formatError } from "@/lib/errors";
+import { getCurrentUser } from "@/lib/auth/current-user";
 import type { TechId } from "./types";
 import { blobTech } from "./blob-registry";
 import * as s3 from "./s3";
@@ -35,7 +36,7 @@ export function blobHandlers(tech: TechId) {
         const client = await bt.clientFor(probeId, cfg);
         const { buckets } = await s3.probe(client);
         const record = body.save
-          ? saveConnection({ tech, name: body.name || bt.defaultName, config: cfg as Record<string, unknown>, status: "ok" })
+          ? saveConnection({ tech, name: body.name || bt.defaultName, config: cfg as Record<string, unknown>, status: "ok", ownerId: getCurrentUser(req)?.id })
           : null;
         return NextResponse.json({
           ok: true,

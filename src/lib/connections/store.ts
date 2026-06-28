@@ -3,6 +3,7 @@ import path from "node:path";
 import type { ConnectionRecord, ConnectionStatus, TechId } from "./types";
 import { TECH_META_LIST } from "@/techs/meta-registry";
 import { readSecretFileSync, writeSecretFileSync } from "@/lib/crypto/secret-file";
+import { getGrants } from "./access";
 
 type AnyRecord = ConnectionRecord<unknown>;
 
@@ -94,6 +95,25 @@ export function listConnections(tech?: TechId): AnyRecord[] {
   return tech ? all.filter((c) => c.tech === tech) : all;
 }
 
+/**
+ * RBAC-aware listing. Admins see every connection; members see only the ones
+ * they own (`ownerId === user.id`) or have an explicit access grant for.
+ * Legacy rows with no `ownerId` are admin-only — they're excluded for members.
+ *
+ * `listConnections` intentionally stays unfiltered for internal callers that
+ * already enforce access elsewhere (or operate process-wide).
+ */
+export function listConnectionsForUser(
+  tech: TechId | undefined,
+  user: { id: string; role: "admin" | "member" }
+): AnyRecord[] {
+  const all = listConnections(tech);
+  if (user.role === "admin") return all;
+  return all.filter(
+    (c) => c.ownerId === user.id || getGrants(c.id)[user.id] != null
+  );
+}
+
 export function getConnection(id: string): AnyRecord | undefined {
   return getStore().byId.get(id);
 }
@@ -104,6 +124,8 @@ export function saveConnection<C>(input: {
   config: C;
   status: ConnectionStatus;
   lastError?: string;
+  /** User id of the owner (RBAC). Optional — existing callers omit it. */
+  ownerId?: string;
 }): ConnectionRecord<C> {
   const record: ConnectionRecord<C> = {
     id: genId(),
@@ -114,6 +136,7 @@ export function saveConnection<C>(input: {
     lastError: input.lastError,
     createdAt: Date.now(),
     lastTestedAt: input.status === "untested" ? undefined : Date.now(),
+    ownerId: input.ownerId,
   };
   getStore().byId.set(record.id, record as AnyRecord);
   flush();
@@ -218,6 +241,20 @@ export function updateConnection(
   getStore().byId.set(id, updated);
   flush();
   return updated;
+}
+
+/**
+ * Reassign a connection's owner. Used when an owning user is deleted — their
+ * connections are handed to the acting admin so they don't become orphaned
+ * (legacy `ownerId`-less rows are admin-only). Persists. Returns false if the
+ * connection doesn't exist.
+ */
+export function reassignOwner(connectionId: string, newOwnerId: string): boolean {
+  const existing = getStore().byId.get(connectionId);
+  if (!existing) return false;
+  getStore().byId.set(connectionId, { ...existing, ownerId: newOwnerId });
+  flush();
+  return true;
 }
 
 export function deleteConnection(id: string): boolean {

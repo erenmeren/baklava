@@ -21,6 +21,8 @@ function ctx(overrides: Partial<Parameters<typeof wrapExecute>[1]> = {}) {
     policy: DEFAULT_POLICY,
     connectionId: "c1",
     sessionId: "s1",
+    userId: "u1",
+    connectionAccess: "write" as const,
     emit: vi.fn(),
     awaitApproval: vi.fn(async () => true),
     now: () => 1,
@@ -76,6 +78,66 @@ describe("wrapExecute", () => {
     const run = wrapExecute(tool("read", exec), c);
     const out = await run({});
     expect(out).toMatchObject({ error: expect.stringContaining("kaboom") });
+  });
+});
+
+describe("gate per-user connection access", () => {
+  it("member with read access + write tool → blocked (no-access), not executed", async () => {
+    const exec = vi.fn(async () => ({ ok: true }));
+    const c = ctx({
+      policy: { ...DEFAULT_POLICY, write: true },
+      connectionAccess: "read",
+    });
+    const run = wrapExecute(tool("write", exec), c);
+    const out = (await run({}, "a1")) as { error?: string };
+    expect(exec).not.toHaveBeenCalled();
+    expect(out.error).toBeTruthy();
+    expect(c.emit).toHaveBeenCalledWith("blocked", { tool: "t_write", reason: "no-access" });
+    expect(audit.appendAudit).toHaveBeenCalledWith(
+      "s1",
+      expect.objectContaining({ decision: "blocked", summary: "no-access" }),
+    );
+  });
+
+  it("connectionAccess 'none' + read tool → blocked, not executed", async () => {
+    const exec = vi.fn(async () => ({ rows: [] }));
+    const c = ctx({ connectionAccess: "none" });
+    const run = wrapExecute(tool("read", exec), c);
+    const out = (await run({}, "a2")) as { error?: string };
+    expect(exec).not.toHaveBeenCalled();
+    expect(out.error).toBeTruthy();
+    expect(c.emit).toHaveBeenCalledWith("blocked", { tool: "t_read", reason: "no-access" });
+    expect(audit.appendAudit).toHaveBeenCalledWith(
+      "s1",
+      expect.objectContaining({ decision: "blocked", summary: "no-access" }),
+    );
+  });
+
+  it("connectionAccess 'read' + read tool → allowed", async () => {
+    const exec = vi.fn(async () => ({ rows: [] }));
+    const c = ctx({ connectionAccess: "read" });
+    const run = wrapExecute(tool("read", exec), c);
+    const out = await run({}, "a3");
+    expect(exec).toHaveBeenCalled();
+    expect(out).toEqual({ rows: [] });
+  });
+
+  it("connectionAccess 'write' + write tool (policy allows) → allowed", async () => {
+    const exec = vi.fn(async () => ({ ok: true }));
+    const c = ctx({ policy: { ...DEFAULT_POLICY, write: true }, connectionAccess: "write" });
+    const run = wrapExecute(tool("write", exec), c);
+    await run({}, "a4");
+    expect(exec).toHaveBeenCalled();
+  });
+
+  it("audit entries include userId", async () => {
+    const c = ctx({ userId: "alice" });
+    const run = wrapExecute(tool("read"), c);
+    await run({}, "a5");
+    expect(audit.appendAudit).toHaveBeenCalledWith(
+      "s1",
+      expect.objectContaining({ userId: "alice", decision: "executed" }),
+    );
   });
 });
 

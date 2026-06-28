@@ -11,6 +11,8 @@ import { buildConversationTools, type ConversationConnection } from "@/lib/ai/co
 import { runAgent } from "@/lib/ai/agent";
 import { createPending } from "@/lib/ai/pending";
 import { getConversation, updateConversation } from "@/lib/ai/conversation-store";
+import { getCurrentUser } from "@/lib/auth/current-user";
+import { effectiveAccess } from "@/lib/connections/access";
 import { formatError } from "@/lib/errors";
 
 export const runtime = "nodejs";
@@ -32,11 +34,29 @@ export async function POST(req: Request) {
   }
   const { conversationId, sessionId, connections, userMessage } = body;
 
+  // Acting user (resolved from the session cookie). Behind the auth proxy this
+  // should always be present; if it isn't, fail closed — every connection's
+  // access becomes "none" so the gate blocks all tools.
+  const user = getCurrentUser(req);
+
   const resolved: ConversationConnection[] = [];
   for (const c of connections ?? []) {
     const rec = getConnection(c.id);
     if (!rec || rec.tech !== c.tech || !isAiSupported(rec.tech)) continue;
-    resolved.push({ id: rec.id, tech: rec.tech, name: rec.name, config: rec.config, policy: getPolicy(rec.id) });
+    const access = user
+      ? effectiveAccess({
+          user: { id: user.id, role: user.role },
+          conn: { id: rec.id, ownerId: rec.ownerId },
+        })
+      : "none";
+    resolved.push({
+      id: rec.id,
+      tech: rec.tech,
+      name: rec.name,
+      config: rec.config,
+      policy: getPolicy(rec.id),
+      access,
+    });
   }
 
   const settings = getSettings();
@@ -64,6 +84,7 @@ export async function POST(req: Request) {
 
       const tools = buildConversationTools(resolved, {
         sessionId,
+        userId: user?.id ?? "",
         emit,
         awaitApproval: async (toolCallId, tool, args, connection) => {
           const risk = scoreAction(tool.name, tool.category, args);
@@ -76,7 +97,12 @@ export async function POST(req: Request) {
         ? `Connections in this conversation: ${resolved.map((c) => `${c.name} (${c.tech})`).join(", ")}. You may only act on these.`
         : `No connections are in this conversation yet. Tell the user to add one with "/".`;
 
-      const stored = getConversation(conversationId);
+      // Load + persist scoped to the acting user. If the conversation isn't
+      // owned by this user (or no user resolved), getConversation returns
+      // undefined → we don't read its history or write into it. The turn still
+      // streams, but it can never touch another user's conversation record.
+      const viewerId = user?.id ?? "";
+      const stored = getConversation(conversationId, viewerId);
       const priorMessages = stored?.messages ?? [];
       const turnMessages: ModelMessage[] = [...priorMessages, userMessage as ModelMessage];
 
@@ -86,7 +112,7 @@ export async function POST(req: Request) {
         updateConversation(conversationId, {
           connectionIds: resolved.map((c) => c.id),
           messages: turnMessages,
-        });
+        }, viewerId);
       }
 
       try {
@@ -103,7 +129,7 @@ export async function POST(req: Request) {
         if (stored && responseMessages.length) {
           updateConversation(conversationId, {
             messages: [...turnMessages, ...responseMessages],
-          });
+          }, viewerId);
         }
       } catch (err) {
         sse("error", { error: formatError(err) });

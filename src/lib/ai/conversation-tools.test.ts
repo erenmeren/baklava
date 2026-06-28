@@ -23,9 +23,9 @@ vi.mock("./tools/registry", () => ({
 import { buildConversationTools } from "./conversation-tools";
 import { DEFAULT_POLICY } from "./permissions";
 
-const base = { sessionId: "s1", emit: vi.fn(), awaitApproval: vi.fn(async () => true) };
+const base = { sessionId: "s1", userId: "u1", emit: vi.fn(), awaitApproval: vi.fn(async () => true) };
 function conn(id: string, tech: "postgres" | "docker", name: string) {
-  return { id, tech, name, config: {}, policy: DEFAULT_POLICY };
+  return { id, tech, name, config: {}, policy: DEFAULT_POLICY, access: "write" as const };
 }
 
 describe("buildConversationTools", () => {

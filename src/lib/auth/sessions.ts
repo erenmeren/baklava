@@ -5,6 +5,7 @@ import { randomBytes } from "node:crypto";
 
 export interface SessionRecord {
   id: string;
+  userId: string;
   createdAt: number;
   lastSeenAt: number;
   expiresAt: number; // absolute cap (createdAt + 30d)
@@ -34,7 +35,8 @@ function load(): Store {
   const byId = new Map<string, SessionRecord>();
   try {
     const arr = JSON.parse(fs.readFileSync(getFile(), "utf8")) as SessionRecord[];
-    if (Array.isArray(arr)) for (const r of arr) if (r?.id) byId.set(r.id, r);
+    if (Array.isArray(arr))
+      for (const r of arr) if (r?.id) byId.set(r.id, { ...r, userId: r.userId ?? "" });
   } catch {
     /* ENOENT or malformed → start empty */
   }
@@ -70,11 +72,16 @@ function pruneExpired(store: Store, now: number): boolean {
   return changed;
 }
 
-export function createSession(userAgent: string, now: number = Date.now()): SessionRecord {
+export function createSession(
+  userId: string,
+  userAgent: string,
+  now: number = Date.now(),
+): SessionRecord {
   const store = load();
   pruneExpired(store, now);
   const rec: SessionRecord = {
     id: randomBytes(18).toString("base64url"),
+    userId,
     createdAt: now,
     lastSeenAt: now,
     expiresAt: now + ABSOLUTE_MS,
@@ -86,15 +93,17 @@ export function createSession(userAgent: string, now: number = Date.now()): Sess
   return rec;
 }
 
-export function verifySession(id: string, now: number = Date.now()): boolean {
+/** Returns the record if active (same idle/absolute checks as verifySession),
+ *  sliding lastSeenAt with the throttled persist; null if missing/expired. */
+export function getSession(id: string, now: number = Date.now()): SessionRecord | null {
   const store = load();
   const rec = store.byId.get(id);
-  if (!rec) return false;
+  if (!rec) return null;
   if (!isActive(rec, now)) {
     store.byId.delete(id);
     store.lastPersistById.delete(id);
     persist(store);
-    return false;
+    return null;
   }
   rec.lastSeenAt = now;
   const lastP = store.lastPersistById.get(id) ?? 0;
@@ -102,7 +111,24 @@ export function verifySession(id: string, now: number = Date.now()): boolean {
     store.lastPersistById.set(id, now);
     persist(store);
   }
-  return true;
+  return rec;
+}
+
+export function verifySession(id: string, now: number = Date.now()): boolean {
+  return getSession(id, now) !== null;
+}
+
+export function revokeUserSessions(userId: string): void {
+  const store = load();
+  let changed = false;
+  for (const [id, r] of store.byId) {
+    if (r.userId === userId) {
+      store.byId.delete(id);
+      store.lastPersistById.delete(id);
+      changed = true;
+    }
+  }
+  if (changed) persist(store);
 }
 
 export function revokeSession(id: string): void {

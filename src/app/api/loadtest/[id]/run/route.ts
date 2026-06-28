@@ -1,3 +1,4 @@
+import { getCurrentUser } from "@/lib/auth/current-user";
 import { getLoadTest } from "@/lib/loadtest/store";
 import { executeRun } from "@/lib/loadtest/run-controller";
 
@@ -13,8 +14,18 @@ function sse(event: string, data: unknown): Uint8Array {
 }
 
 export async function POST(req: Request, ctx: RouteContext) {
+  // Running a load test executes its stored secrets (bearer tokens, basic-auth,
+  // etc.) against the target — enforce ownership BEFORE doing anything. A
+  // non-owner gets a 404 (hide existence); an unauthenticated request gets 401.
+  const user = getCurrentUser(req);
+  if (!user) {
+    return new Response(JSON.stringify({ error: "Not authenticated" }), {
+      status: 401,
+      headers: { "content-type": "application/json" },
+    });
+  }
   const { id } = await ctx.params;
-  const test = getLoadTest(id);
+  const test = getLoadTest(id, user.id);
   if (!test) {
     return new Response(JSON.stringify({ error: "not found" }), {
       status: 404,
