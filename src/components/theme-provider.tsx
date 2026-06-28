@@ -5,9 +5,16 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
 } from "react";
-import { THEME_COOKIE, type Theme } from "@/lib/theme";
+import {
+  THEME_COOKIE,
+  PALETTE_COOKIE,
+  htmlThemeClasses,
+  type Theme,
+  type Palette,
+} from "@/lib/theme";
 
 export type ResolvedTheme = "light" | "dark";
 
@@ -15,6 +22,8 @@ interface ThemeContextValue {
   theme: Theme;
   resolvedTheme: ResolvedTheme;
   setTheme: (t: Theme) => void;
+  palette: Palette;
+  setPalette: (p: Palette) => void;
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
@@ -26,51 +35,79 @@ function detectSystem(): ResolvedTheme {
     : "light";
 }
 
-function applyClass(theme: Theme) {
+// Apply both axes (mode + palette) to <html>, mirroring htmlThemeClasses.
+function applyClasses(theme: Theme, palette: Palette) {
   const root = document.documentElement;
-  root.classList.toggle("dark", theme === "dark");
-  root.classList.toggle("light", theme === "light");
+  root.classList.remove("dark", "light", "theme-phosphor");
+  const next = htmlThemeClasses(theme, palette, detectSystem())
+    .split(" ")
+    .filter(Boolean);
+  for (const c of next) root.classList.add(c);
 }
 
-function writeCookie(theme: Theme) {
+function writeCookie(name: string, value: string) {
   const oneYear = 60 * 60 * 24 * 365;
-  document.cookie = `${THEME_COOKIE}=${theme}; path=/; max-age=${oneYear}; SameSite=Lax`;
+  document.cookie = `${name}=${value}; path=/; max-age=${oneYear}; SameSite=Lax`;
 }
 
 interface ProviderProps {
   initialTheme?: Theme;
+  initialPalette?: Palette;
   children: React.ReactNode;
 }
 
 export function ThemeProvider({
   initialTheme = "system",
+  initialPalette = "classic",
   children,
 }: ProviderProps) {
   const [theme, setThemeState] = useState<Theme>(initialTheme);
+  const [palette, setPaletteState] = useState<Palette>(initialPalette);
   const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() =>
     initialTheme === "system" ? "light" : initialTheme
   );
+  const paletteRef = useRef(palette);
+  useEffect(() => {
+    paletteRef.current = palette;
+  }, [palette]);
 
-  // Resolve + watch the system preference when in "system" mode.
+  // Resolve + watch the system preference. Re-applies classes when in system
+  // mode, because phosphor derives an explicit dark/light class from the OS.
   useEffect(() => {
     const compute = (): ResolvedTheme =>
       theme === "system" ? detectSystem() : theme;
     setResolvedTheme(compute());
     if (theme !== "system") return;
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const onChange = () => setResolvedTheme(detectSystem());
+    const onChange = () => {
+      setResolvedTheme(detectSystem());
+      applyClasses("system", paletteRef.current);
+    };
     mq.addEventListener("change", onChange);
     return () => mq.removeEventListener("change", onChange);
   }, [theme]);
 
   const setTheme = useCallback((t: Theme) => {
     setThemeState(t);
-    writeCookie(t);
-    applyClass(t);
+    writeCookie(THEME_COOKIE, t);
+    applyClasses(t, paletteRef.current);
+  }, []);
+
+  const setPalette = useCallback((p: Palette) => {
+    setPaletteState(p);
+    paletteRef.current = p;
+    writeCookie(PALETTE_COOKIE, p);
+    // Read the current mode via a functional setter to avoid a stale closure.
+    setThemeState((curTheme) => {
+      applyClasses(curTheme, p);
+      return curTheme;
+    });
   }, []);
 
   return (
-    <ThemeContext.Provider value={{ theme, resolvedTheme, setTheme }}>
+    <ThemeContext.Provider
+      value={{ theme, resolvedTheme, setTheme, palette, setPalette }}
+    >
       {children}
     </ThemeContext.Provider>
   );
@@ -83,6 +120,8 @@ export function useTheme(): ThemeContextValue {
       theme: "system",
       resolvedTheme: "light",
       setTheme: () => undefined,
+      palette: "classic",
+      setPalette: () => undefined,
     };
   }
   return ctx;
