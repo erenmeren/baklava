@@ -9,6 +9,9 @@ export interface GateContext {
   policy: PermissionPolicy;
   connectionId: string;
   sessionId: string;
+  userId: string;
+  /** Acting user's effective access to this connection. Fail-closed: "none". */
+  connectionAccess: "none" | "read" | "write";
   emit: (event: string, data: unknown) => void;
   awaitApproval: (toolCallId: string, tool: AiTool, args: unknown) => Promise<boolean>;
   now?: () => number;
@@ -21,6 +24,7 @@ export function wrapExecute(tool: AiTool, ctx: GateContext) {
       tool: tool.name,
       category: tool.category,
       connectionId: ctx.connectionId,
+      userId: ctx.userId,
       args,
     };
 
@@ -29,6 +33,18 @@ export function wrapExecute(tool: AiTool, ctx: GateContext) {
       appendAudit(ctx.sessionId, { ...base, decision: "blocked", summary: "kill-switch", at: now() });
       ctx.emit("blocked", { tool: tool.name, reason: "kill-switch" });
       return { error: `AI actions are paused (kill switch is on). Re-enable it in Settings to continue.` };
+    }
+
+    // Per-user connection access (RBAC). Reads need at least "read"; writes and
+    // destructive actions need "write". Fail-closed when access is "none".
+    const accessOk =
+      tool.category === "read"
+        ? ctx.connectionAccess !== "none"
+        : ctx.connectionAccess === "write";
+    if (!accessOk) {
+      appendAudit(ctx.sessionId, { ...base, decision: "blocked", summary: "no-access", at: now() });
+      ctx.emit("blocked", { tool: tool.name, reason: "no-access" });
+      return { error: `You don't have access to perform "${tool.name}" on this connection.` };
     }
 
     if (!isAllowed(tool.category, ctx.policy)) {

@@ -7,6 +7,7 @@ export interface AuditEntry {
   tool: string;
   category: "read" | "write" | "destructive";
   connectionId: string;
+  userId: string;
   args: unknown;
   decision: string;
   summary?: string;

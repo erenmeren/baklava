@@ -12,10 +12,14 @@ export interface ConversationConnection {
   name: string;
   config: unknown;
   policy: PermissionPolicy;
+  /** Acting user's effective access to this connection. Fail-closed: "none". */
+  access: "none" | "read" | "write";
 }
 
 export interface ConversationGateBase {
   sessionId: string;
+  /** Acting user's id (fail-closed: empty string when no user). */
+  userId: string;
   emit: (event: string, data: unknown) => void;
   awaitApproval: (
     toolCallId: string,
@@ -57,6 +61,8 @@ export function buildConversationTools(
       policy: c.policy,
       connectionId: c.id,
       sessionId: base.sessionId,
+      userId: base.userId,
+      connectionAccess: c.access,
       emit: base.emit,
       now: base.now,
       awaitApproval: (toolCallId, tool, args) =>
