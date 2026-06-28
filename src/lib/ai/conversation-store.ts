@@ -6,6 +6,11 @@ import type { ModelMessage } from "ai";
 
 export interface Conversation {
   id: string;
+  /** Owner of this conversation. Conversations are personal: only the owner may
+   *  read/update/delete them. Empty string ("") marks an ownerless legacy
+   *  conversation (persisted before per-user scoping existed) — those are
+   *  fail-closed invisible to everyone (no viewer id equals ""). */
+  userId: string;
   title: string;
   connectionIds: string[];
   messages: ModelMessage[];
@@ -38,7 +43,13 @@ function loadAll(): Map<string, Conversation> {
       if (!f.endsWith(".json")) continue;
       try {
         const c = JSON.parse(fs.readFileSync(path.join(dir(), f), "utf8")) as Conversation;
-        if (c?.id) byId.set(c.id, c);
+        if (c?.id) {
+          // Legacy rows (pre per-user scoping) have no userId. Normalise to ""
+          // so the strict-ownership filter treats them as ownerless → invisible
+          // to every real user (fail closed; never leak another user's chat).
+          if (typeof c.userId !== "string") c.userId = "";
+          byId.set(c.id, c);
+        }
       } catch {
         /* skip corrupt file */
       }
@@ -66,10 +77,16 @@ function genId(): string {
   return Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 6);
 }
 
-export function createConversation(input: { title: string; connectionIds: string[]; now?: number }): Conversation {
+export function createConversation(input: {
+  userId: string;
+  title: string;
+  connectionIds: string[];
+  now?: number;
+}): Conversation {
   const now = input.now ?? Date.now();
   const c: Conversation = {
     id: genId(),
+    userId: input.userId,
     title: input.title || "New chat",
     connectionIds: input.connectionIds,
     messages: [],
@@ -81,15 +98,29 @@ export function createConversation(input: { title: string; connectionIds: string
   return c;
 }
 
-export function getConversation(id: string): Conversation | undefined {
-  return getStore().byId.get(id);
+/** Does `userId` own conversation `id`? Fail closed: an empty viewer id never
+ *  matches (so unauthenticated/legacy-ownerless rows are invisible to all). */
+export function ownsConversation(id: string, userId: string): boolean {
+  if (!userId) return false;
+  const c = getStore().byId.get(id);
+  return !!c && c.userId === userId;
+}
+
+/** Resolve a conversation, but only if `viewerUserId` owns it. Returns
+ *  undefined otherwise — callers surface this as a 404 (hide existence). */
+export function getConversation(id: string, viewerUserId: string): Conversation | undefined {
+  if (!viewerUserId) return undefined;
+  const c = getStore().byId.get(id);
+  if (!c || c.userId !== viewerUserId) return undefined;
+  return c;
 }
 
 export function updateConversation(
   id: string,
   patch: Partial<Pick<Conversation, "title" | "connectionIds" | "messages">> & { now?: number },
+  viewerUserId: string,
 ): Conversation | undefined {
-  const existing = getStore().byId.get(id);
+  const existing = getConversation(id, viewerUserId);
   if (!existing) return undefined;
   const updated: Conversation = {
     ...existing,
@@ -103,7 +134,8 @@ export function updateConversation(
   return updated;
 }
 
-export function deleteConversation(id: string): boolean {
+export function deleteConversation(id: string, viewerUserId: string): boolean {
+  if (!ownsConversation(id, viewerUserId)) return false;
   const ok = getStore().byId.delete(id);
   if (ok) {
     try { fs.rmSync(file(id), { force: true }); } catch { /* ignore */ }
@@ -111,8 +143,10 @@ export function deleteConversation(id: string): boolean {
   return ok;
 }
 
-export function listConversations(): ConversationRow[] {
+export function listConversations(viewerUserId: string): ConversationRow[] {
+  if (!viewerUserId) return [];
   return [...getStore().byId.values()]
+    .filter((c) => c.userId === viewerUserId)
     .map(({ id, title, connectionIds, createdAt, updatedAt }) => ({ id, title, connectionIds, createdAt, updatedAt }))
     .sort((a, b) => b.updatedAt - a.updatedAt);
 }

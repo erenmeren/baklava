@@ -97,7 +97,12 @@ export async function POST(req: Request) {
         ? `Connections in this conversation: ${resolved.map((c) => `${c.name} (${c.tech})`).join(", ")}. You may only act on these.`
         : `No connections are in this conversation yet. Tell the user to add one with "/".`;
 
-      const stored = getConversation(conversationId);
+      // Load + persist scoped to the acting user. If the conversation isn't
+      // owned by this user (or no user resolved), getConversation returns
+      // undefined → we don't read its history or write into it. The turn still
+      // streams, but it can never touch another user's conversation record.
+      const viewerId = user?.id ?? "";
+      const stored = getConversation(conversationId, viewerId);
       const priorMessages = stored?.messages ?? [];
       const turnMessages: ModelMessage[] = [...priorMessages, userMessage as ModelMessage];
 
@@ -107,7 +112,7 @@ export async function POST(req: Request) {
         updateConversation(conversationId, {
           connectionIds: resolved.map((c) => c.id),
           messages: turnMessages,
-        });
+        }, viewerId);
       }
 
       try {
@@ -124,7 +129,7 @@ export async function POST(req: Request) {
         if (stored && responseMessages.length) {
           updateConversation(conversationId, {
             messages: [...turnMessages, ...responseMessages],
-          });
+          }, viewerId);
         }
       } catch (err) {
         sse("error", { error: formatError(err) });
