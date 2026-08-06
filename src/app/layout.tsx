@@ -16,7 +16,8 @@ import { SettingsTrigger } from "@/components/settings-trigger";
 import { DashboardTrigger } from "@/components/dashboard-trigger";
 import { LockButton } from "@/components/lock-button";
 import { SESSION_COOKIE, verifySessionToken } from "@/lib/auth/session";
-import { needsSetup, isAuthEnabled } from "@/lib/auth/store";
+import { isAuthEnabled } from "@/lib/auth/store";
+import { needsSetup } from "@/lib/auth/users";
 import Link from "next/link";
 
 // Fonts are vendored into public/fonts/ so builds never reach out to
