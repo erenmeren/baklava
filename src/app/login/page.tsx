@@ -1,5 +1,4 @@
-import { needsSetup } from "@/lib/auth/store";
-import { listUsers } from "@/lib/auth/users";
+import { listUsers, needsSetup } from "@/lib/auth/users";
 import { LoginClient } from "./login-client";
 
 export const dynamic = "force-dynamic";
