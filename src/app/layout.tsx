@@ -125,7 +125,9 @@ export default async function RootLayout({
             ) : null}
             <main className="flex-1 w-full">{children}</main>
             <Toaster richColors position="top-right" />
-            <GlobalCommandPalette />
+            {/* Palette needs an authed session (it fetches /api/connections on
+                mount) — keep it off the bare login/setup screen. */}
+            {showChrome ? <GlobalCommandPalette /> : null}
           </TooltipProvider>
         </ThemeProvider>
       </body>
