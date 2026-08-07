@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { TechModuleMeta } from "@/techs/contract";
+import { blobProvider } from "@/lib/command-palette/infra-providers";
 import type { MinioConfig, ConnectionRecord } from "@/lib/connections/types";
 
 const schema = z.object({
@@ -38,5 +39,6 @@ export const minioMeta: TechModuleMeta<MinioConfig> = {
     "@aws-sdk/lib-storage",
     "@aws-sdk/s3-request-presigner",
   ],
+  commandObjects: blobProvider("minio"),
   capabilities: { browse: true, upload: true, health: true },
 };

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { TechModuleMeta } from "@/techs/contract";
+import { kafkaProvider } from "@/lib/command-palette/infra-providers";
 import type { KafkaConfig, ConnectionRecord } from "@/lib/connections/types";
 
 const schema = z.object({
@@ -37,5 +38,6 @@ export const kafkaMeta: TechModuleMeta<KafkaConfig> = {
   firstPage: "",
   optionalDeps: ["kafkajs", "avsc"],
   serverPackages: ["kafkajs", "avsc"],
+  commandObjects: kafkaProvider,
   capabilities: { browse: true, health: true },
 };
