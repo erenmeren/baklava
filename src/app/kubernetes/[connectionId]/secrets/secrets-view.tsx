@@ -1,7 +1,7 @@
 "use client";
 
 import { ResourceTable, type Column } from "../resource-table";
-import { formatAge, type SecretRow } from "@/lib/kubernetes/mock-cluster";
+import { formatAge, type SecretRow } from "@/lib/kubernetes/row-types";
 import { cn } from "@/lib/utils";
 
 const TYPE_LABEL: Record<SecretRow["type"], string> = {

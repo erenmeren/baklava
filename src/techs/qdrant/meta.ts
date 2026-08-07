@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { TechModuleMeta } from "@/techs/contract";
+import { qdrantProvider } from "@/lib/command-palette/infra-providers";
 import type { QdrantConfig, ConnectionRecord } from "@/lib/connections/types";
 
 const schema = z.object({ url: z.string(), apiKey: z.string().optional() });
@@ -22,5 +23,6 @@ export const qdrantMeta: TechModuleMeta<QdrantConfig> = {
   },
   firstPage: "collections",
   optionalDeps: ["@qdrant/js-client-rest"],
+  commandObjects: qdrantProvider,
   capabilities: { browse: true, query: true, objectExplorer: true, vectorSearch: true, health: true },
 };

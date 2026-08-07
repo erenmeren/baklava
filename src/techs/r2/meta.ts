@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { TechModuleMeta } from "@/techs/contract";
+import { blobProvider } from "@/lib/command-palette/infra-providers";
 import type { R2Config, ConnectionRecord } from "@/lib/connections/types";
 
 const schema = z.object({
@@ -36,5 +37,6 @@ export const r2Meta: TechModuleMeta<R2Config> = {
     "@aws-sdk/lib-storage",
     "@aws-sdk/s3-request-presigner",
   ],
+  commandObjects: blobProvider("r2"),
   capabilities: { browse: true, upload: true, health: true },
 };

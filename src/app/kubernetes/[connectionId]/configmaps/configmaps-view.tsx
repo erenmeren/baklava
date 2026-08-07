@@ -1,7 +1,7 @@
 "use client";
 
 import { ResourceTable, type Column } from "../resource-table";
-import { formatAge, type ConfigMapRow } from "@/lib/kubernetes/mock-cluster";
+import { formatAge, type ConfigMapRow } from "@/lib/kubernetes/row-types";
 
 const COLUMNS: Column<ConfigMapRow>[] = [
   {

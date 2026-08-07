@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import type { PodPhase } from "@/lib/kubernetes/mock-cluster";
+import type { PodPhase } from "@/lib/kubernetes/row-types";
 
 /**
  * k9s-default-skin-inspired status palette:

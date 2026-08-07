@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { TechModuleMeta } from "@/techs/contract";
+import { blobProvider } from "@/lib/command-palette/infra-providers";
 import type { S3Config, ConnectionRecord } from "@/lib/connections/types";
 
 const schema = z.object({
@@ -37,5 +38,6 @@ export const s3Meta: TechModuleMeta<S3Config> = {
     "@aws-sdk/lib-storage",
     "@aws-sdk/s3-request-presigner",
   ],
+  commandObjects: blobProvider("s3"),
   capabilities: { browse: true, upload: true, health: true },
 };

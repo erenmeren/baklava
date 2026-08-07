@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { TechModuleMeta } from "@/techs/contract";
+import { dockerProvider } from "@/lib/command-palette/infra-providers";
 import type { DockerConfig, ConnectionRecord } from "@/lib/connections/types";
 
 const schema = z.object({
@@ -31,5 +32,6 @@ export const dockerMeta: TechModuleMeta<DockerConfig> = {
   firstPage: "containers",
   optionalDeps: ["dockerode", "ssh2"],
   serverPackages: ["dockerode", "ssh2"],
+  commandObjects: dockerProvider,
   capabilities: { browse: true, health: true },
 };

@@ -918,14 +918,6 @@ export async function buildImageStream(
   });
 }
 
-export interface PullProgressEvent {
-  status?: string;
-  id?: string;
-  progressDetail?: { current?: number; total?: number };
-  progress?: string;
-  error?: string;
-}
-
 export async function pullImageStream(
   config: DockerConfig,
   ref: string,

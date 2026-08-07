@@ -1,7 +1,7 @@
 "use client";
 
 import { ResourceTable, type Column } from "../resource-table";
-import { formatAge, type DeploymentRow } from "@/lib/kubernetes/mock-cluster";
+import { formatAge, type DeploymentRow } from "@/lib/kubernetes/row-types";
 
 const COLUMNS: Column<DeploymentRow>[] = [
   {

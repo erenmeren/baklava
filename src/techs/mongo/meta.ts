@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { TechModuleMeta } from "@/techs/contract";
+import { mongoProvider } from "@/lib/command-palette/infra-providers";
 import type { MongoConfig, ConnectionRecord } from "@/lib/connections/types";
 
 const schema = z.object({
@@ -30,5 +31,6 @@ export const mongoMeta: TechModuleMeta<MongoConfig> = {
   firstPage: "databases",
   optionalDeps: ["mongodb", "bson"],
   serverPackages: ["mongodb"],
+  commandObjects: mongoProvider,
   capabilities: { browse: true, query: true, objectExplorer: true, health: true },
 };

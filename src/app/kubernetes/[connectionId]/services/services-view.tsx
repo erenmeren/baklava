@@ -1,7 +1,7 @@
 "use client";
 
 import { ResourceTable, type Column } from "../resource-table";
-import { formatAge, type ServiceRow } from "@/lib/kubernetes/mock-cluster";
+import { formatAge, type ServiceRow } from "@/lib/kubernetes/row-types";
 import { cn } from "@/lib/utils";
 
 const TYPE_STYLE: Record<ServiceRow["type"], string> = {
