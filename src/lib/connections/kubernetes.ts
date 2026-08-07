@@ -120,7 +120,7 @@ export function dropKubernetesClient(connectionId: string): void {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Row shapes — mirror src/lib/kubernetes/mock-cluster.ts so existing tables
+// Row shapes — mirror src/lib/kubernetes/row-types.ts so existing tables
 // require no column changes.
 // ─────────────────────────────────────────────────────────────────────────────
 

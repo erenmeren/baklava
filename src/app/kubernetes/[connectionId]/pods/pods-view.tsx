@@ -2,7 +2,7 @@
 
 import { ResourceTable, type Column } from "../resource-table";
 import { StatusPill } from "../status-pill";
-import { formatAge, type PodRow } from "@/lib/kubernetes/mock-cluster";
+import { formatAge, type PodRow } from "@/lib/kubernetes/row-types";
 
 const COLUMNS: Column<PodRow>[] = [
   {

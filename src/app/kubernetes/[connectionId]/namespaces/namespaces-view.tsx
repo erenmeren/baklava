@@ -1,7 +1,7 @@
 "use client";
 
 import { ResourceTable, type Column } from "../resource-table";
-import { formatAge, type NamespaceRow } from "@/lib/kubernetes/mock-cluster";
+import { formatAge, type NamespaceRow } from "@/lib/kubernetes/row-types";
 import { StatusPill } from "../status-pill";
 
 const COLUMNS: Column<NamespaceRow>[] = [
