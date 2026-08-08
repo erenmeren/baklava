@@ -1415,3 +1415,76 @@ Before Phase 2 is planned, all of these must hold:
 Phase 2 (L1 primitives, L2 shell, L3 convergence, roadmap refresh) is planned
 after this lands, once the component tests have made the real shared surface
 visible.
+
+---
+
+## Phase 1 outcome (2026-08-08)
+
+All six tasks complete. Twelve implementation commits from `22862fa` to `fb3c4bb`,
+plus a four-commit fix wave after the whole-branch review.
+
+**Verified:** `npm run typecheck`, `npm run lint`, `npm test` (852 tests, 128
+files) and `npm run build` all clean.
+
+**Evidence for the driver splits.** Stronger than this plan's own acceptance
+bar. The whole-branch review enumerated every export through the TypeScript
+checker at both revisions — 216 exports across the two drivers, including all
+93 exported types/interfaces, exported consts, and every function's full
+resolved signature — and diffed them: **zero lines**. It also hashed every
+top-level function body after stripping the `export` keyword: 88 postgres and
+52 sqlserver functions, **zero differing bodies**. SQL gatekeeper call sites
+are preserved exactly (pg `quoteIdent` 60→60, `validateIdentifier` 15→15,
+`requireNoStatementTerminator` 11→11; mssql `validateSqlServerIdentifier`
+75→75, `requireNoStatementTerminator` 11→11). No module-level side effects in
+any of the 18 new files, so import evaluation order cannot matter.
+
+### Carried into Phase 2 — must be addressed there
+
+1. **All three SQL table-detail components mishandle fetch failure.** Postgres
+   `loadData`, MySQL `loadData`, SQL Server `loadDetail`: none has a `.catch()`,
+   each is fired from a bare mount effect. A dead connection produces an
+   unhandled promise rejection, not a rendered error — and there is no error
+   branch in the render tree at all, only skeletons. Three copies of one defect.
+   This is the concrete case for L2's shared error surface, and it must be an
+   explicit L2 acceptance criterion.
+2. **The safety net has zero coverage of failure rendering.** Each of the three
+   table-detail suites had to delete its "surfaces a fetch failure" test because
+   the behaviour does not exist. Phase 2 must plan to *add* those tests — there
+   is no before-state to regress against for L2's headline promise.
+3. **Run the integration suite before Phase 2's first behaviour-changing commit.**
+   `docker compose up -d postgres sqlserver && npm run test:integration` never
+   ran during Phase 1 — the Docker daemon was unreachable in the working
+   environment. Acceptable for a provably mechanical change; not acceptable once
+   behaviour changes.
+4. **`e2e/sql-workspaces.spec.ts` has never run against real services.** Its
+   navigation is source-traced only. Expect to fix selectors on first real run.
+   The MySQL block is `test.fixme` and needs a compose service plus a seed script.
+5. **MySQL `<Button render={<a/>}>` is missing `nativeButton={false}`**, so Base
+   UI logs a dev warning on every mount. The MySQL test file tolerates exactly
+   that message and fails on any other `console.error`; fixing the component
+   should include removing that allowance.
+6. **`postgres/ops.ts` is 1193 lines** and holds three unrelated concerns
+   (server overview/top tables; activity/locks/maintenance/diagnostics; role
+   CRUD). Splitting roles out is a natural cleanup.
+7. **Exit criterion 1 was unsatisfiable as written** — "no file in
+   `src/lib/connections/` exceeds ~1200 lines" is directory-scoped, but
+   `kafka.ts` is 2316 lines and was never in scope. Reword before copying it
+   into the Phase 2 plan.
+8. **`docs/ROADMAP.md` is still stale** — spec branch 8, deferred to Phase 2.
+   EXPLAIN/Activity/Roles all shipped but are listed as "up next"; Redis and
+   MongoDB are listed as future work but are registered techs; ⌘K coverage is
+   10 of 12 (`kubernetes` and `redis` lack `commandObjects`).
+
+### Two plan defects this phase caught, for the record
+
+- Task 1's multi-line SSE test split its payload *inside* a JSON string, where a
+  literal newline is invalid JSON — so `JSON.parse` threw whether or not the
+  `data:` lines were joined, and the test passed against the bug it existed to
+  catch. Fixed in `df1f16c`.
+- Tasks 2 and 3 told the implementer to export the lazy-import guards while the
+  Global Constraints and the barrel test forbade any public-surface change.
+  Resolved with `<tech>/internal.ts`, which the barrel does not re-export.
+
+Both shipped in a plan that was reviewed before execution. Draft test code and
+draft fixtures in a plan are hypotheses, not requirements — every task in this
+phase found the plan's fixtures wrong about the real API shapes.
