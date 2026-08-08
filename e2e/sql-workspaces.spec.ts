@@ -119,10 +119,15 @@ test.describe("postgres SQL workspace", () => {
       timeout: 15_000,
     });
 
-    // Expand demo → shop → Tables → customers (seed/postgres.sh).
+    // Expand demo → shop (seed/postgres.sh). No explicit "Tables" click:
+    // toggleSchema (postgres-sidebar.tsx:313-323) unconditionally auto-opens
+    // the Tables group as a side effect of expanding the schema
+    // (`setOpenGroup((s) => ({ ...s, [tk]: true }))`), and Group only renders
+    // its <ul> (and therefore the table links) while open
+    // (postgres-sidebar.tsx:1420-1434). Clicking "Tables" here would toggle
+    // that already-open group closed and make the link below unreachable.
     await page.getByRole("button", { name: /^demo$/ }).click();
     await page.getByRole("button", { name: /^shop$/ }).click();
-    await page.getByRole("button", { name: /^tables/i }).click();
     await page.getByRole("link", { name: "customers" }).click();
 
     await expect(page.getByRole("tab", { name: "Data" })).toBeVisible({
@@ -158,10 +163,14 @@ test.describe("sqlserver SQL workspace", () => {
       timeout: 15_000,
     });
 
-    // Expand BaklavaDemo → shop → Tables → Customers (seed/sqlserver.sh).
+    // Expand BaklavaDemo → shop (seed/sqlserver.sh). No explicit "Tables"
+    // click — same auto-open-on-schema-expand behaviour as Postgres:
+    // toggleSchema (sqlserver-sidebar.tsx:319-327) unconditionally sets
+    // `openGroup[\`${key}.tables\`] = true` when the schema opens, and
+    // Group only renders the table links while open. Clicking "Tables"
+    // here would collapse that already-open group.
     await page.getByRole("button", { name: /^BaklavaDemo$/ }).click();
     await page.getByRole("button", { name: /^shop$/ }).click();
-    await page.getByRole("button", { name: /^tables/i }).click();
     await page.getByRole("link", { name: "Customers" }).click();
 
     await expect(page.getByRole("tab", { name: "Data" })).toBeVisible({
@@ -203,7 +212,18 @@ test.describe("mysql SQL workspace", () => {
       timeout: 15_000,
     });
 
-    await page.getByRole("button", { name: /^tables/i }).click();
+    // Unlike Postgres/SQL Server, MySQL's sidebar has no schema/"Tables"-group
+    // level at all — `renderDb` in mysql-sidebar.tsx lists a database's
+    // tables directly as <TableRow> children the moment the database row
+    // itself is expanded (no toggleSchema/toggleGroup step, so there's no
+    // auto-open-then-re-collapse hazard here the way there is in the other
+    // two blocks). There is also no seed script or demo database for MySQL
+    // yet (no compose service — this block always skips today), so there's
+    // no known database/table name to target the way the Postgres/SQL
+    // Server blocks above do by exact name; expand the first database row
+    // generically instead. Revisit once Phase 2 adds a MySQL seed script:
+    // name the specific database/table like the other two blocks do.
+    await page.getByRole("button").filter({ hasText: /.+/ }).first().click();
     await page.getByRole("link", { name: /.+/ }).first().click();
 
     await expect(page.getByRole("tab", { name: "Data" })).toBeVisible({
