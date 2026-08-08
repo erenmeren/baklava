@@ -8,7 +8,14 @@
 import type { ConnectionPool } from "mssql"; // type-only — erased at build, safe when mssql absent
 import { DriverNotInstalledError } from "@/techs/contract";
 import type { SqlServerConfig } from "../types";
-import type { SqlServerDatabaseSummary } from "./catalog";
+
+export interface SqlServerDatabaseSummary {
+  name: string;
+  sizeBytes: number;
+  tableCount: number;
+  isSystem: boolean;
+  state: string;
+}
 
 let _mssqlMod: typeof import("mssql") | null = null;
 export async function getMssql(): Promise<typeof import("mssql")> {

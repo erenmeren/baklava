@@ -3,16 +3,14 @@
  * tables, columns, indexes, constraints, foreign keys, modules, dependencies).
  */
 import type { SqlServerConfig } from "../types";
-import { withPool, getMssql, fetchDatabaseStats } from "./internal";
+import { withPool, getMssql, fetchDatabaseStats, type SqlServerDatabaseSummary } from "./internal";
 import { SQLSERVER_DB_NAME_RE, validateSqlServerIdentifier } from "./sql";
 
-export interface SqlServerDatabaseSummary {
-  name: string;
-  sizeBytes: number;
-  tableCount: number;
-  isSystem: boolean;
-  state: string;
-}
+// Re-exported so the barrel still surfaces this type from the same place —
+// the interface itself lives in ./internal because fetchDatabaseStats
+// (also internal, used by both catalog.ts and ops.ts) returns it, and
+// internal.ts must stay a leaf module that nothing else here is imported by.
+export type { SqlServerDatabaseSummary };
 
 export async function listSqlServerDatabases(
   config: SqlServerConfig
