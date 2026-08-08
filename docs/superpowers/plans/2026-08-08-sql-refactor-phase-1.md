@@ -55,8 +55,8 @@ what the components actually share.
 |---|---|
 | `src/app/assistant/stream.ts` | Consume the assistant SSE response body, dispatch typed events to handlers |
 | `src/app/assistant/stream.test.ts` | Unit tests for the above |
-| `src/lib/connections/postgres/{client,sql,catalog,rows,ddl,query,ops,backup}.ts` | The eight postgres driver modules |
-| `src/lib/connections/sqlserver/{client,sql,catalog,rows,ddl,query,ops,backup}.ts` | The eight sqlserver driver modules |
+| `src/lib/connections/postgres/{internal,client,sql,catalog,rows,ddl,query,ops,backup}.ts` | The postgres driver modules. `internal.ts` holds cross-module private helpers and is NOT re-exported by the barrel |
+| `src/lib/connections/sqlserver/{internal,client,sql,catalog,rows,ddl,query,ops,backup}.ts` | The sqlserver driver modules, mirroring postgres |
 | `src/lib/connections/postgres.barrel.test.ts` | Locks the postgres public surface |
 | `src/lib/connections/sqlserver.barrel.test.ts` | Locks the sqlserver public surface |
 | `src/test/sse.ts` | Test helper: build a `ReadableStream<Uint8Array>` from strings |
@@ -126,7 +126,7 @@ export function streamOf(...chunks: string[]): ReadableStream<Uint8Array> {
 `src/app/assistant/stream.test.ts`:
 
 ```ts
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import { streamOf } from "@/test/sse";
 import { consumeAssistantStream, type AssistantStreamHandlers } from "./stream";
 
@@ -166,13 +166,20 @@ describe("consumeAssistantStream", () => {
   });
 
   // Defect 1: the old .find() took only the first data: line.
+  //
+  // The payload must be split BETWEEN JSON tokens, not inside a string. A
+  // literal newline inside a JSON string is invalid JSON, so a payload split
+  // mid-string throws in JSON.parse whether or not the lines were joined —
+  // such a test passes either way and proves nothing. Split between tokens
+  // and the two cases diverge: joined is valid JSON, first-line-only
+  // ('{"text":') throws and the frame is dropped.
   it("joins a payload spanning multiple data: lines", async () => {
     const h = handlers();
     await consumeAssistantStream(
-      streamOf('event: text-delta\ndata: {"text":"line one\ndata: line two"}\n\n'),
+      streamOf('event: text-delta\ndata: {"text":\ndata: "joined"}\n\n'),
       h,
     );
-    expect(h.calls).toEqual(["text:line one\nline two"]);
+    expect(h.calls).toEqual(["text:joined"]);
   });
 
   // Defect 2: the old unguarded JSON.parse killed the whole stream.
@@ -338,7 +345,7 @@ changes: `tsc --noEmit` passes, every existing suite passes, and a new barrel
 test asserts the public surface is intact.
 
 **Files:**
-- Create: `src/lib/connections/postgres/{client,sql,catalog,rows,ddl,query,ops,backup}.ts`
+- Create: `src/lib/connections/postgres/{internal,client,sql,catalog,rows,ddl,query,ops,backup}.ts`
 - Create: `src/lib/connections/postgres.barrel.test.ts`
 - Modify: `src/lib/connections/postgres.ts` (3689 lines → ~15-line barrel)
 
@@ -478,15 +485,25 @@ git commit -m "test(postgres): lock the driver's public surface before the split
 
 - [ ] **Step 4: Create `postgres/client.ts`**
 
-Move, verbatim, from `postgres.ts` lines 1–137: the `pg` and `pg-cursor`
-type imports and lazy `getPg` / `getPgCursor` guards, `buildClientConfig`, the
+Move, verbatim, from `postgres.ts` lines 1–137 — minus what `internal.ts` takes
+(see the note at the end of this step): the
 whole pooling block (`PgPoolCache`, `poolCacheKey`, `poolCache`, `poolIdentity`,
 `poolKey`, `getPool`), `withClient`, `dropPostgresPools`, and the three test
 seams (`getPoolForTests`, `_injectPoolForTests`, `_endAllPostgresPoolsForTests`).
 Then move `probePostgres` and the `PostgresProbe` interface (lines 138–163).
 
-`getPg` and `getPgCursor` are used by other modules, so add `export` to both.
-Everything else that was module-private stays private.
+`getPg` and `getPgCursor` are needed by other modules, but exporting them from
+`client.ts` would put them in the barrel's namespace and change the public
+surface — which the Global Constraints forbid and the barrel test would catch.
+
+So they go in a ninth file, `postgres/internal.ts`, which **the barrel does not
+re-export**. Any other module-private helper that turns out to be needed across
+two modules goes there too. Everything else that was private stays private in
+the module that owns it.
+
+`internal.ts` therefore holds: the `pg` / `pg-cursor` type imports, the lazy
+`getPg` and `getPgCursor` guards (exported from this module, invisible from the
+barrel), and `buildClientConfig`. `client.ts` imports from it.
 
 - [ ] **Step 5: Create `postgres/sql.ts`**
 
@@ -611,7 +628,7 @@ the ordering and the verification steps are identical, and this task does not
 repeat them.
 
 **Files:**
-- Create: `src/lib/connections/sqlserver/{client,sql,catalog,rows,ddl,query,ops,backup}.ts`
+- Create: `src/lib/connections/sqlserver/{internal,client,sql,catalog,rows,ddl,query,ops,backup}.ts`
 - Create: `src/lib/connections/sqlserver.barrel.test.ts`
 - Modify: `src/lib/connections/sqlserver.ts` (2947 lines → ~15-line barrel)
 
@@ -674,7 +691,8 @@ Map the current file onto the Task 2 layout:
 
 | module | contents |
 |---|---|
-| `client.ts` | the `mssql` lazy-import guard, connection/pool helpers, `probeSqlServer` |
+| `internal.ts` | the `mssql` lazy-import guard and any helper needed by two or more modules. NOT re-exported by the barrel |
+| `client.ts` | connection/pool helpers, `probeSqlServer` |
 | `sql.ts` | `SQLSERVER_DB_NAME_RE`, `validateSqlServerDatabaseName`, `validateSqlServerIdentifier`, `requireNoStatementTerminator`, `splitGoBatches` |
 | `catalog.ts` | `listSqlServerDatabases`, `listSqlServerSchemas`, `listSqlServerSchemaColumns`, `listSqlServerTables`, `listSqlServerObjects`, `getSqlServerTableDetail`, `getSqlServerModule`, `getSqlServerDependencies`, `buildSqlServerTableDDL`, and the `SqlServerTableSummary` / `SqlServerDatabaseDetail` / `SqlServerColumn` / `SqlServerIndex` / `SqlServerConstraintRow` / `SqlServerForeignKeyRow` / `SqlServerTableDetail` / `SqlServerObject` / `SqlServerParam` / `SqlServerModule` / `SqlServerDependency` types |
 | `rows.ts` | `SqlServerColumnValue`, `SqlServerPrimaryKeyValue`, `SqlServerTableData`, `getSqlServerTableData`, `insertSqlServerRow`, `updateSqlServerRow`, `deleteSqlServerRow` |
@@ -1397,3 +1415,76 @@ Before Phase 2 is planned, all of these must hold:
 Phase 2 (L1 primitives, L2 shell, L3 convergence, roadmap refresh) is planned
 after this lands, once the component tests have made the real shared surface
 visible.
+
+---
+
+## Phase 1 outcome (2026-08-08)
+
+All six tasks complete. Twelve implementation commits from `22862fa` to `fb3c4bb`,
+plus a four-commit fix wave after the whole-branch review.
+
+**Verified:** `npm run typecheck`, `npm run lint`, `npm test` (852 tests, 128
+files) and `npm run build` all clean.
+
+**Evidence for the driver splits.** Stronger than this plan's own acceptance
+bar. The whole-branch review enumerated every export through the TypeScript
+checker at both revisions — 216 exports across the two drivers, including all
+93 exported types/interfaces, exported consts, and every function's full
+resolved signature — and diffed them: **zero lines**. It also hashed every
+top-level function body after stripping the `export` keyword: 88 postgres and
+52 sqlserver functions, **zero differing bodies**. SQL gatekeeper call sites
+are preserved exactly (pg `quoteIdent` 60→60, `validateIdentifier` 15→15,
+`requireNoStatementTerminator` 11→11; mssql `validateSqlServerIdentifier`
+75→75, `requireNoStatementTerminator` 11→11). No module-level side effects in
+any of the 18 new files, so import evaluation order cannot matter.
+
+### Carried into Phase 2 — must be addressed there
+
+1. **All three SQL table-detail components mishandle fetch failure.** Postgres
+   `loadData`, MySQL `loadData`, SQL Server `loadDetail`: none has a `.catch()`,
+   each is fired from a bare mount effect. A dead connection produces an
+   unhandled promise rejection, not a rendered error — and there is no error
+   branch in the render tree at all, only skeletons. Three copies of one defect.
+   This is the concrete case for L2's shared error surface, and it must be an
+   explicit L2 acceptance criterion.
+2. **The safety net has zero coverage of failure rendering.** Each of the three
+   table-detail suites had to delete its "surfaces a fetch failure" test because
+   the behaviour does not exist. Phase 2 must plan to *add* those tests — there
+   is no before-state to regress against for L2's headline promise.
+3. **Run the integration suite before Phase 2's first behaviour-changing commit.**
+   `docker compose up -d postgres sqlserver && npm run test:integration` never
+   ran during Phase 1 — the Docker daemon was unreachable in the working
+   environment. Acceptable for a provably mechanical change; not acceptable once
+   behaviour changes.
+4. **`e2e/sql-workspaces.spec.ts` has never run against real services.** Its
+   navigation is source-traced only. Expect to fix selectors on first real run.
+   The MySQL block is `test.fixme` and needs a compose service plus a seed script.
+5. **MySQL `<Button render={<a/>}>` is missing `nativeButton={false}`**, so Base
+   UI logs a dev warning on every mount. The MySQL test file tolerates exactly
+   that message and fails on any other `console.error`; fixing the component
+   should include removing that allowance.
+6. **`postgres/ops.ts` is 1193 lines** and holds three unrelated concerns
+   (server overview/top tables; activity/locks/maintenance/diagnostics; role
+   CRUD). Splitting roles out is a natural cleanup.
+7. **Exit criterion 1 was unsatisfiable as written** — "no file in
+   `src/lib/connections/` exceeds ~1200 lines" is directory-scoped, but
+   `kafka.ts` is 2316 lines and was never in scope. Reword before copying it
+   into the Phase 2 plan.
+8. **`docs/ROADMAP.md` is still stale** — spec branch 8, deferred to Phase 2.
+   EXPLAIN/Activity/Roles all shipped but are listed as "up next"; Redis and
+   MongoDB are listed as future work but are registered techs; ⌘K coverage is
+   10 of 12 (`kubernetes` and `redis` lack `commandObjects`).
+
+### Two plan defects this phase caught, for the record
+
+- Task 1's multi-line SSE test split its payload *inside* a JSON string, where a
+  literal newline is invalid JSON — so `JSON.parse` threw whether or not the
+  `data:` lines were joined, and the test passed against the bug it existed to
+  catch. Fixed in `df1f16c`.
+- Tasks 2 and 3 told the implementer to export the lazy-import guards while the
+  Global Constraints and the barrel test forbade any public-surface change.
+  Resolved with `<tech>/internal.ts`, which the barrel does not re-export.
+
+Both shipped in a plan that was reviewed before execution. Draft test code and
+draft fixtures in a plan are hypotheses, not requirements — every task in this
+phase found the plan's fixtures wrong about the real API shapes.

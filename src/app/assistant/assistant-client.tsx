@@ -13,6 +13,7 @@ import { ApprovalCard, type PendingApproval } from "@/components/ai/approval-car
 import { PlanCard, type ProposedPlan } from "@/components/ai/plan-card";
 import { AiSettingsDialog } from "@/components/ai/ai-settings-dialog";
 import { ModelPicker } from "@/components/ai/model-picker";
+import { consumeAssistantStream } from "./stream";
 
 function genId() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -306,28 +307,14 @@ export function AssistantClient() {
         setMessages((m) => patchLast(m, `⚠️ ${e.error}`));
         return;
       }
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buf = "";
-      for (;;) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        const frames = buf.split("\n\n");
-        buf = frames.pop() ?? "";
-        for (const frame of frames) {
-          const ev = frame.split("\n").find((l) => l.startsWith("event: "));
-          const dl = frame.split("\n").find((l) => l.startsWith("data: "));
-          if (!ev || !dl) continue;
-          const event = ev.slice(7).trim();
-          const data = JSON.parse(dl.slice(6));
-          if (event === "text-delta") setMessages((m) => appendLast(m, data.text));
-          else if (event === "tool-call") setChips((c) => [...c, { toolCallId: data.toolCallId, tool: data.tool, connection: (data.args as { connection?: string })?.connection }]);
-          else if (event === "approval-needed") setPending((p) => [...p, data]);
-          else if (event === "plan") setPlan({ sessionId: sessionRef.current, ...data });
-          else if (event === "error") setMessages((m) => patchLast(m, `⚠️ ${data.error}`));
-        }
-      }
+      await consumeAssistantStream(res.body, {
+        onTextDelta: (text) => setMessages((m) => appendLast(m, text)),
+        onToolCall: (d) =>
+          setChips((c) => [...c, { toolCallId: d.toolCallId, tool: d.tool, connection: d.args?.connection }]),
+        onApprovalNeeded: (d) => setPending((p) => [...p, d]),
+        onPlan: (d) => setPlan({ sessionId: sessionRef.current, ...d }),
+        onError: (msg) => setMessages((m) => patchLast(m, `⚠️ ${msg}`)),
+      });
       refreshList();
     } catch {
       /* aborted / network */

@@ -94,7 +94,7 @@ Wire format: `event: <name>\ndata: <json>\n\n`. Client uses `EventSource` + `add
 
 ## Postgres SQL safety
 
-`src/lib/connections/postgres.ts` is the only place that builds SQL. Three rules:
+SQL is built across `src/lib/connections/postgres/{sql,catalog,rows,ddl,query,ops,backup}.ts` — `postgres.ts` is now a ~15-line barrel re-exporting them (see "Large drivers" below). Three rules:
 
 1. **Identifiers** (table / column / schema / role / index names): `quoteIdent(name)` — wraps in `"…"` and doubles internal `"`. `validateIdentifier(name, kind)` additionally enforces `^[A-Za-z_][A-Za-z0-9_]*$` for user-supplied names.
 2. **Values**: parameterized queries (`$1, $2, …`). Never interpolate.
@@ -102,6 +102,10 @@ Wire format: `event: <name>\ndata: <json>\n\n`. Client uses `EventSource` + `add
 4. **User-pasted SQL in the query editor** (`runQuery`) is intentionally unrestricted — that's the feature.
 
 **Connection pooling**: `withClient` acquires a client from a cached `pg.Pool` per connection+database (globalThis-keyed by host/port/user/ssl/password-hash, `max:5`, `idleTimeoutMillis:30000`, `pool.on('error')` guarded, `release(true)` to discard a client after an error). `dropPostgresPools(config)` ends all pools for a connection and is called from the `DELETE /api/connections/[id]` cascade.
+
+## Large drivers (module split)
+
+`postgres.ts` and `sqlserver.ts` outgrew a single file, so each is now a `<tech>/` directory of focused modules (`client`, `sql`, `catalog`, `rows`, `ddl`, `query`, `ops`, `backup`) behind a barrel at the original path (`src/lib/connections/<tech>.ts`) — that barrel exists purely so the existing ~80 import sites across both drivers didn't have to change. **New code should import the specific module** (e.g. `@/lib/connections/postgres/catalog`) **rather than the barrel.** Cross-module private helpers that don't belong to the public surface (lazy driver-import guards, connection-pool internals, etc.) live in `<tech>/internal.ts`, which the barrel deliberately does **not** re-export, keeping them off the public surface.
 
 ## UI conventions (base-ui, not Radix)
 
@@ -138,7 +142,7 @@ shadcn wrappers in `src/components/ui/` re-export `@base-ui/react/*` primitives.
 A technology is one self-contained **module** under `src/techs/<tech>/`, collected by two registries. Core derives catalog, summaries, `FIRST_PAGE`, secret keys, health probes, command-palette providers, and `serverExternalPackages` **from the registry** — so adding a tech is create-module + register, not a 9-file diff.
 
 - **`<tech>/meta.ts`** — `export const <tech>Meta: TechModuleMeta<C>`: `catalog`, `config` (zod `schema` + `secretKeys`), `summary`, `firstPage`, `optionalDeps`, `serverPackages`, optional `capabilities` + `commandObjects`. **CLIENT-SAFE — must NOT import driver code.** It is reached by the home grid and command palette.
-- **`<tech>/index.ts`** — `export const <tech>: TechModule<C> = { ...<tech>Meta, driver: { probe, health } }`. **Server-only** — imports the driver, which lazy-imports its npm package behind a `get<Pkg>()` guard that throws `DriverNotInstalledError` (template: `src/lib/connections/postgres.ts`).
+- **`<tech>/index.ts`** — `export const <tech>: TechModule<C> = { ...<tech>Meta, driver: { probe, health } }`. **Server-only** — imports the driver, which lazy-imports its npm package behind a `get<Pkg>()` guard that throws `DriverNotInstalledError` (template: `src/lib/connections/postgres/internal.ts`'s `getPg`/`getPgCursor`).
 - **`registry.ts`** (server, full modules) vs **`meta-registry.ts`** (client-safe metadata). **Client components import `@/techs/meta-registry`; server code imports `@/techs/registry`.** Never import a `<tech>/index.ts` or the server `registry.ts` from a client component — it pulls Node-only driver packages into the client bundle and breaks the build.
 - `contract.ts` defines `TechModuleMeta` (client) + `TechDriver` (server) + `TechModule = TechModuleMeta & { driver }`. `DriverNotInstalledError` lives here; `errorResponse` in `src/lib/errors.ts` maps it to 503.
 
@@ -146,7 +150,7 @@ A technology is one self-contained **module** under `src/techs/<tech>/`, collect
 
 1. Add a `TechId` literal in `src/lib/connections/types.ts` and a config interface. `TechId` is the hand-maintained source of truth; the registry is typed `Record<TechId, …>` so `tsc` fails if a tech has no module.
 2. Create `src/techs/<tech>/meta.ts` (client-safe metadata — no driver import).
-3. Create `src/techs/<tech>/index.ts` (spreads meta + adds `driver`). Put the driver helper in `src/lib/connections/<tech>.ts` (probe + per-object ops, Kafka/Docker connect-try-finally-disconnect pattern) and **lazy-import its npm package** so the dependency is optional.
+3. Create `src/techs/<tech>/index.ts` (spreads meta + adds `driver`). Put the driver helper in `src/lib/connections/<tech>.ts` (probe + per-object ops, Kafka/Docker connect-try-finally-disconnect pattern) and **lazy-import its npm package** so the dependency is optional. If the driver outgrows one file, split it into a `<tech>/` directory behind a barrel — see "Large drivers" above.
 4. Register in BOTH `src/techs/registry.ts` (full module) and `src/techs/meta-registry.ts` (meta) — one line each.
 5. Add the npm driver to `optionalDependencies` in `package.json`. `serverExternalPackages` is generated from module `serverPackages` by `scripts/gen-server-packages.ts` (runs on `prebuild`/`predev`) — do **not** hand-edit `next.config.ts`.
 6. Add API routes under `src/app/api/<tech>/` (`test`, `[id]/...`). Use `formatError`; the lazy guard surfaces "Run: npm i <pkg>" when the driver is absent. SSE routes follow the streaming pattern above.
