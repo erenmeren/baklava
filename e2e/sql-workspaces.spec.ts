@@ -1,0 +1,214 @@
+import { test, expect, type Page } from "@playwright/test";
+import { reachable } from "@/test/integration-helpers";
+
+/**
+ * SQL workspace smoke test: for each of the three SQL techs (Postgres, MySQL,
+ * SQL Server), create a connection through the home-screen ConnectionSheet,
+ * open its workspace, confirm the sidebar renders, open a seeded demo table,
+ * click through every tab on the table-detail page, and confirm none of them
+ * shows a rendered error state.
+ *
+ * The Docker daemon is unreachable in this development environment (no
+ * compose plugin, port 5432 closed) — established and independently
+ * confirmed. These blocks therefore could not be run against real services
+ * here; this file has only been verified to typecheck, lint, and be
+ * collectable by `npx playwright test e2e/sql-workspaces.spec.ts --list`.
+ *
+ * Each block is gated on a plain TCP reachability probe of the service's
+ * compose port — mirroring the `reachable()` gate that
+ * src/lib/connections/services.integration.test.ts uses for the vitest
+ * integration suite — and prints a visible `console.warn` when it skips, so
+ * a run against a machine without the stack up is loud about having tested
+ * nothing rather than quietly reporting green.
+ *
+ * Demo data: run `docker compose up -d postgres sqlserver` then
+ * `bash seed/postgres.sh` / `bash seed/sqlserver.sh` (or `bash seed/all.sh`)
+ * first — the table names below (`shop.customers` / `shop.Customers`) come
+ * from those seed scripts, which create a `shop` schema with `customers`,
+ * `products`, `orders`, and `order_items` tables.
+ *
+ * MySQL has no service in compose.yaml at all (only postgres, sqlserver,
+ * kafka — see that file's own header comment), so the mysql block below
+ * always skips today, on every machine, until a later phase adds one. When
+ * it does, this block only needs MYSQL_PORT flipped to reachable — the rest
+ * of the flow (connection form, sidebar, table tabs) is already wired the
+ * same way as the other two.
+ */
+
+const PW = "Baklava123!";
+const POSTGRES_PORT = 5432;
+const SQLSERVER_PORT = 1433;
+const MYSQL_PORT = 3306;
+
+/** Open the home-screen ConnectionSheet for `tech` and fill+save a new connection. */
+async function createConnection(
+  page: Page,
+  opts: {
+    tileName: RegExp;
+    passwordFieldId: string;
+    /** Extra fields to fill before saving (e.g. the demo database name). */
+    fill?: Record<string, string>;
+  },
+) {
+  await page.goto("/");
+  await page.getByRole("button", { name: opts.tileName }).click();
+  const dialog = page.getByRole("dialog").first();
+  await expect(dialog).toBeVisible({ timeout: 5_000 });
+
+  await dialog.getByRole("button", { name: /new connection/i }).click();
+  for (const [id, value] of Object.entries(opts.fill ?? {})) {
+    await dialog.locator(`#${id}`).fill(value);
+  }
+  await dialog.locator(`#${opts.passwordFieldId}`).fill(PW);
+  await dialog.getByRole("button", { name: /test & save/i }).click();
+
+  // A successful save returns the sheet to the list view — the "New
+  // connection" button reappears there. This also acts as the wait for the
+  // probe/save round-trip to finish.
+  await expect(
+    dialog.getByRole("button", { name: /new connection/i }),
+  ).toBeVisible({ timeout: 15_000 });
+
+  // Open the connection we just saved — it's the newest row.
+  await dialog.getByRole("button", { name: /^open$/i }).first().click();
+}
+
+/** Click through every `role=tab` on the currently-open table-detail page and
+ *  assert none of them renders a visible destructive/error banner. */
+async function clickThroughTabs(page: Page) {
+  const tabs = page.getByRole("tab");
+  const count = await tabs.count();
+  expect(count).toBeGreaterThan(0);
+  for (let i = 0; i < count; i++) {
+    await tabs.nth(i).click();
+    // None of the three table-detail workspaces render a dedicated
+    // "error" role/banner on a good render — the closest generic signal
+    // across all three is the destructive-styled alert used for genuine
+    // failures (see e.g. the Postgres form's `<Alert variant="destructive">`
+    // and the query editors' `text-destructive` error panels). A seeded,
+    // reachable connection should never surface one while just browsing.
+    await expect(page.locator('[data-slot="alert"][data-variant="destructive"]')).toHaveCount(0);
+    await expect(page.getByText(/unexpected error|something went wrong/i)).toHaveCount(0);
+  }
+}
+
+test.describe("postgres SQL workspace", () => {
+  let up = false;
+  test.beforeAll(async () => {
+    up = await reachable("localhost", POSTGRES_PORT);
+    if (!up) {
+      console.warn(
+        `[skip] postgres SQL workspace e2e — postgres not reachable on localhost:${POSTGRES_PORT}. ` +
+          "Run `docker compose up -d postgres && bash seed/postgres.sh` first.",
+      );
+    }
+  });
+
+  test("sidebar renders, a seeded table opens, and every tab is error-free", async ({
+    page,
+  }) => {
+    test.skip(!up, `postgres not reachable on localhost:${POSTGRES_PORT}`);
+
+    await createConnection(page, {
+      tileName: /open postgresql connections/i,
+      passwordFieldId: "pg-pass",
+    });
+
+    // Workspace chrome loaded — the sidebar's "Databases" tree root renders.
+    await expect(page.getByText("Databases", { exact: true })).toBeVisible({
+      timeout: 15_000,
+    });
+
+    // Expand demo → shop → Tables → customers (seed/postgres.sh).
+    await page.getByRole("button", { name: /^demo$/ }).click();
+    await page.getByRole("button", { name: /^shop$/ }).click();
+    await page.getByRole("button", { name: /^tables/i }).click();
+    await page.getByRole("link", { name: "customers" }).click();
+
+    await expect(page.getByRole("tab", { name: "Data" })).toBeVisible({
+      timeout: 10_000,
+    });
+    await clickThroughTabs(page);
+  });
+});
+
+test.describe("sqlserver SQL workspace", () => {
+  let up = false;
+  test.beforeAll(async () => {
+    up = await reachable("localhost", SQLSERVER_PORT);
+    if (!up) {
+      console.warn(
+        `[skip] sqlserver SQL workspace e2e — sqlserver not reachable on localhost:${SQLSERVER_PORT}. ` +
+          "Run `docker compose up -d sqlserver && bash seed/sqlserver.sh` first.",
+      );
+    }
+  });
+
+  test("sidebar renders, a seeded table opens, and every tab is error-free", async ({
+    page,
+  }) => {
+    test.skip(!up, `sqlserver not reachable on localhost:${SQLSERVER_PORT}`);
+
+    await createConnection(page, {
+      tileName: /open sql server connections/i,
+      passwordFieldId: "mssql-password",
+    });
+
+    await expect(page.getByText("Databases", { exact: true })).toBeVisible({
+      timeout: 15_000,
+    });
+
+    // Expand BaklavaDemo → shop → Tables → Customers (seed/sqlserver.sh).
+    await page.getByRole("button", { name: /^BaklavaDemo$/ }).click();
+    await page.getByRole("button", { name: /^shop$/ }).click();
+    await page.getByRole("button", { name: /^tables/i }).click();
+    await page.getByRole("link", { name: "Customers" }).click();
+
+    await expect(page.getByRole("tab", { name: "Data" })).toBeVisible({
+      timeout: 10_000,
+    });
+    await clickThroughTabs(page);
+  });
+});
+
+test.describe("mysql SQL workspace", () => {
+  // MySQL has no service in compose.yaml at all (only postgres, sqlserver,
+  // kafka), so `up` is always false today — this block always skips, on
+  // every machine, until a later phase adds a compose service for it. It's
+  // still written and wired here (rather than omitted) so that phase only
+  // has to add the service and flip MYSQL_PORT to reachable, not author a
+  // new spec.
+  let up = false;
+  test.beforeAll(async () => {
+    up = await reachable("localhost", MYSQL_PORT);
+    if (!up) {
+      console.warn(
+        `[skip] mysql SQL workspace e2e — mysql not reachable on localhost:${MYSQL_PORT}. ` +
+          "There is no mysql service in compose.yaml yet (Phase 2) — this block always skips today.",
+      );
+    }
+  });
+
+  test("sidebar renders, a table opens, and every tab is error-free", async ({
+    page,
+  }) => {
+    test.skip(!up, `mysql not reachable on localhost:${MYSQL_PORT}`);
+
+    await createConnection(page, {
+      tileName: /open mysql connections/i,
+      passwordFieldId: "my-pass",
+    });
+
+    await expect(page.getByText("Databases", { exact: true })).toBeVisible({
+      timeout: 15_000,
+    });
+
+    await page.getByRole("button", { name: /^tables/i }).click();
+    await page.getByRole("link", { name: /.+/ }).first().click();
+
+    await expect(page.getByRole("tab", { name: "Data" })).toBeVisible({
+      timeout: 10_000,
+    });
+    await clickThroughTabs(page);
+  });
+});
