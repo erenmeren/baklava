@@ -55,8 +55,8 @@ what the components actually share.
 |---|---|
 | `src/app/assistant/stream.ts` | Consume the assistant SSE response body, dispatch typed events to handlers |
 | `src/app/assistant/stream.test.ts` | Unit tests for the above |
-| `src/lib/connections/postgres/{client,sql,catalog,rows,ddl,query,ops,backup}.ts` | The eight postgres driver modules |
-| `src/lib/connections/sqlserver/{client,sql,catalog,rows,ddl,query,ops,backup}.ts` | The eight sqlserver driver modules |
+| `src/lib/connections/postgres/{internal,client,sql,catalog,rows,ddl,query,ops,backup}.ts` | The postgres driver modules. `internal.ts` holds cross-module private helpers and is NOT re-exported by the barrel |
+| `src/lib/connections/sqlserver/{internal,client,sql,catalog,rows,ddl,query,ops,backup}.ts` | The sqlserver driver modules, mirroring postgres |
 | `src/lib/connections/postgres.barrel.test.ts` | Locks the postgres public surface |
 | `src/lib/connections/sqlserver.barrel.test.ts` | Locks the sqlserver public surface |
 | `src/test/sse.ts` | Test helper: build a `ReadableStream<Uint8Array>` from strings |
@@ -126,7 +126,7 @@ export function streamOf(...chunks: string[]): ReadableStream<Uint8Array> {
 `src/app/assistant/stream.test.ts`:
 
 ```ts
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import { streamOf } from "@/test/sse";
 import { consumeAssistantStream, type AssistantStreamHandlers } from "./stream";
 
@@ -166,13 +166,20 @@ describe("consumeAssistantStream", () => {
   });
 
   // Defect 1: the old .find() took only the first data: line.
+  //
+  // The payload must be split BETWEEN JSON tokens, not inside a string. A
+  // literal newline inside a JSON string is invalid JSON, so a payload split
+  // mid-string throws in JSON.parse whether or not the lines were joined —
+  // such a test passes either way and proves nothing. Split between tokens
+  // and the two cases diverge: joined is valid JSON, first-line-only
+  // ('{"text":') throws and the frame is dropped.
   it("joins a payload spanning multiple data: lines", async () => {
     const h = handlers();
     await consumeAssistantStream(
-      streamOf('event: text-delta\ndata: {"text":"line one\ndata: line two"}\n\n'),
+      streamOf('event: text-delta\ndata: {"text":\ndata: "joined"}\n\n'),
       h,
     );
-    expect(h.calls).toEqual(["text:line one\nline two"]);
+    expect(h.calls).toEqual(["text:joined"]);
   });
 
   // Defect 2: the old unguarded JSON.parse killed the whole stream.
@@ -338,7 +345,7 @@ changes: `tsc --noEmit` passes, every existing suite passes, and a new barrel
 test asserts the public surface is intact.
 
 **Files:**
-- Create: `src/lib/connections/postgres/{client,sql,catalog,rows,ddl,query,ops,backup}.ts`
+- Create: `src/lib/connections/postgres/{internal,client,sql,catalog,rows,ddl,query,ops,backup}.ts`
 - Create: `src/lib/connections/postgres.barrel.test.ts`
 - Modify: `src/lib/connections/postgres.ts` (3689 lines → ~15-line barrel)
 
@@ -478,15 +485,25 @@ git commit -m "test(postgres): lock the driver's public surface before the split
 
 - [ ] **Step 4: Create `postgres/client.ts`**
 
-Move, verbatim, from `postgres.ts` lines 1–137: the `pg` and `pg-cursor`
-type imports and lazy `getPg` / `getPgCursor` guards, `buildClientConfig`, the
+Move, verbatim, from `postgres.ts` lines 1–137 — minus what `internal.ts` takes
+(see the note at the end of this step): the
 whole pooling block (`PgPoolCache`, `poolCacheKey`, `poolCache`, `poolIdentity`,
 `poolKey`, `getPool`), `withClient`, `dropPostgresPools`, and the three test
 seams (`getPoolForTests`, `_injectPoolForTests`, `_endAllPostgresPoolsForTests`).
 Then move `probePostgres` and the `PostgresProbe` interface (lines 138–163).
 
-`getPg` and `getPgCursor` are used by other modules, so add `export` to both.
-Everything else that was module-private stays private.
+`getPg` and `getPgCursor` are needed by other modules, but exporting them from
+`client.ts` would put them in the barrel's namespace and change the public
+surface — which the Global Constraints forbid and the barrel test would catch.
+
+So they go in a ninth file, `postgres/internal.ts`, which **the barrel does not
+re-export**. Any other module-private helper that turns out to be needed across
+two modules goes there too. Everything else that was private stays private in
+the module that owns it.
+
+`internal.ts` therefore holds: the `pg` / `pg-cursor` type imports, the lazy
+`getPg` and `getPgCursor` guards (exported from this module, invisible from the
+barrel), and `buildClientConfig`. `client.ts` imports from it.
 
 - [ ] **Step 5: Create `postgres/sql.ts`**
 
@@ -611,7 +628,7 @@ the ordering and the verification steps are identical, and this task does not
 repeat them.
 
 **Files:**
-- Create: `src/lib/connections/sqlserver/{client,sql,catalog,rows,ddl,query,ops,backup}.ts`
+- Create: `src/lib/connections/sqlserver/{internal,client,sql,catalog,rows,ddl,query,ops,backup}.ts`
 - Create: `src/lib/connections/sqlserver.barrel.test.ts`
 - Modify: `src/lib/connections/sqlserver.ts` (2947 lines → ~15-line barrel)
 
@@ -674,7 +691,8 @@ Map the current file onto the Task 2 layout:
 
 | module | contents |
 |---|---|
-| `client.ts` | the `mssql` lazy-import guard, connection/pool helpers, `probeSqlServer` |
+| `internal.ts` | the `mssql` lazy-import guard and any helper needed by two or more modules. NOT re-exported by the barrel |
+| `client.ts` | connection/pool helpers, `probeSqlServer` |
 | `sql.ts` | `SQLSERVER_DB_NAME_RE`, `validateSqlServerDatabaseName`, `validateSqlServerIdentifier`, `requireNoStatementTerminator`, `splitGoBatches` |
 | `catalog.ts` | `listSqlServerDatabases`, `listSqlServerSchemas`, `listSqlServerSchemaColumns`, `listSqlServerTables`, `listSqlServerObjects`, `getSqlServerTableDetail`, `getSqlServerModule`, `getSqlServerDependencies`, `buildSqlServerTableDDL`, and the `SqlServerTableSummary` / `SqlServerDatabaseDetail` / `SqlServerColumn` / `SqlServerIndex` / `SqlServerConstraintRow` / `SqlServerForeignKeyRow` / `SqlServerTableDetail` / `SqlServerObject` / `SqlServerParam` / `SqlServerModule` / `SqlServerDependency` types |
 | `rows.ts` | `SqlServerColumnValue`, `SqlServerPrimaryKeyValue`, `SqlServerTableData`, `getSqlServerTableData`, `insertSqlServerRow`, `updateSqlServerRow`, `deleteSqlServerRow` |
