@@ -22,7 +22,9 @@ vi.mock("next/navigation", () => ({
 // unconditionally once `detail` is set, which throws on `undefined`. It also
 // named the index field `columns` instead of `keyColumns`, and dropped
 // `typeDesc`/`sizeBytes`/usage counters/`unused` that the Indexes tab and
-// buildClientDdl both read.
+// buildClientDdl both read. Columns also carry `precision`/`scale` per
+// SqlServerColumn (catalog.ts:288-302) — the component's local `Column`
+// interface never reads them, but they're part of the real shape.
 const DETAIL = {
   schema: "dbo",
   table: "users",
@@ -41,6 +43,8 @@ const DETAIL = {
       isPrimaryKey: true,
       defaultDefinition: null,
       maxLength: 4,
+      precision: 10,
+      scale: 0,
     },
     {
       name: "email",
@@ -54,6 +58,8 @@ const DETAIL = {
       isPrimaryKey: false,
       defaultDefinition: null,
       maxLength: 510,
+      precision: null,
+      scale: null,
     },
   ],
   indexes: [
@@ -103,7 +109,11 @@ beforeEach(() => {
     // appends a query string (`/data?offset=...`), the detail fetch never
     // does, so "/data?" is the pattern that actually distinguishes them.
     "/data?": DATA,
-    "/tables/dbo/users": DETAIL,
+    // "$"-anchored: without the anchor this would also match the rows
+    // request's URL (same path plus "/data?..."), now ambiguous against
+    // "/data?" above and rejected by mockFetch — see
+    // src/test/fetch-mock.ts's doc comment.
+    "/tables/dbo/users$": DETAIL,
   });
 });
 

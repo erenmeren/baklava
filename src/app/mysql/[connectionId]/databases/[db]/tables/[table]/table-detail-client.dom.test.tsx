@@ -13,6 +13,27 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push, replace }),
 }));
 
+// The component's "Open query" action renders `<Button render={<a href=… />}>`
+// without `nativeButton={false}` (table-detail-client.tsx:350-362), so Base UI
+// logs a dev-mode console.error on every mount:
+//   "Base UI: A component that acts as a button expected a native <button>..."
+// This is a pre-existing defect in the component, which this task may not
+// touch (the postgres equivalent has no such Button and stays silent). Allow
+// exactly that one message and fail on any other console.error, so this file
+// still guarantees pristine output for everything else — a plain
+// "no console output happened" check would have missed this, since vitest
+// only prints captured console output for failing tests.
+const KNOWN_WARNING = "expected a native <button>";
+let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
+beforeEach(() => {
+  consoleErrorSpy = vi.spyOn(console, "error").mockImplementation((...args) => {
+    if (!String(args[0]).includes(KNOWN_WARNING)) {
+      throw new Error(`Unexpected console.error: ${String(args[0])}`);
+    }
+  });
+});
+afterEach(() => consoleErrorSpy.mockRestore());
+
 // Shape matches ColumnInfo returned by listColumns in
 // src/lib/connections/mysql.ts — not the brief's guess (which invented
 // `defaultValue` and omitted `columnType`/`extra`/`comment`/`ordinal`, all of
@@ -81,7 +102,10 @@ function calls(): string[] {
 beforeEach(() => {
   restore = mockFetch({
     "/rows": ROWS,
-    "/tables/users": META,
+    // "$"-anchored: the rows request's URL is this same path plus "/rows",
+    // so an unanchored "/tables/users" would also match it — see
+    // src/test/fetch-mock.ts's doc comment.
+    "/tables/users$": META,
   });
 });
 
