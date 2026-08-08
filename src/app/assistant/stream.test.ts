@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import { streamOf } from "@/test/sse";
 import { consumeAssistantStream, type AssistantStreamHandlers } from "./stream";
 
@@ -37,19 +37,16 @@ describe("consumeAssistantStream", () => {
     expect(h.calls).toEqual(["text:split"]);
   });
 
-  // Defect 1: the old .find() took only the first data: line.
+  // Defect 1: the old .find() took only the first data: line. Splitting the
+  // payload between JSON tokens makes the two cases distinguishable — joined
+  // is valid JSON, first-line-only ('{"text":') throws and the frame is dropped.
   it("joins a payload spanning multiple data: lines", async () => {
     const h = handlers();
     await consumeAssistantStream(
-      streamOf(
-        'event: text-delta\ndata: line one\ndata: line two\n\n',
-        'event: text-delta\ndata: {"text":"after multi-line"}\n\n',
-      ),
+      streamOf('event: text-delta\ndata: {"text":\ndata: "joined"}\n\n'),
       h,
     );
-    // First frame: multi-line non-JSON is skipped, but stream continues (fixes both defects)
-    // Second frame: valid JSON is processed
-    expect(h.calls).toEqual(["text:after multi-line"]);
+    expect(h.calls).toEqual(["text:joined"]);
   });
 
   // Defect 2: the old unguarded JSON.parse killed the whole stream.
