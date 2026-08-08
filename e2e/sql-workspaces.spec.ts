@@ -73,22 +73,42 @@ async function createConnection(
   await dialog.getByRole("button", { name: /^open$/i }).first().click();
 }
 
-/** Click through every `role=tab` on the currently-open table-detail page and
- *  assert none of them renders a visible destructive/error banner. */
+/**
+ * Click through every `role=tab` on the currently-open table-detail page,
+ * wait for each panel to actually finish loading, and assert none of them
+ * renders a visible destructive/error banner.
+ *
+ * Two things have to both be true for this to mean anything:
+ *  - There has to be a positive signal that the panel rendered before any
+ *    negative assertion runs, otherwise `toHaveCount(0)` trivially resolves
+ *    against an empty/still-loading DOM on its first poll and proves
+ *    nothing. Every tab shows a `<Skeleton data-slot="skeleton">` while its
+ *    data is in flight (see table-detail-client.tsx), so waiting for those
+ *    to clear from the active tabpanel is that signal.
+ *  - The selector asserted against has to be one the app actually emits.
+ *    `Alert` (src/components/ui/alert.tsx) renders `role="alert"` but never
+ *    a `data-variant` attribute — that was class-only and the DOM never
+ *    carried it — so match on the `text-destructive` class token the
+ *    `destructive` variant adds instead. `toast.error(...)` calls across
+ *    the three table-detail clients ("Could not load…", "…failed") are the
+ *    other real error surface reachable from a background fetch failure
+ *    while browsing.
+ */
 async function clickThroughTabs(page: Page) {
   const tabs = page.getByRole("tab");
   const count = await tabs.count();
   expect(count).toBeGreaterThan(0);
   for (let i = 0; i < count; i++) {
     await tabs.nth(i).click();
-    // None of the three table-detail workspaces render a dedicated
-    // "error" role/banner on a good render — the closest generic signal
-    // across all three is the destructive-styled alert used for genuine
-    // failures (see e.g. the Postgres form's `<Alert variant="destructive">`
-    // and the query editors' `text-destructive` error panels). A seeded,
-    // reachable connection should never surface one while just browsing.
-    await expect(page.locator('[data-slot="alert"][data-variant="destructive"]')).toHaveCount(0);
-    await expect(page.getByText(/unexpected error|something went wrong/i)).toHaveCount(0);
+
+    // Positive signal: the active panel's loading skeletons are gone.
+    const panel = page.getByRole("tabpanel");
+    await expect(panel.locator('[data-slot="skeleton"]')).toHaveCount(0, {
+      timeout: 10_000,
+    });
+
+    await expect(page.locator('[role="alert"].text-destructive')).toHaveCount(0);
+    await expect(page.getByText(/could not load|failed/i)).toHaveCount(0);
   }
 }
 
@@ -203,6 +223,16 @@ test.describe("mysql SQL workspace", () => {
   }) => {
     test.skip(!up, `mysql not reachable on localhost:${MYSQL_PORT}`);
 
+    // Unverified against a live service: there's no MySQL seed script or
+    // compose entry yet, so the generic "click the first button/link"
+    // selectors below have never actually run and cannot be trusted —
+    // without scoping, "first button on the page" is just as likely to be
+    // app chrome (theme toggle, tab strip, sidebar header) as a database
+    // row. Keep as fixme (not a silent skip) until Phase 2 adds a seed
+    // script, this block runs for real, and the selectors get named like
+    // the Postgres/SQL Server blocks above.
+    test.fixme(true, "needs a MySQL seed script + a real run before these selectors can be trusted");
+
     await createConnection(page, {
       tileName: /open mysql connections/i,
       passwordFieldId: "my-pass",
@@ -223,8 +253,15 @@ test.describe("mysql SQL workspace", () => {
     // Server blocks above do by exact name; expand the first database row
     // generically instead. Revisit once Phase 2 adds a MySQL seed script:
     // name the specific database/table like the other two blocks do.
-    await page.getByRole("button").filter({ hasText: /.+/ }).first().click();
-    await page.getByRole("link", { name: /.+/ }).first().click();
+    //
+    // Scoped to the sidebar landmark (WorkspaceShell renders it as an
+    // `<aside>`, which Playwright exposes via the "complementary" role) so
+    // this doesn't fall back to clicking the first button/link on the
+    // *page* — that would just as likely be app chrome (theme toggle, tab
+    // strip, sidebar header) as a database row.
+    const sidebar = page.getByRole("complementary");
+    await sidebar.getByRole("button").filter({ hasText: /.+/ }).first().click();
+    await sidebar.getByRole("link", { name: /.+/ }).first().click();
 
     await expect(page.getByRole("tab", { name: "Data" })).toBeVisible({
       timeout: 10_000,
