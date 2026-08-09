@@ -7,14 +7,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -30,6 +22,7 @@ import { RefreshButton } from "@/components/workspace/auto-refresh";
 import { DataPagination } from "@/components/sql/pagination";
 import { StructurePanel } from "@/components/workspace/sql/structure-panel";
 import { DdlPanel } from "@/components/workspace/sql/ddl-panel";
+import { MetaTable, type MetaColumn } from "@/components/workspace/sql/meta-table";
 import type { SqlColumn } from "@/components/workspace/sql/types";
 import {
   DataGrid,
@@ -398,6 +391,167 @@ export function TableDetailClient({
     comment: c.comment,
   }));
 
+  const indexColumns: MetaColumn<IndexInfo>[] = [
+    {
+      header: "Name",
+      cell: (i) => (
+        <div className="font-mono text-xs flex items-center gap-2">
+          {i.name}
+          {i.unused ? (
+            <span
+              className="inline-flex items-center rounded border border-amber-500/30 bg-amber-500/10 px-1 py-px text-[9px] uppercase tracking-wider text-amber-600"
+              title="No scans since last stats reset — candidate for drop."
+            >
+              unused
+            </span>
+          ) : null}
+        </div>
+      ),
+    },
+    {
+      header: "Kind",
+      cell: (i) => (
+        <span className="space-x-1">
+          {i.isPrimary ? <Badge>primary</Badge> : null}
+          {i.isUnique && !i.isPrimary ? (
+            <Badge variant="secondary">unique</Badge>
+          ) : null}
+        </span>
+      ),
+    },
+    {
+      header: "Size",
+      align: "right",
+      cell: (i) => (
+        <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+          {formatBytes(i.sizeBytes)}
+        </span>
+      ),
+    },
+    {
+      header: "Scans",
+      align: "right",
+      cell: (i) => (
+        <span
+          className={cn(
+            "font-mono text-[11px] tabular-nums",
+            i.scans === 0 ? "text-amber-600" : "text-muted-foreground",
+          )}
+        >
+          {i.scans.toLocaleString()}
+        </span>
+      ),
+    },
+    {
+      header: "Tuples read",
+      align: "right",
+      cell: (i) => (
+        <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+          {i.tuplesRead.toLocaleString()}
+        </span>
+      ),
+    },
+    {
+      header: "Definition",
+      cell: (i) => (
+        <span className="font-mono text-[11px] text-muted-foreground break-all">
+          {i.definition}
+        </span>
+      ),
+    },
+    {
+      header: null,
+      headClassName: "w-px",
+      cell: (i) => (
+        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <Button
+            size="icon"
+            variant="ghost"
+            className="size-7"
+            disabled={i.isPrimary}
+            title={
+              i.isPrimary
+                ? "Primary key index can't be renamed here"
+                : "Rename index"
+            }
+            onClick={() => {
+              setRenameIdxTarget(i.name);
+              setRenameIdxValue(i.name);
+            }}
+          >
+            <Pencil className="size-3.5" />
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="size-7 text-destructive hover:text-destructive"
+            disabled={i.isPrimary}
+            title={
+              i.isPrimary
+                ? "Primary key index can't be dropped here"
+                : "Drop index"
+            }
+            onClick={() => setDropIdxTarget(i.name)}
+          >
+            <Trash2 className="size-3.5" />
+          </Button>
+        </div>
+      ),
+    },
+  ];
+
+  const constraintColumns: MetaColumn<ConstraintInfo>[] = [
+    {
+      header: "Name",
+      cell: (c) => <span className="font-mono text-xs">{c.name}</span>,
+    },
+    {
+      header: "Type",
+      cell: (c) => (
+        <Badge variant="secondary" className="font-mono">
+          {c.type}
+        </Badge>
+      ),
+    },
+    {
+      header: "Definition",
+      cell: (c) => (
+        <span className="font-mono text-[11px] text-muted-foreground break-all">
+          {c.definition}
+        </span>
+      ),
+    },
+  ];
+
+  const foreignKeyColumns: MetaColumn<ForeignKeyInfo>[] = [
+    {
+      header: "Name",
+      cell: (fk) => <span className="font-mono text-xs">{fk.name}</span>,
+    },
+    {
+      header: "Columns",
+      cell: (fk) => (
+        <span className="font-mono text-xs">{fk.columns.join(", ")}</span>
+      ),
+    },
+    {
+      header: "References",
+      cell: (fk) => (
+        <span className="font-mono text-xs">
+          {fk.refSchema}.{fk.refTable} ({fk.refColumns.join(", ")})
+        </span>
+      ),
+    },
+    {
+      header: "On update",
+      cell: (fk) => <span className="font-mono text-xs">{fk.onUpdate}</span>,
+    },
+    {
+      header: "On delete",
+      cell: (fk) => <span className="font-mono text-xs">{fk.onDelete}</span>,
+    },
+  ];
+
   return (
     <WorkspacePage
       title={
@@ -638,110 +792,13 @@ export function TableDetailClient({
               }}
             />
           ) : indexes ? (
-            indexes.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No indexes.</p>
-            ) : (
-              <div className="rounded-lg border border-border/60 overflow-hidden">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Kind</TableHead>
-                      <TableHead className="text-right">Size</TableHead>
-                      <TableHead className="text-right">Scans</TableHead>
-                      <TableHead className="text-right">Tuples read</TableHead>
-                      <TableHead>Definition</TableHead>
-                      <TableHead className="w-px" />
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {indexes.map((i) => (
-                      <TableRow
-                        key={i.name}
-                        className={cn(
-                          "group",
-                          i.unused && "bg-amber-500/5",
-                        )}
-                      >
-                        <TableCell className="font-mono text-xs">
-                          <div className="flex items-center gap-2">
-                            {i.name}
-                            {i.unused ? (
-                              <span
-                                className="inline-flex items-center rounded border border-amber-500/30 bg-amber-500/10 px-1 py-px text-[9px] uppercase tracking-wider text-amber-600"
-                                title="No scans since last stats reset — candidate for drop."
-                              >
-                                unused
-                              </span>
-                            ) : null}
-                          </div>
-                        </TableCell>
-                        <TableCell className="space-x-1">
-                          {i.isPrimary ? <Badge>primary</Badge> : null}
-                          {i.isUnique && !i.isPrimary ? (
-                            <Badge variant="secondary">unique</Badge>
-                          ) : null}
-                        </TableCell>
-                        <TableCell className="font-mono text-[11px] text-right tabular-nums text-muted-foreground">
-                          {formatBytes(i.sizeBytes)}
-                        </TableCell>
-                        <TableCell
-                          className={cn(
-                            "font-mono text-[11px] text-right tabular-nums",
-                            i.scans === 0
-                              ? "text-amber-600"
-                              : "text-muted-foreground",
-                          )}
-                        >
-                          {i.scans.toLocaleString()}
-                        </TableCell>
-                        <TableCell className="font-mono text-[11px] text-right tabular-nums text-muted-foreground">
-                          {i.tuplesRead.toLocaleString()}
-                        </TableCell>
-                        <TableCell className="font-mono text-[11px] text-muted-foreground break-all">
-                          {i.definition}
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap">
-                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="size-7"
-                              disabled={i.isPrimary}
-                              title={
-                                i.isPrimary
-                                  ? "Primary key index can't be renamed here"
-                                  : "Rename index"
-                              }
-                              onClick={() => {
-                                setRenameIdxTarget(i.name);
-                                setRenameIdxValue(i.name);
-                              }}
-                            >
-                              <Pencil className="size-3.5" />
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="size-7 text-destructive hover:text-destructive"
-                              disabled={i.isPrimary}
-                              title={
-                                i.isPrimary
-                                  ? "Primary key index can't be dropped here"
-                                  : "Drop index"
-                              }
-                              onClick={() => setDropIdxTarget(i.name)}
-                            >
-                              <Trash2 className="size-3.5" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )
+            <MetaTable
+              items={indexes}
+              columns={indexColumns}
+              rowKey={(i) => i.name}
+              rowClassName={(i) => (i.unused ? "bg-amber-500/5" : undefined)}
+              empty="No indexes."
+            />
           ) : (
             <Skeleton className="h-32 w-full" />
           )}
@@ -758,38 +815,12 @@ export function TableDetailClient({
               }}
             />
           ) : constraints ? (
-            constraints.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No constraints.</p>
-            ) : (
-              <div className="rounded-lg border border-border/60 overflow-hidden">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Definition</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {constraints.map((c) => (
-                      <TableRow key={c.name}>
-                        <TableCell className="font-mono text-xs">
-                          {c.name}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="secondary" className="font-mono">
-                            {c.type}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="font-mono text-[11px] text-muted-foreground break-all">
-                          {c.definition}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )
+            <MetaTable
+              items={constraints}
+              columns={constraintColumns}
+              rowKey={(c) => c.name}
+              empty="No constraints."
+            />
           ) : (
             <Skeleton className="h-32 w-full" />
           )}
@@ -806,45 +837,12 @@ export function TableDetailClient({
               }}
             />
           ) : foreignKeys ? (
-            foreignKeys.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No foreign keys.</p>
-            ) : (
-              <div className="rounded-lg border border-border/60 overflow-hidden">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Columns</TableHead>
-                      <TableHead>References</TableHead>
-                      <TableHead>On update</TableHead>
-                      <TableHead>On delete</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {foreignKeys.map((fk) => (
-                      <TableRow key={fk.name}>
-                        <TableCell className="font-mono text-xs">
-                          {fk.name}
-                        </TableCell>
-                        <TableCell className="font-mono text-xs">
-                          {fk.columns.join(", ")}
-                        </TableCell>
-                        <TableCell className="font-mono text-xs">
-                          {fk.refSchema}.{fk.refTable} (
-                          {fk.refColumns.join(", ")})
-                        </TableCell>
-                        <TableCell className="font-mono text-xs">
-                          {fk.onUpdate}
-                        </TableCell>
-                        <TableCell className="font-mono text-xs">
-                          {fk.onDelete}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )
+            <MetaTable
+              items={foreignKeys}
+              columns={foreignKeyColumns}
+              rowKey={(fk) => fk.name}
+              empty="No foreign keys."
+            />
           ) : (
             <Skeleton className="h-32 w-full" />
           )}

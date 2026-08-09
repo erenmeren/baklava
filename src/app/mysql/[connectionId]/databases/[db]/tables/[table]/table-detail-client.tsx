@@ -7,14 +7,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -36,6 +28,7 @@ import { RefreshButton } from "@/components/workspace/auto-refresh";
 import { DataPagination } from "@/components/sql/pagination";
 import { StructurePanel } from "@/components/workspace/sql/structure-panel";
 import { DdlPanel } from "@/components/workspace/sql/ddl-panel";
+import { MetaTable, type MetaColumn } from "@/components/workspace/sql/meta-table";
 import type { SqlColumn } from "@/components/workspace/sql/types";
 import {
   DataGrid,
@@ -397,6 +390,62 @@ export function TableDetailClient({ connectionId, db, table }: Props) {
     extra: c.extra || null,
   }));
 
+  const indexColumns: MetaColumn<IndexInfo>[] = [
+    {
+      header: "Name",
+      cell: (i) => <span className="font-mono text-xs">{i.name}</span>,
+    },
+    {
+      header: "Kind",
+      cell: (i) => (
+        <span className="space-x-1">
+          {i.primary ? <Badge>primary</Badge> : null}
+          {i.unique && !i.primary ? (
+            <Badge variant="secondary">unique</Badge>
+          ) : null}
+        </span>
+      ),
+    },
+    {
+      header: "Type",
+      cell: (i) => (
+        <span className="font-mono text-[11px] text-muted-foreground">
+          {i.type}
+        </span>
+      ),
+    },
+    {
+      header: "Columns",
+      cell: (i) => (
+        <span className="font-mono text-[11px] text-muted-foreground break-all">
+          {i.columns.join(", ")}
+        </span>
+      ),
+    },
+    {
+      header: null,
+      headClassName: "w-px",
+      cell: (i) => (
+        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <Button
+            size="icon"
+            variant="ghost"
+            className="size-7 text-destructive hover:text-destructive"
+            disabled={i.primary}
+            title={
+              i.primary
+                ? "Primary key index can't be dropped here"
+                : "Drop index"
+            }
+            onClick={() => setDropIdxTarget(i.name)}
+          >
+            <Trash2 className="size-3.5" />
+          </Button>
+        </div>
+      ),
+    },
+  ];
+
   return (
     <WorkspacePage
       title={<span className="font-mono">{table}</span>}
@@ -629,62 +678,12 @@ export function TableDetailClient({ connectionId, db, table }: Props) {
               }}
             />
           ) : indexes ? (
-            indexes.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No indexes.</p>
-            ) : (
-              <div className="rounded-lg border border-border/60 overflow-hidden">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Kind</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Columns</TableHead>
-                      <TableHead className="w-px" />
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {indexes.map((i) => (
-                      <TableRow key={i.name} className="group">
-                        <TableCell className="font-mono text-xs">
-                          {i.name}
-                        </TableCell>
-                        <TableCell className="space-x-1">
-                          {i.primary ? <Badge>primary</Badge> : null}
-                          {i.unique && !i.primary ? (
-                            <Badge variant="secondary">unique</Badge>
-                          ) : null}
-                        </TableCell>
-                        <TableCell className="font-mono text-[11px] text-muted-foreground">
-                          {i.type}
-                        </TableCell>
-                        <TableCell className="font-mono text-[11px] text-muted-foreground break-all">
-                          {i.columns.join(", ")}
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap">
-                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="size-7 text-destructive hover:text-destructive"
-                              disabled={i.primary}
-                              title={
-                                i.primary
-                                  ? "Primary key index can't be dropped here"
-                                  : "Drop index"
-                              }
-                              onClick={() => setDropIdxTarget(i.name)}
-                            >
-                              <Trash2 className="size-3.5" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )
+            <MetaTable
+              items={indexes}
+              columns={indexColumns}
+              rowKey={(i) => i.name}
+              empty="No indexes."
+            />
           ) : (
             <Skeleton className="h-32 w-full" />
           )}

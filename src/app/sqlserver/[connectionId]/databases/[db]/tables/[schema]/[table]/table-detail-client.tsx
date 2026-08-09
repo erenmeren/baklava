@@ -6,18 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { WorkspacePage } from "@/components/workspace/workspace-page";
 import { ErrorState } from "@/components/workspace/error-state";
 import { StructurePanel } from "@/components/workspace/sql/structure-panel";
 import { DdlPanel } from "@/components/workspace/sql/ddl-panel";
+import { MetaTable, type MetaColumn } from "@/components/workspace/sql/meta-table";
 import type { SqlColumn } from "@/components/workspace/sql/types";
 import { DataGrid, type GridColumn } from "@/components/workspace/sql/data-grid";
 import { cn } from "@/lib/utils";
@@ -213,6 +206,121 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
 
   const ddl = detail ? buildClientDdl(detail) : "";
 
+  const indexColumns: MetaColumn<Index>[] = [
+    {
+      header: "Name",
+      cell: (i) => (
+        <span className="font-mono text-xs inline-flex items-center gap-1.5">
+          {i.name}
+          {i.isPrimaryKey ? <Badge>PK</Badge> : null}
+          {i.isUnique && !i.isPrimaryKey ? (
+            <Badge variant="secondary">unique</Badge>
+          ) : null}
+          {i.unused ? (
+            <span className="inline-flex items-center rounded border border-amber-500/30 bg-amber-500/10 px-1 py-px text-[9px] uppercase tracking-wider text-amber-600">
+              unused
+            </span>
+          ) : null}
+        </span>
+      ),
+    },
+    {
+      header: "Type",
+      cell: (i) => (
+        <span className="text-[11px] font-mono text-muted-foreground">
+          {i.typeDesc}
+        </span>
+      ),
+    },
+    {
+      header: "Key columns",
+      cell: (i) => (
+        <span className="font-mono text-[11px]">
+          {i.keyColumns.join(", ")}
+          {i.includedColumns.length > 0 ? (
+            <span className="text-muted-foreground/60">
+              {" "}
+              INCLUDE ({i.includedColumns.join(", ")})
+            </span>
+          ) : null}
+        </span>
+      ),
+    },
+    {
+      header: "Size",
+      align: "right",
+      cell: (i) => (
+        <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+          {fmtBytes(i.sizeBytes)}
+        </span>
+      ),
+    },
+    {
+      header: "Seeks/Scans",
+      align: "right",
+      cell: (i) => (
+        <span
+          className={cn(
+            "font-mono text-[11px] tabular-nums",
+            i.userSeeks + i.userScans === 0
+              ? "text-amber-600"
+              : "text-muted-foreground",
+          )}
+        >
+          {(i.userSeeks + i.userScans + i.userLookups).toLocaleString()}
+        </span>
+      ),
+    },
+  ];
+
+  const constraintColumns: MetaColumn<ConstraintRow>[] = [
+    {
+      header: "Name",
+      cell: (c) => <span className="font-mono text-xs">{c.name}</span>,
+    },
+    {
+      header: "Type",
+      cell: (c) => <span className="text-xs">{c.type}</span>,
+    },
+    {
+      header: "Definition",
+      cell: (c) => (
+        <span className="font-mono text-[11px] text-muted-foreground break-all">
+          {c.definition}
+        </span>
+      ),
+    },
+  ];
+
+  const foreignKeyColumns: MetaColumn<ForeignKeyRow>[] = [
+    {
+      header: "Name",
+      cell: (f) => <span className="font-mono text-xs">{f.name}</span>,
+    },
+    {
+      header: "Columns",
+      cell: (f) => (
+        <span className="font-mono text-[11px]">{f.columns.join(", ")}</span>
+      ),
+    },
+    {
+      header: "References",
+      cell: (f) => (
+        <span className="font-mono text-[11px]">
+          {f.refSchema}.{f.refTable} ({f.refColumns.join(", ")})
+        </span>
+      ),
+    },
+    {
+      header: "On update / delete",
+      cell: (f) => (
+        <span className="text-[11px] text-muted-foreground">
+          {f.onUpdate} / {f.onDelete}
+        </span>
+      ),
+    },
+  ];
+
   return (
     <WorkspacePage
       title={
@@ -349,67 +457,14 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
             />
           ) : !detail ? (
             <Skeleton className="h-40 w-full" />
-          ) : detail.indexes.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No indexes.</p>
           ) : (
-            <div className="rounded-lg border border-border/60 overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Key columns</TableHead>
-                    <TableHead className="text-right">Size</TableHead>
-                    <TableHead className="text-right">Seeks/Scans</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {detail.indexes.map((i) => (
-                    <TableRow key={i.name} className={cn(i.unused && "bg-amber-500/5")}>
-                      <TableCell className="font-mono text-xs">
-                        <span className="inline-flex items-center gap-1.5">
-                          {i.name}
-                          {i.isPrimaryKey ? <Badge>PK</Badge> : null}
-                          {i.isUnique && !i.isPrimaryKey ? (
-                            <Badge variant="secondary">unique</Badge>
-                          ) : null}
-                          {i.unused ? (
-                            <span className="inline-flex items-center rounded border border-amber-500/30 bg-amber-500/10 px-1 py-px text-[9px] uppercase tracking-wider text-amber-600">
-                              unused
-                            </span>
-                          ) : null}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-[11px] font-mono text-muted-foreground">
-                        {i.typeDesc}
-                      </TableCell>
-                      <TableCell className="font-mono text-[11px]">
-                        {i.keyColumns.join(", ")}
-                        {i.includedColumns.length > 0 ? (
-                          <span className="text-muted-foreground/60">
-                            {" "}
-                            INCLUDE ({i.includedColumns.join(", ")})
-                          </span>
-                        ) : null}
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-[11px] tabular-nums text-muted-foreground">
-                        {fmtBytes(i.sizeBytes)}
-                      </TableCell>
-                      <TableCell
-                        className={cn(
-                          "text-right font-mono text-[11px] tabular-nums",
-                          i.userSeeks + i.userScans === 0
-                            ? "text-amber-600"
-                            : "text-muted-foreground",
-                        )}
-                      >
-                        {(i.userSeeks + i.userScans + i.userLookups).toLocaleString()}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+            <MetaTable
+              items={detail.indexes}
+              columns={indexColumns}
+              rowKey={(i) => i.name}
+              rowClassName={(i) => (i.unused ? "bg-amber-500/5" : undefined)}
+              empty="No indexes."
+            />
           )}
         </TabsContent>
 
@@ -423,31 +478,13 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
             />
           ) : !detail ? (
             <Skeleton className="h-40 w-full" />
-          ) : detail.constraints.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No check/default constraints.</p>
           ) : (
-            <div className="rounded-lg border border-border/60 overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Definition</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {detail.constraints.map((c) => (
-                    <TableRow key={c.name}>
-                      <TableCell className="font-mono text-xs">{c.name}</TableCell>
-                      <TableCell className="text-xs">{c.type}</TableCell>
-                      <TableCell className="font-mono text-[11px] text-muted-foreground break-all">
-                        {c.definition}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+            <MetaTable
+              items={detail.constraints}
+              columns={constraintColumns}
+              rowKey={(c) => c.name}
+              empty="No check/default constraints."
+            />
           )}
         </TabsContent>
 
@@ -461,37 +498,13 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
             />
           ) : !detail ? (
             <Skeleton className="h-40 w-full" />
-          ) : detail.foreignKeys.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No foreign keys.</p>
           ) : (
-            <div className="rounded-lg border border-border/60 overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Columns</TableHead>
-                    <TableHead>References</TableHead>
-                    <TableHead>On update / delete</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {detail.foreignKeys.map((f) => (
-                    <TableRow key={f.name}>
-                      <TableCell className="font-mono text-xs">{f.name}</TableCell>
-                      <TableCell className="font-mono text-[11px]">
-                        {f.columns.join(", ")}
-                      </TableCell>
-                      <TableCell className="font-mono text-[11px]">
-                        {f.refSchema}.{f.refTable} ({f.refColumns.join(", ")})
-                      </TableCell>
-                      <TableCell className="text-[11px] text-muted-foreground">
-                        {f.onUpdate} / {f.onDelete}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+            <MetaTable
+              items={detail.foreignKeys}
+              columns={foreignKeyColumns}
+              rowKey={(f) => f.name}
+              empty="No foreign keys."
+            />
           )}
         </TabsContent>
 
