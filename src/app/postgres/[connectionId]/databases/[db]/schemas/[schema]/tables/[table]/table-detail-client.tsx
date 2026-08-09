@@ -5,7 +5,6 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -33,13 +32,16 @@ import { StructurePanel } from "@/components/workspace/sql/structure-panel";
 import { DdlPanel } from "@/components/workspace/sql/ddl-panel";
 import type { SqlColumn } from "@/components/workspace/sql/types";
 import {
+  DataGrid,
+  GridToolbar,
+  filterRows,
+  type GridColumn,
+} from "@/components/workspace/sql/data-grid";
+import {
   Loader2,
   Pencil,
   Plus,
   Trash2,
-  Search,
-  Rows3,
-  Rows4,
   Wand2,
   Trash,
 } from "lucide-react";
@@ -333,22 +335,23 @@ export function TableDetailClient({
     }
   }, [tab, columns, indexes, constraints, foreignKeys, ddl, stats, pageData, pageOffset, base, fetchView, loadData, errors]);
 
-  const filteredRows = useMemo(() => {
-    if (!pageData) return [];
-    const q = filter.trim().toLowerCase();
-    if (!q) return pageData.rows;
-    return pageData.rows.filter((row) =>
-      row.some((cell) => {
-        if (cell == null) return false;
-        const text =
-          typeof cell === "object" ? JSON.stringify(cell) : String(cell);
-        return text.toLowerCase().includes(q);
-      }),
-    );
-  }, [pageData, filter]);
+  const filteredRows = useMemo(
+    () => filterRows(pageData?.rows ?? [], filter),
+    [pageData, filter],
+  );
 
-  const cellPad = density === "compact" ? "px-3 py-1" : "px-3 py-2";
-  const headPad = density === "compact" ? "px-3 py-1.5" : "px-3 py-2.5";
+  const gridColumns: GridColumn[] = useMemo(
+    () =>
+      (pageData?.fields ?? []).map((f) => {
+        const col = columns?.find((c) => c.name === f.name);
+        return {
+          name: f.name,
+          hint: `${col?.dataType ?? f.dataType}${col && !col.isNullable ? " · NOT NULL" : ""}`,
+          isPrimaryKey: !!col?.isPrimaryKey,
+        };
+      }),
+    [pageData, columns],
+  );
 
   const pkColumns = columns?.filter((c) => c.isPrimaryKey) ?? [];
   const canMutateRows = pkColumns.length > 0;
@@ -444,47 +447,13 @@ export function TableDetailClient({
         </TabsList>
 
         <TabsContent value="data" className="pt-4 space-y-3">
-          <div className="flex flex-wrap items-center gap-2 justify-between sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/75 -mx-1 px-1 py-1 rounded-md">
-            <div className="flex items-center gap-2 min-w-0">
-              <div className="relative">
-                <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none" />
-                <Input
-                  value={filter}
-                  onChange={(e) => setFilter(e.target.value)}
-                  placeholder="Filter rows on this page…"
-                  className="h-8 w-[260px] pl-7 text-xs font-mono"
-                  spellCheck={false}
-                />
-              </div>
-              <div className="inline-flex rounded-md border border-border/60 overflow-hidden">
-                <button
-                  type="button"
-                  onClick={() => setDensity("compact")}
-                  title="Compact rows"
-                  className={cn(
-                    "size-8 grid place-items-center transition-colors",
-                    density === "compact"
-                      ? "bg-foreground/10 text-foreground"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  <Rows4 className="size-3.5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDensity("normal")}
-                  title="Normal rows"
-                  className={cn(
-                    "size-8 grid place-items-center transition-colors border-l border-border/60",
-                    density === "normal"
-                      ? "bg-foreground/10 text-foreground"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  <Rows3 className="size-3.5" />
-                </button>
-              </div>
-              <p className="text-[11px] text-muted-foreground font-mono whitespace-nowrap">
+          <GridToolbar
+            filter={filter}
+            onFilterChange={setFilter}
+            density={density}
+            onDensityChange={setDensity}
+            status={
+              <>
                 {pageData?.totalRows != null
                   ? `${pageData.totalRows.toLocaleString()} rows`
                   : pageData
@@ -496,23 +465,22 @@ export function TableDetailClient({
                 {filter.trim()
                   ? ` · ${filteredRows.length} match${filteredRows.length === 1 ? "" : "es"}`
                   : ""}
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                size="sm"
-                onClick={() => setInsertOpen(true)}
-                disabled={!columns}
-              >
-                <Plus className="size-3.5" />
-                Insert row
-              </Button>
-              <RefreshButton
-                onClick={() => loadData(pageOffset)}
-                loading={loadingData}
-              />
-            </div>
-          </div>
+              </>
+            }
+          >
+            <Button
+              size="sm"
+              onClick={() => setInsertOpen(true)}
+              disabled={!columns}
+            >
+              <Plus className="size-3.5" />
+              Insert row
+            </Button>
+            <RefreshButton
+              onClick={() => loadData(pageOffset)}
+              loading={loadingData}
+            />
+          </GridToolbar>
           {errors.data ? (
             <ErrorState
               title="Could not load data"
@@ -532,124 +500,50 @@ export function TableDetailClient({
                   className="px-3 py-2 mb-3"
                 />
               ) : null}
-              <div className="rounded-lg border border-border/60 overflow-auto">
-                <table className="w-full text-xs font-mono border-collapse">
-                  <thead className="bg-muted/60 sticky top-0 z-[1]">
-                    <tr>
-                      {pageData.fields.map((f) => {
-                        const col = columns?.find((c) => c.name === f.name);
-                        const isPk = !!col?.isPrimaryKey;
-                        return (
-                          <th
-                            key={f.name}
-                            className={cn(
-                              "text-left font-semibold border-b border-border/60 whitespace-nowrap",
-                              headPad,
-                            )}
-                          >
-                            <div className="flex items-center gap-1.5">
-                              {isPk ? (
-                                <span
-                                  className="size-1.5 rounded-full bg-brand"
-                                  title="Primary key"
-                                  aria-hidden
-                                />
-                              ) : null}
-                              <span className="text-foreground">{f.name}</span>
-                            </div>
-                            <div className="text-[10px] font-normal text-muted-foreground">
-                              {col?.dataType ?? f.dataType}
-                              {col && !col.isNullable ? " · NOT NULL" : ""}
-                            </div>
-                          </th>
-                        );
-                      })}
-                      <th className="w-px border-b border-border/60" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredRows.map((row, i) => (
-                      <tr
-                        key={i}
-                        className="group border-b border-border/30 hover:bg-foreground/[0.025]"
-                      >
-                        {row.map((cell, j) => (
-                          <td
-                            key={j}
-                            className={cn(
-                              "max-w-[40ch] truncate align-top",
-                              cellPad,
-                            )}
-                            title={cell == null ? "null" : String(cell)}
-                          >
-                            {cell === null ? (
-                              <span className="text-muted-foreground/50 italic">
-                                null
-                              </span>
-                            ) : typeof cell === "object" ? (
-                              <span className="text-brand">
-                                {JSON.stringify(cell)}
-                              </span>
-                            ) : typeof cell === "boolean" ? (
-                              <span className="text-brand">
-                                {cell ? "true" : "false"}
-                              </span>
-                            ) : (
-                              String(cell)
-                            )}
-                          </td>
-                        ))}
-                        <td className="px-2 py-1 align-top whitespace-nowrap">
-                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="size-6"
-                              disabled={!canMutateRows}
-                              title={canMutateRows ? "Edit row" : noPkReason}
-                              onClick={() =>
-                                setEditTarget({
-                                  fields: pageData.fields,
-                                  cells: row,
-                                })
-                              }
-                            >
-                              <Pencil className="size-3" />
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="size-6 text-destructive hover:text-destructive"
-                              disabled={!canMutateRows}
-                              title={canMutateRows ? "Delete row" : noPkReason}
-                              onClick={() =>
-                                setDeleteTarget({
-                                  fields: pageData.fields,
-                                  cells: row,
-                                })
-                              }
-                            >
-                              <Trash2 className="size-3" />
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                    {filteredRows.length === 0 ? (
-                      <tr>
-                        <td
-                          colSpan={(pageData.fields.length || 1) + 1}
-                          className="px-3 py-6 text-center text-muted-foreground"
-                        >
-                          {pageData.rows.length === 0
-                            ? "No rows."
-                            : `No rows match “${filter}”.`}
-                        </td>
-                      </tr>
-                    ) : null}
-                  </tbody>
-                </table>
-              </div>
+              <DataGrid
+                columns={gridColumns}
+                rows={filteredRows}
+                density={density}
+                rowActions={(row) => (
+                  <>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="size-6"
+                      disabled={!canMutateRows}
+                      title={canMutateRows ? "Edit row" : noPkReason}
+                      onClick={() =>
+                        setEditTarget({
+                          fields: pageData.fields,
+                          cells: row,
+                        })
+                      }
+                    >
+                      <Pencil className="size-3" />
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="size-6 text-destructive hover:text-destructive"
+                      disabled={!canMutateRows}
+                      title={canMutateRows ? "Delete row" : noPkReason}
+                      onClick={() =>
+                        setDeleteTarget({
+                          fields: pageData.fields,
+                          cells: row,
+                        })
+                      }
+                    >
+                      <Trash2 className="size-3" />
+                    </Button>
+                  </>
+                )}
+                empty={
+                  pageData.rows.length === 0
+                    ? "No rows."
+                    : `No rows match “${filter}”.`
+                }
+              />
             </>
           ) : (
             <div className="space-y-2">

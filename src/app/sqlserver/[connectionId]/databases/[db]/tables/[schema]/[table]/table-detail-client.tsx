@@ -19,6 +19,7 @@ import { ErrorState } from "@/components/workspace/error-state";
 import { StructurePanel } from "@/components/workspace/sql/structure-panel";
 import { DdlPanel } from "@/components/workspace/sql/ddl-panel";
 import type { SqlColumn } from "@/components/workspace/sql/types";
+import { DataGrid, type GridColumn } from "@/components/workspace/sql/data-grid";
 import { cn } from "@/lib/utils";
 import { Plus, Trash, Wand2 } from "lucide-react";
 import { RowFormDialog, type ColumnInfo as RowColumnInfo } from "./row-form-dialog";
@@ -96,13 +97,6 @@ function fmtBytes(n: number): string {
   if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
   return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
-function fmtCell(v: unknown): React.ReactNode {
-  if (v === null || v === undefined)
-    return <span className="text-muted-foreground/40">NULL</span>;
-  if (v instanceof Date) return v.toISOString();
-  if (typeof v === "object") return JSON.stringify(v);
-  return String(v);
-}
 
 export function TableDetailClient({ connectionId, database, schema, table }: Props) {
   const base = `/api/sqlserver/${connectionId}/databases/${encodeURIComponent(database)}/tables/${encodeURIComponent(schema)}/${encodeURIComponent(table)}`;
@@ -155,6 +149,15 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
         ? "computed"
         : null,
   }));
+
+  const gridColumns: GridColumn[] = (data?.fields ?? []).map((f) => {
+    const col = detail?.columns.find((c) => c.name === f);
+    return {
+      name: f,
+      hint: `${col?.dataType ?? ""}${col && !col.nullable ? " · NOT NULL" : ""}`,
+      isPrimaryKey: !!col?.isPrimaryKey,
+    };
+  });
 
   const loadDetail = useCallback(async () => {
     try {
@@ -295,29 +298,13 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
                   className="px-3 py-2 shrink-0"
                 />
               ) : null}
-              <div className="rounded-lg border border-border/60 overflow-auto flex-1 min-h-0">
-                <table className="w-full text-xs font-mono">
-                  <thead className="bg-muted/40 sticky top-0">
-                    <tr>
-                      {data.fields.map((f, i) => (
-                        <th key={i} className="px-3 py-1.5 text-left font-semibold whitespace-nowrap">
-                          {f}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.rows.map((row, ri) => (
-                      <tr key={ri} className="border-t border-border/30 hover:bg-muted/30">
-                        {row.map((c, ci) => (
-                          <td key={ci} className="px-3 py-1 align-top max-w-[40ch] truncate">
-                            {fmtCell(c)}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="flex-1 min-h-0">
+                <DataGrid
+                  columns={gridColumns}
+                  rows={data.rows}
+                  density="compact"
+                  empty="No rows."
+                />
               </div>
               <DataPagination
                 offset={offset}
