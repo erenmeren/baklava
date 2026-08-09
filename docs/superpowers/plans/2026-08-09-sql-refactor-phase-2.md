@@ -25,6 +25,25 @@ Copied verbatim from `docs/superpowers/specs/2026-08-08-sql-workspace-refactor-d
 - **Do not hand-edit `next.config.ts`** — `serverExternalPackages` is generated from each tech module's `serverPackages`.
 - **No new npm dependencies.** Every primitive in this plan is built from what is already in `package.json`.
 
+- **RETRY WIRING — ruling of 2026-08-09, supersedes Steps 3(d)/3(e) as originally
+  written in Tasks 2, 3 and 4.** The original instruction paired "add the whole
+  `errors` object to the lazy-tab effect's dependencies" with a Data-tab
+  `onRetry` that calls the loader explicitly. Those two are incompatible:
+  clearing the error key is a real state change, the effect re-runs, and because
+  `pageData` is still `null` after a failure the effect's own
+  `tab === "data" && pageData === null && !errors.data` branch fires the loader a
+  second time. One Retry click therefore issues **two** requests. Confirmed
+  empirically during Task 2's review (fetch count 1 → 3 across one click).
+  **The Data tab's `onRetry` must clear the error key ONLY** — no explicit loader
+  call — matching how the other tabs already work. Because the effect is then the
+  sole caller, its data branch must load the **current page**, not page zero:
+  change `loadData(0)` to `loadData(pageOffset)` (SQL Server: `loadData(offset)`).
+  On mount that offset is 0, so mount behaviour is unchanged; on retry it
+  preserves the page the user was on instead of silently jumping them to the
+  first page. Keying the effect on individual `errors.<key>` scalars instead of
+  the whole map does **not** fix this — the scalar still changes when the key is
+  cleared.
+
 ---
 
 ## Scope
@@ -494,10 +513,7 @@ For the two branches that hand-roll their fetch (`ddl`, `stats`), replace the `.
             <ErrorState
               title="Could not load data"
               message={errors.data}
-              onRetry={() => {
-                clearError("data");
-                loadData(pageOffset);
-              }}
+              onRetry={() => clearError("data")}
             />
           ) : pageData ? (
 ```
@@ -713,6 +729,7 @@ Rewrite the two loaders:
       setDetailError(null);
     } catch (err) {
       setDetailError(err instanceof Error ? err.message : String(err));
+      setDetail(null);
     }
   }, [base]);
 
@@ -729,6 +746,11 @@ Rewrite the two loaders:
         setDataError(null);
       } catch (err) {
         setDataError(err instanceof Error ? err.message : String(err));
+        // Null the cached rows so Retry can re-satisfy the effect's guard.
+        // Without this, a failure that follows a success leaves `data`
+        // non-null, clearing the error alone never re-opens the guard, and
+        // Retry is a dead button. Postgres and MySQL both hit this.
+        setData(null);
       } finally {
         setLoadingData(false);
       }
@@ -737,9 +759,11 @@ Rewrite the two loaders:
   );
 ```
 
-Gate the two mount effects so a failure doesn't loop: `useEffect(() => { if (!detail && !detailError) void loadDetail(); }, [detail, detailError, loadDetail])` and `if (tab === "data" && !data && !dataError) void loadData(0)`.
+Gate the two mount effects so a failure doesn't loop: `useEffect(() => { if (!detail && !detailError) void loadDetail(); }, [detail, detailError, loadDetail])` and `if (tab === "data" && !data && !dataError) void loadData(offset)`. Note `loadData(offset)`, **not** `loadData(0)` — per the retry ruling in Global Constraints, this effect is the sole loader on the retry path, so it must restore the page the user was on. Add `offset` to that effect's dependency array and confirm it cannot loop during pagination.
 
-Render, error-branch-first: the Data panel uses `dataError` → `<ErrorState title="Could not load data" message={dataError} onRetry={() => { setDataError(null); void loadData(offset); }} />`; the Structure / Indexes / Constraints / Foreign keys / DDL panels each use `detailError` → `<ErrorState title="Could not load table" message={detailError} onRetry={() => { setDetailError(null); void loadDetail(); }} />`.
+Render, error-branch-first: the Data panel uses `dataError` → `<ErrorState title="Could not load data" message={dataError} onRetry={() => setDataError(null)} />`; the Structure / Indexes / Constraints / Foreign keys / DDL panels each use `detailError` → `<ErrorState title="Could not load table" message={detailError} onRetry={() => setDetailError(null)} />`.
+
+**Both** handlers clear their error and nothing else. SQL Server is the one tech where the retry ruling bites twice: its `detail` path has the same shape as its `data` path — an explicit loader call in `onRetry` alongside a mount effect gated on `!detail && !detailError` — so an explicit call there would double-fire exactly as the Data tab did in Postgres and MySQL. Clearing the error re-opens each guard, and the effect is the only caller.
 
 The header `description` also reads `detail.rowCount` — when `detail` is null it already falls back to `database {database}`, so no change is needed there.
 
