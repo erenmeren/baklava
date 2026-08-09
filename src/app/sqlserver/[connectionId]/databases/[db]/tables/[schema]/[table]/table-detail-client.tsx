@@ -209,8 +209,9 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
   const indexColumns: MetaColumn<Index>[] = [
     {
       header: "Name",
+      className: () => "font-mono text-xs",
       cell: (i) => (
-        <span className="font-mono text-xs inline-flex items-center gap-1.5">
+        <span className="inline-flex items-center gap-1.5">
           {i.name}
           {i.isPrimaryKey ? <Badge>PK</Badge> : null}
           {i.isUnique && !i.isPrimaryKey ? (
@@ -226,16 +227,14 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
     },
     {
       header: "Type",
-      cell: (i) => (
-        <span className="text-[11px] font-mono text-muted-foreground">
-          {i.typeDesc}
-        </span>
-      ),
+      className: () => "text-[11px] font-mono text-muted-foreground",
+      cell: (i) => i.typeDesc,
     },
     {
       header: "Key columns",
+      className: () => "font-mono text-[11px]",
       cell: (i) => (
-        <span className="font-mono text-[11px]">
+        <>
           {i.keyColumns.join(", ")}
           {i.includedColumns.length > 0 ? (
             <span className="text-muted-foreground/60">
@@ -243,80 +242,74 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
               INCLUDE ({i.includedColumns.join(", ")})
             </span>
           ) : null}
-        </span>
+        </>
       ),
     },
     {
       header: "Size",
       align: "right",
-      cell: (i) => (
-        <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
-          {fmtBytes(i.sizeBytes)}
-        </span>
-      ),
+      className: () => "font-mono text-[11px] tabular-nums text-muted-foreground",
+      cell: (i) => fmtBytes(i.sizeBytes),
     },
     {
       header: "Seeks/Scans",
       align: "right",
-      cell: (i) => (
-        <span
-          className={cn(
-            "font-mono text-[11px] tabular-nums",
-            i.userSeeks + i.userScans === 0
-              ? "text-amber-600"
-              : "text-muted-foreground",
-          )}
-        >
-          {(i.userSeeks + i.userScans + i.userLookups).toLocaleString()}
-        </span>
-      ),
+      className: (i) =>
+        cn(
+          "font-mono text-[11px] tabular-nums",
+          i.userSeeks + i.userScans === 0
+            ? "text-amber-600"
+            : "text-muted-foreground",
+        ),
+      cell: (i) => (i.userSeeks + i.userScans + i.userLookups).toLocaleString(),
     },
   ];
 
   const constraintColumns: MetaColumn<ConstraintRow>[] = [
     {
       header: "Name",
-      cell: (c) => <span className="font-mono text-xs">{c.name}</span>,
+      className: () => "font-mono text-xs",
+      cell: (c) => c.name,
     },
     {
       header: "Type",
-      cell: (c) => <span className="text-xs">{c.type}</span>,
+      className: () => "text-xs",
+      cell: (c) => c.type,
     },
     {
       header: "Definition",
-      cell: (c) => (
-        <span className="font-mono text-[11px] text-muted-foreground break-all">
-          {c.definition}
-        </span>
-      ),
+      className: () => "font-mono text-[11px] text-muted-foreground break-all",
+      cell: (c) => c.definition,
     },
   ];
 
   const foreignKeyColumns: MetaColumn<ForeignKeyRow>[] = [
     {
       header: "Name",
-      cell: (f) => <span className="font-mono text-xs">{f.name}</span>,
+      className: () => "font-mono text-xs",
+      cell: (f) => f.name,
     },
     {
       header: "Columns",
-      cell: (f) => (
-        <span className="font-mono text-[11px]">{f.columns.join(", ")}</span>
-      ),
+      className: () => "font-mono text-[11px]",
+      cell: (f) => f.columns.join(", "),
     },
     {
       header: "References",
+      className: () => "font-mono text-[11px]",
       cell: (f) => (
-        <span className="font-mono text-[11px]">
+        <>
           {f.refSchema}.{f.refTable} ({f.refColumns.join(", ")})
-        </span>
+        </>
       ),
     },
     {
       header: "On update / delete",
+      className: () => "text-[11px] text-muted-foreground",
       cell: (f) => (
-        <span className="text-[11px] text-muted-foreground">
+        <>
           {f.onUpdate} / {f.onDelete}
-        </span>
+        </>
       ),
     },
   ];

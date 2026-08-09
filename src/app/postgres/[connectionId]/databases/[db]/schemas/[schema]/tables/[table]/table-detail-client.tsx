@@ -394,8 +394,9 @@ export function TableDetailClient({
   const indexColumns: MetaColumn<IndexInfo>[] = [
     {
       header: "Name",
+      className: () => "font-mono text-xs",
       cell: (i) => (
-        <div className="font-mono text-xs flex items-center gap-2">
+        <div className="flex items-center gap-2">
           {i.name}
           {i.unused ? (
             <span
@@ -410,58 +411,47 @@ export function TableDetailClient({
     },
     {
       header: "Kind",
+      className: () => "space-x-1",
       cell: (i) => (
-        <span className="space-x-1">
+        <>
           {i.isPrimary ? <Badge>primary</Badge> : null}
           {i.isUnique && !i.isPrimary ? (
             <Badge variant="secondary">unique</Badge>
           ) : null}
-        </span>
+        </>
       ),
     },
     {
       header: "Size",
       align: "right",
-      cell: (i) => (
-        <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
-          {formatBytes(i.sizeBytes)}
-        </span>
-      ),
+      className: () => "font-mono text-[11px] tabular-nums text-muted-foreground",
+      cell: (i) => formatBytes(i.sizeBytes),
     },
     {
       header: "Scans",
       align: "right",
-      cell: (i) => (
-        <span
-          className={cn(
-            "font-mono text-[11px] tabular-nums",
-            i.scans === 0 ? "text-amber-600" : "text-muted-foreground",
-          )}
-        >
-          {i.scans.toLocaleString()}
-        </span>
-      ),
+      className: (i) =>
+        cn(
+          "font-mono text-[11px] tabular-nums",
+          i.scans === 0 ? "text-amber-600" : "text-muted-foreground",
+        ),
+      cell: (i) => i.scans.toLocaleString(),
     },
     {
       header: "Tuples read",
       align: "right",
-      cell: (i) => (
-        <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
-          {i.tuplesRead.toLocaleString()}
-        </span>
-      ),
+      className: () => "font-mono text-[11px] tabular-nums text-muted-foreground",
+      cell: (i) => i.tuplesRead.toLocaleString(),
     },
     {
       header: "Definition",
-      cell: (i) => (
-        <span className="font-mono text-[11px] text-muted-foreground break-all">
-          {i.definition}
-        </span>
-      ),
+      className: () => "font-mono text-[11px] text-muted-foreground break-all",
+      cell: (i) => i.definition,
     },
     {
       header: null,
       headClassName: "w-px",
+      className: () => "whitespace-nowrap",
       cell: (i) => (
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
           <Button
@@ -503,7 +493,8 @@ export function TableDetailClient({
   const constraintColumns: MetaColumn<ConstraintInfo>[] = [
     {
       header: "Name",
-      cell: (c) => <span className="font-mono text-xs">{c.name}</span>,
+      className: () => "font-mono text-xs",
+      cell: (c) => c.name,
     },
     {
       header: "Type",
@@ -515,40 +506,40 @@ export function TableDetailClient({
     },
     {
       header: "Definition",
-      cell: (c) => (
-        <span className="font-mono text-[11px] text-muted-foreground break-all">
-          {c.definition}
-        </span>
-      ),
+      className: () => "font-mono text-[11px] text-muted-foreground break-all",
+      cell: (c) => c.definition,
     },
   ];
 
   const foreignKeyColumns: MetaColumn<ForeignKeyInfo>[] = [
     {
       header: "Name",
-      cell: (fk) => <span className="font-mono text-xs">{fk.name}</span>,
+      className: () => "font-mono text-xs",
+      cell: (fk) => fk.name,
     },
     {
       header: "Columns",
-      cell: (fk) => (
-        <span className="font-mono text-xs">{fk.columns.join(", ")}</span>
-      ),
+      className: () => "font-mono text-xs",
+      cell: (fk) => fk.columns.join(", "),
     },
     {
       header: "References",
+      className: () => "font-mono text-xs",
       cell: (fk) => (
-        <span className="font-mono text-xs">
+        <>
           {fk.refSchema}.{fk.refTable} ({fk.refColumns.join(", ")})
-        </span>
+        </>
       ),
     },
     {
       header: "On update",
-      cell: (fk) => <span className="font-mono text-xs">{fk.onUpdate}</span>,
+      className: () => "font-mono text-xs",
+      cell: (fk) => fk.onUpdate,
     },
     {
       header: "On delete",
-      cell: (fk) => <span className="font-mono text-xs">{fk.onDelete}</span>,
+      className: () => "font-mono text-xs",
+      cell: (fk) => fk.onDelete,
     },
   ];
 

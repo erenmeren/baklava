@@ -393,38 +393,35 @@ export function TableDetailClient({ connectionId, db, table }: Props) {
   const indexColumns: MetaColumn<IndexInfo>[] = [
     {
       header: "Name",
-      cell: (i) => <span className="font-mono text-xs">{i.name}</span>,
+      className: () => "font-mono text-xs",
+      cell: (i) => i.name,
     },
     {
       header: "Kind",
+      className: () => "space-x-1",
       cell: (i) => (
-        <span className="space-x-1">
+        <>
           {i.primary ? <Badge>primary</Badge> : null}
           {i.unique && !i.primary ? (
             <Badge variant="secondary">unique</Badge>
           ) : null}
-        </span>
+        </>
       ),
     },
     {
       header: "Type",
-      cell: (i) => (
-        <span className="font-mono text-[11px] text-muted-foreground">
-          {i.type}
-        </span>
-      ),
+      className: () => "font-mono text-[11px] text-muted-foreground",
+      cell: (i) => i.type,
     },
     {
       header: "Columns",
-      cell: (i) => (
-        <span className="font-mono text-[11px] text-muted-foreground break-all">
-          {i.columns.join(", ")}
-        </span>
-      ),
+      className: () => "font-mono text-[11px] text-muted-foreground break-all",
+      cell: (i) => i.columns.join(", "),
     },
     {
       header: null,
       headClassName: "w-px",
+      className: () => "whitespace-nowrap",
       cell: (i) => (
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
           <Button
