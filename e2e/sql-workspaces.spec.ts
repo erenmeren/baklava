@@ -8,11 +8,12 @@ import { reachable } from "@/test/integration-helpers";
  * click through every tab on the table-detail page, and confirm none of them
  * shows a rendered error state.
  *
- * The Docker daemon is unreachable in this development environment (no
- * compose plugin, port 5432 closed) — established and independently
- * confirmed. These blocks therefore could not be run against real services
- * here; this file has only been verified to typecheck, lint, and be
- * collectable by `npx playwright test e2e/sql-workspaces.spec.ts --list`.
+ * The postgres and sqlserver blocks have run green against real services
+ * (docker containers `baklava-postgres` / `baklava-sqlserver`, seeded per
+ * `seed/postgres.sh` / `seed/sqlserver.sh`) in both chromium-light and
+ * chromium-dark, including `clickThroughTabs` on a seeded demo table. The
+ * mysql block below is still unrun against a live service — it stays
+ * `test.fixme` until Phase 2 adds a MySQL compose service and seed script.
  *
  * Each block is gated on a plain TCP reachability probe of the service's
  * compose port — mirroring the `reachable()` gate that
@@ -95,7 +96,19 @@ async function createConnection(
  *    while browsing.
  */
 async function clickThroughTabs(page: Page) {
-  const tabs = page.getByRole("tab");
+  // Scope to the table-detail page's own tablist (Data / Structure / …),
+  // not the workspace-level "Open tables and editors" / "Open objects and
+  // editors" tab strip (postgres-tabs.tsx / sqlserver-tabs.tsx) that also
+  // renders role="tab" elements further up the page (Overview, the
+  // shop.customers tab itself). An unscoped getByRole("tab") sweeps those in
+  // too — clicking "Overview" mid-loop navigates clean off the table-detail
+  // page it's meant to be exercising. The detail tablist has no accessible
+  // name; disambiguate by requiring the "Data" tab this function is always
+  // called right after asserting is visible (see call sites below).
+  const tablist = page
+    .getByRole("tablist")
+    .filter({ has: page.getByRole("tab", { name: "Data" }) });
+  const tabs = tablist.getByRole("tab");
   const count = await tabs.count();
   expect(count).toBeGreaterThan(0);
   for (let i = 0; i < count; i++) {
@@ -135,7 +148,11 @@ test.describe("postgres SQL workspace", () => {
     });
 
     // Workspace chrome loaded — the sidebar's "Databases" tree root renders.
-    await expect(page.getByText("Databases", { exact: true })).toBeVisible({
+    // Scoped to the sidebar landmark: the page heading also reads "Databases"
+    // (h2 in the overview grid), so an unscoped getByText matches both and
+    // trips Playwright's strict-mode violation.
+    const sidebar = page.getByRole("complementary");
+    await expect(sidebar.getByText("Databases", { exact: true })).toBeVisible({
       timeout: 15_000,
     });
 
@@ -146,9 +163,14 @@ test.describe("postgres SQL workspace", () => {
     // its <ul> (and therefore the table links) while open
     // (postgres-sidebar.tsx:1420-1434). Clicking "Tables" here would toggle
     // that already-open group closed and make the link below unreachable.
-    await page.getByRole("button", { name: /^demo$/ }).click();
-    await page.getByRole("button", { name: /^shop$/ }).click();
-    await page.getByRole("link", { name: "customers" }).click();
+    // Scoped to the sidebar and exact-matched: the "Slowest queries" panel
+    // on the overview page renders raw SQL text as link content, and once a
+    // query touching shop.customers has run, a substring match on
+    // "customers" resolves there too (strict-mode violation) alongside the
+    // sidebar's table link.
+    await sidebar.getByRole("button", { name: /^demo$/ }).click();
+    await sidebar.getByRole("button", { name: /^shop$/ }).click();
+    await sidebar.getByRole("link", { name: "customers", exact: true }).click();
 
     await expect(page.getByRole("tab", { name: "Data" })).toBeVisible({
       timeout: 10_000,
@@ -179,7 +201,10 @@ test.describe("sqlserver SQL workspace", () => {
       passwordFieldId: "mssql-password",
     });
 
-    await expect(page.getByText("Databases", { exact: true })).toBeVisible({
+    // Scoped to the sidebar landmark for the same reason as the Postgres
+    // block above: the page heading also reads "Databases" (h3 here).
+    const sidebar = page.getByRole("complementary");
+    await expect(sidebar.getByText("Databases", { exact: true })).toBeVisible({
       timeout: 15_000,
     });
 
@@ -189,9 +214,15 @@ test.describe("sqlserver SQL workspace", () => {
     // `openGroup[\`${key}.tables\`] = true` when the schema opens, and
     // Group only renders the table links while open. Clicking "Tables"
     // here would collapse that already-open group.
-    await page.getByRole("button", { name: /^BaklavaDemo$/ }).click();
-    await page.getByRole("button", { name: /^shop$/ }).click();
-    await page.getByRole("link", { name: "Customers" }).click();
+    // Scoped to the sidebar and exact-matched: confirmed live that the
+    // overview page's "Top queries · plan cache" panel renders raw SQL text
+    // as link content, and once a query touching shop.Customers has run, an
+    // unscoped substring match on "Customers" resolves there too (strict-mode
+    // violation: "SELECT c.name AS name, …") alongside the sidebar's table
+    // link.
+    await sidebar.getByRole("button", { name: /^BaklavaDemo$/ }).click();
+    await sidebar.getByRole("button", { name: /^shop$/ }).click();
+    await sidebar.getByRole("link", { name: "Customers", exact: true }).click();
 
     await expect(page.getByRole("tab", { name: "Data" })).toBeVisible({
       timeout: 10_000,
