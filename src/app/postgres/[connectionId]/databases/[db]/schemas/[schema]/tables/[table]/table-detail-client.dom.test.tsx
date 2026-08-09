@@ -203,7 +203,7 @@ describe("postgres TableDetailClient (characterization)", () => {
     expect(screen.getByText(/Failed to fetch/)).toBeInTheDocument();
   });
 
-  it("retries the failed view when Retry is clicked", async () => {
+  it("retries the failed view when Retry is clicked, issuing exactly one more request", async () => {
     restore();
     let attempt = 0;
     restore = mockFetch({
@@ -216,8 +216,54 @@ describe("postgres TableDetailClient (characterization)", () => {
     });
     renderIt();
     await screen.findByRole("alert");
+    // One failed attempt so far — not two. A regression here (the lazy-tab
+    // effect double-firing loadData on mount, or Retry both calling loadData
+    // itself *and* leaving the effect's guard satisfied) would inflate this
+    // before the click even happens.
+    expect(fetchedUrls().filter((u) => u.includes("view=data")).length).toBe(1);
+
     fireEvent.click(screen.getByRole("button", { name: /retry/i }));
     expect(await screen.findByText("a@example.com")).toBeInTheDocument();
     expect(screen.queryByRole("alert")).toBeNull();
+    // Exactly one more — not two more. Retry must not both call loadData
+    // directly *and* leave the lazy-tab effect's guard satisfied to fire it
+    // again on its own.
+    expect(fetchedUrls().filter((u) => u.includes("view=data")).length).toBe(2);
+  });
+
+  it("retries at the page offset the user was on, not offset 0", async () => {
+    restore();
+    // Enough totalRows that the Data tab's "Next page" control is enabled
+    // (pageSize defaults to 100) — offset=0 succeeds, offset=100 (the next
+    // page) fails once and then succeeds on retry.
+    const PAGE_ONE = { ...ROWS, totalRows: 250 };
+    const PAGE_TWO = { ...ROWS, rows: [[3, "c@example.com"]], rowCount: 1, totalRows: 250 };
+    let offset100Attempts = 0;
+    restore = mockFetch({
+      "view=structure": { columns: COLUMNS },
+      "view=data": (url: string) => {
+        if (url.includes("offset=0")) return PAGE_ONE;
+        offset100Attempts += 1;
+        if (offset100Attempts === 1) throw new TypeError("Failed to fetch");
+        return PAGE_TWO;
+      },
+    });
+    renderIt();
+    await screen.findByText("a@example.com");
+
+    fireEvent.click(screen.getByRole("button", { name: /next page/i }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/could not load data/i);
+    expect(
+      fetchedUrls().filter((u) => u.includes("view=data") && u.includes("offset=100")).length,
+    ).toBe(1);
+
+    fireEvent.click(screen.getByRole("button", { name: /retry/i }));
+    expect(await screen.findByText("c@example.com")).toBeInTheDocument();
+    // The retry's request carried the same offset=100 the user was on — not
+    // a reset back to offset=0.
+    expect(
+      fetchedUrls().filter((u) => u.includes("view=data") && u.includes("offset=100")).length,
+    ).toBe(2);
+    expect(fetchedUrls().filter((u) => u.includes("view=data") && u.includes("offset=0")).length).toBe(1);
   });
 });
