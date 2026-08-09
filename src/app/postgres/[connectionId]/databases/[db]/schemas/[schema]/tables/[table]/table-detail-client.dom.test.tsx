@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
-import { mockFetch } from "@/test/fetch-mock";
+import { mockFetch, httpError, netFail } from "@/test/fetch-mock";
 import { TableDetailClient } from "./table-detail-client";
 
 // TableDetailClient reads `useRouter` / `usePathname` / `useSearchParams`
@@ -126,15 +126,6 @@ function fetchedUrls(): string[] {
   );
 }
 
-// No "surfaces a fetch failure instead of spinning forever" test here — see
-// task-4-report.md. The component's initial `loadData(0)` call (fired from a
-// useEffect on mount) has no `.catch()` around its `fetch()`; a rejected
-// fetch (mockFetch with no matching route, i.e. a total network failure)
-// becomes an unhandled promise rejection, not a rendered error. There is no
-// DOM text to assert on for that path, and provoking it deliberately would
-// itself violate this suite's "no unhandled rejections" requirement — so the
-// behaviour genuinely isn't there to characterize cleanly.
-
 describe("postgres TableDetailClient (characterization)", () => {
   it("renders all seven tabs", async () => {
     renderIt();
@@ -186,5 +177,47 @@ describe("postgres TableDetailClient (characterization)", () => {
     fireEvent.click(await screen.findByRole("tab", { name: "Structure" }));
     expect(await screen.findByText("email")).toBeInTheDocument();
     expect(screen.getByText("integer")).toBeInTheDocument();
+  });
+
+  it("renders an error state when the data view returns a non-200", async () => {
+    restore(); // drop the all-green mock installed in beforeEach
+    restore = mockFetch({
+      "view=structure": { columns: COLUMNS },
+      "view=data": httpError(502, "ECONNREFUSED 127.0.0.1:5432"),
+    });
+    renderIt();
+    expect(await screen.findByRole("alert")).toHaveTextContent(/could not load data/i);
+    expect(screen.getByText(/ECONNREFUSED 127\.0\.0\.1:5432/)).toBeInTheDocument();
+    // The skeletons are gone — this is what "instead of spinning forever" means.
+    expect(document.querySelectorAll('[data-slot="skeleton"]').length).toBe(0);
+  });
+
+  it("renders an error state when the data fetch rejects at the transport layer", async () => {
+    restore();
+    restore = mockFetch({
+      "view=structure": { columns: COLUMNS },
+      "view=data": netFail("Failed to fetch"),
+    });
+    renderIt();
+    expect(await screen.findByRole("alert")).toHaveTextContent(/could not load data/i);
+    expect(screen.getByText(/Failed to fetch/)).toBeInTheDocument();
+  });
+
+  it("retries the failed view when Retry is clicked", async () => {
+    restore();
+    let attempt = 0;
+    restore = mockFetch({
+      "view=structure": { columns: COLUMNS },
+      "view=data": () => {
+        attempt += 1;
+        if (attempt === 1) throw new TypeError("Failed to fetch");
+        return ROWS;
+      },
+    });
+    renderIt();
+    await screen.findByRole("alert");
+    fireEvent.click(screen.getByRole("button", { name: /retry/i }));
+    expect(await screen.findByText("a@example.com")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 });

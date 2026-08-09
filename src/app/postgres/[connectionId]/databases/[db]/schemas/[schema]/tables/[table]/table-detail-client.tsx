@@ -26,6 +26,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { WorkspacePage } from "@/components/workspace/workspace-page";
+import { ErrorState } from "@/components/workspace/error-state";
 import { RefreshButton } from "@/components/workspace/auto-refresh";
 import { DataPagination } from "@/components/sql/pagination";
 import {
@@ -141,6 +142,17 @@ export function TableDetailClient({
   const [pageOffset, setPageOffset] = useState(0);
   const [loadingData, setLoadingData] = useState(false);
 
+  type ViewKey = "data" | "structure" | "indexes" | "constraints" | "foreign_keys" | "ddl" | "stats";
+  const [errors, setErrors] = useState<Partial<Record<ViewKey, string>>>({});
+  const clearError = useCallback((view: ViewKey) => {
+    setErrors((prev) => {
+      if (!(view in prev)) return prev;
+      const next = { ...prev };
+      delete next[view];
+      return next;
+    });
+  }, []);
+
   const [insertOpen, setInsertOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<{
     fields: { name: string }[];
@@ -186,15 +198,19 @@ export function TableDetailClient({
     async (
       view: "structure" | "indexes" | "constraints" | "foreign_keys"
     ): Promise<unknown> => {
-      const res = await fetch(`${base}?view=${view}`, { cache: "no-store" });
-      const data = await res.json();
-      if (!res.ok) {
-        toast.error("Could not load", { description: data.error });
-        throw new Error(data.error);
+      try {
+        const res = await fetch(`${base}?view=${view}`, { cache: "no-store" });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+        clearError(view);
+        return data;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        setErrors((prev) => ({ ...prev, [view]: message }));
+        throw err;
       }
-      return data;
     },
-    [base]
+    [base, clearError]
   );
 
   const loadData = useCallback(
@@ -206,13 +222,19 @@ export function TableDetailClient({
           { cache: "no-store" }
         );
         const data = await res.json();
-        if (res.ok) setPageData(data as TableData);
-        else toast.error("Could not load data", { description: data.error });
+        if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+        setPageData(data as TableData);
+        clearError("data");
+      } catch (err) {
+        setErrors((prev) => ({
+          ...prev,
+          data: err instanceof Error ? err.message : String(err),
+        }));
       } finally {
         setLoadingData(false);
       }
     },
-    [base, pageLimit]
+    [base, pageLimit, clearError]
   );
 
   useEffect(() => {
@@ -224,18 +246,24 @@ export function TableDetailClient({
     setStats(null);
     setPageData(null);
     setPageOffset(0);
+    // Functional form so this bails out (same `{}` reference) when errors is
+    // already empty — otherwise this always-runs-on-mount effect hands the
+    // lazy-tab effect below a brand-new object every time, since it lists
+    // `errors` in its dependency array, and that spurious "change" makes it
+    // re-fire once immediately after mount, before the first fetch settles.
+    setErrors((prev) => (Object.keys(prev).length === 0 ? prev : {}));
   }, [base]);
 
   useEffect(() => {
-    if (columns === null) {
+    if (columns === null && !errors.structure) {
       fetchView("structure")
         .then((d) => setColumns((d as { columns: ColumnInfo[] }).columns))
         .catch(() => undefined);
     }
-  }, [columns, fetchView]);
+  }, [columns, fetchView, errors.structure]);
 
   useEffect(() => {
-    if (tab === "structure" && columns && foreignKeys === null) {
+    if (tab === "structure" && columns && foreignKeys === null && !errors.foreign_keys) {
       fetchView("foreign_keys")
         .then((d) =>
           setForeignKeys(
@@ -243,11 +271,11 @@ export function TableDetailClient({
           ),
         )
         .catch(() => undefined);
-    } else if (tab === "indexes" && indexes === null) {
+    } else if (tab === "indexes" && indexes === null && !errors.indexes) {
       fetchView("indexes")
         .then((d) => setIndexes((d as { indexes: IndexInfo[] }).indexes))
         .catch(() => undefined);
-    } else if (tab === "constraints" && constraints === null) {
+    } else if (tab === "constraints" && constraints === null && !errors.constraints) {
       fetchView("constraints")
         .then((d) =>
           setConstraints(
@@ -255,7 +283,7 @@ export function TableDetailClient({
           )
         )
         .catch(() => undefined);
-    } else if (tab === "foreign_keys" && foreignKeys === null) {
+    } else if (tab === "foreign_keys" && foreignKeys === null && !errors.foreign_keys) {
       fetchView("foreign_keys")
         .then((d) =>
           setForeignKeys(
@@ -263,7 +291,7 @@ export function TableDetailClient({
           )
         )
         .catch(() => undefined);
-    } else if (tab === "ddl" && ddl === null) {
+    } else if (tab === "ddl" && ddl === null && !errors.ddl) {
       fetch(`${base}?view=ddl`, { cache: "no-store" })
         .then(async (res) => {
           const data = await res.json();
@@ -271,11 +299,12 @@ export function TableDetailClient({
           setDdl(data.ddl as string);
         })
         .catch((err) => {
-          toast.error("Could not load DDL", {
-            description: err instanceof Error ? err.message : String(err),
-          });
+          setErrors((prev) => ({
+            ...prev,
+            ddl: err instanceof Error ? err.message : String(err),
+          }));
         });
-    } else if (tab === "stats" && stats === null) {
+    } else if (tab === "stats" && stats === null && !errors.stats) {
       fetch(`${base}?view=stats`, { cache: "no-store" })
         .then(async (res) => {
           const data = await res.json();
@@ -283,14 +312,15 @@ export function TableDetailClient({
           setStats(data.stats as TableStats);
         })
         .catch((err) => {
-          toast.error("Could not load statistics", {
-            description: err instanceof Error ? err.message : String(err),
-          });
+          setErrors((prev) => ({
+            ...prev,
+            stats: err instanceof Error ? err.message : String(err),
+          }));
         });
-    } else if (tab === "data" && pageData === null) {
+    } else if (tab === "data" && pageData === null && !errors.data) {
       loadData(0);
     }
-  }, [tab, columns, indexes, constraints, foreignKeys, ddl, stats, pageData, base, fetchView, loadData]);
+  }, [tab, columns, indexes, constraints, foreignKeys, ddl, stats, pageData, base, fetchView, loadData, errors]);
 
   const filteredRows = useMemo(() => {
     if (!pageData) return [];
@@ -461,7 +491,16 @@ export function TableDetailClient({
               />
             </div>
           </div>
-          {pageData ? (
+          {errors.data ? (
+            <ErrorState
+              title="Could not load data"
+              message={errors.data}
+              onRetry={() => {
+                clearError("data");
+                loadData(pageOffset);
+              }}
+            />
+          ) : pageData ? (
             <div className="rounded-lg border border-border/60 overflow-auto">
               <table className="w-full text-xs font-mono border-collapse">
                 <thead className="bg-muted/60 sticky top-0 z-[1]">
@@ -607,7 +646,16 @@ export function TableDetailClient({
         </TabsContent>
 
         <TabsContent value="structure" className="pt-4 space-y-3">
-          {columns ? (
+          {errors.structure ? (
+            <ErrorState
+              title="Could not load structure"
+              message={errors.structure}
+              onRetry={() => {
+                clearError("structure");
+                setColumns(null);
+              }}
+            />
+          ) : columns ? (
             <StructurePanel
               columns={columns}
               foreignKeys={foreignKeys}
@@ -633,7 +681,16 @@ export function TableDetailClient({
               New index
             </Button>
           </div>
-          {indexes ? (
+          {errors.indexes ? (
+            <ErrorState
+              title="Could not load indexes"
+              message={errors.indexes}
+              onRetry={() => {
+                clearError("indexes");
+                setIndexes(null);
+              }}
+            />
+          ) : indexes ? (
             indexes.length === 0 ? (
               <p className="text-sm text-muted-foreground">No indexes.</p>
             ) : (
@@ -744,7 +801,16 @@ export function TableDetailClient({
         </TabsContent>
 
         <TabsContent value="constraints" className="pt-4">
-          {constraints ? (
+          {errors.constraints ? (
+            <ErrorState
+              title="Could not load constraints"
+              message={errors.constraints}
+              onRetry={() => {
+                clearError("constraints");
+                setConstraints(null);
+              }}
+            />
+          ) : constraints ? (
             constraints.length === 0 ? (
               <p className="text-sm text-muted-foreground">No constraints.</p>
             ) : (
@@ -783,7 +849,16 @@ export function TableDetailClient({
         </TabsContent>
 
         <TabsContent value="foreign_keys" className="pt-4">
-          {foreignKeys ? (
+          {errors.foreign_keys ? (
+            <ErrorState
+              title="Could not load foreign keys"
+              message={errors.foreign_keys}
+              onRetry={() => {
+                clearError("foreign_keys");
+                setForeignKeys(null);
+              }}
+            />
+          ) : foreignKeys ? (
             foreignKeys.length === 0 ? (
               <p className="text-sm text-muted-foreground">No foreign keys.</p>
             ) : (
@@ -829,7 +904,16 @@ export function TableDetailClient({
         </TabsContent>
 
         <TabsContent value="ddl" className="pt-4">
-          {ddl === null ? (
+          {errors.ddl ? (
+            <ErrorState
+              title="Could not load DDL"
+              message={errors.ddl}
+              onRetry={() => {
+                clearError("ddl");
+                setDdl(null);
+              }}
+            />
+          ) : ddl === null ? (
             <Skeleton className="h-40 w-full" />
           ) : (
             <div className="rounded-lg border border-border/60 bg-muted/30 relative">
@@ -868,7 +952,16 @@ export function TableDetailClient({
         </TabsContent>
 
         <TabsContent value="stats" className="pt-4">
-          {stats ? (
+          {errors.stats ? (
+            <ErrorState
+              title="Could not load statistics"
+              message={errors.stats}
+              onRetry={() => {
+                clearError("stats");
+                setStats(null);
+              }}
+            />
+          ) : stats ? (
             <StatsGrid stats={stats} columns={columns} indexes={indexes} />
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
