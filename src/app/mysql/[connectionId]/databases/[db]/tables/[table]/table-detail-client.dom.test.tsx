@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
-import { mockFetch } from "@/test/fetch-mock";
+import { mockFetch, httpError, netFail } from "@/test/fetch-mock";
 import { TableDetailClient } from "./table-detail-client";
 
 // TableDetailClient reads `useRouter` from next/navigation (only `router.push`
@@ -13,23 +13,14 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push, replace }),
 }));
 
-// The component's "Open query" action renders `<Button render={<a href=… />}>`
-// without `nativeButton={false}` (table-detail-client.tsx:350-362), so Base UI
-// logs a dev-mode console.error on every mount:
-//   "Base UI: A component that acts as a button expected a native <button>..."
-// This is a pre-existing defect in the component, which this task may not
-// touch (the postgres equivalent has no such Button and stays silent). Allow
-// exactly that one message and fail on any other console.error, so this file
-// still guarantees pristine output for everything else — a plain
-// "no console output happened" check would have missed this, since vitest
-// only prints captured console output for failing tests.
-const KNOWN_WARNING = "expected a native <button>";
+// The component renders `<Button render={<a href=… />} nativeButton={false}>`
+// for its "Open query" action, so base-ui logs nothing. Any console.error at
+// all is a failure — vitest only prints captured console output for failing
+// tests, so a plain "did anything log?" check would miss a regression here.
 let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
 beforeEach(() => {
   consoleErrorSpy = vi.spyOn(console, "error").mockImplementation((...args) => {
-    if (!String(args[0]).includes(KNOWN_WARNING)) {
-      throw new Error(`Unexpected console.error: ${String(args[0])}`);
-    }
+    throw new Error(`Unexpected console.error: ${String(args[0])}`);
   });
 });
 afterEach(() => consoleErrorSpy.mockRestore());
@@ -166,6 +157,27 @@ describe("mysql TableDetailClient (characterization)", () => {
     await screen.findByText("a@example.com");
     fireEvent.click(screen.getByText("email"));
     await waitFor(() => expect(calls().some((u) => u.includes("orderBy=email"))).toBe(true));
+  });
+
+  it("renders an error state when the rows request returns a non-200", async () => {
+    restore();
+    restore = mockFetch({
+      "/tables/users$": { columns: COLUMNS, indexes: [], ddl: "", primaryKey: ["id"] },
+      "/rows": httpError(502, "ER_ACCESS_DENIED_ERROR: access denied"),
+    });
+    renderIt();
+    expect(await screen.findByRole("alert")).toHaveTextContent(/could not load data/i);
+    expect(screen.getByText(/ER_ACCESS_DENIED_ERROR/)).toBeInTheDocument();
+  });
+
+  it("renders an error state when the meta request rejects at the transport layer", async () => {
+    restore();
+    restore = mockFetch({
+      "/tables/users$": netFail("Failed to fetch"),
+      "/rows": netFail("Failed to fetch"),
+    });
+    renderIt();
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
   });
 
   // No "surfaces a fetch failure instead of spinning forever" test here.
