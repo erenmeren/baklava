@@ -27,6 +27,17 @@ if (!process.env.BAKLAVA_DATA_DIR) {
 // files can use `window.localStorage` the way a real browser test would.
 // Only in the client (happy-dom) project — the server project has no
 // `window` at all.
+// happy-dom doesn't implement the Web Animations API. base-ui's ScrollArea
+// viewport (used by RowFormDialog) schedules a timer that calls
+// `viewport.getAnimations()` to drive its auto-hide-scrollbar fade; the
+// timer can still fire after a test has unmounted and moved on, throwing an
+// unhandled "getAnimations is not a function" that fails the run even
+// though every assertion passed. A no-op stub is enough — nothing here
+// inspects the (real) return value, just its absence.
+if (typeof Element !== "undefined" && !Element.prototype.getAnimations) {
+  Element.prototype.getAnimations = () => [];
+}
+
 if (typeof window !== "undefined" && typeof window.localStorage === "undefined") {
   const store = new Map<string, string>();
   const memoryStorage = {

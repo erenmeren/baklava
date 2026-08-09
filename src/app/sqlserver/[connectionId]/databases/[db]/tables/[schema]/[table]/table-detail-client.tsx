@@ -15,7 +15,8 @@ import type { SqlColumn } from "@/components/workspace/sql/types";
 import { DataGrid, type GridColumn } from "@/components/workspace/sql/data-grid";
 import { cn } from "@/lib/utils";
 import { Plus, Trash, Wand2 } from "lucide-react";
-import { RowFormDialog, type ColumnInfo as RowColumnInfo } from "./row-form-dialog";
+import { RowFormDialog } from "@/components/workspace/sql/row-form-dialog";
+import { sqlserverRowDialect } from "./row-dialect";
 import { ModifyTableDialog } from "../../../../../modify-table-dialog";
 import { DropConfirm } from "../../../../../drop-confirm";
 import { DataPagination } from "@/components/sql/pagination";
@@ -117,13 +118,20 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
     }
   }, [searchParams, router, pathname]);
 
-  const rowColumns: RowColumnInfo[] = (detail?.columns ?? []).map((c) => ({
+  // A SqlColumn[] built specifically for RowFormDialog — separate from
+  // `sqlColumns` below (used for StructurePanel), whose `default` folds in
+  // computed-column definitions and whose `extra` carries the
+  // "IDENTITY(seed,increment)" display string for a different purpose. This
+  // one's `extra` is the sqlserverRowDialect's own "identity" marker (see
+  // row-dialect.tsx) and its `default` is the raw column default only.
+  const rowColumns: SqlColumn[] = (detail?.columns ?? []).map((c, i) => ({
     name: c.name,
+    position: i + 1,
     dataType: c.dataType,
     nullable: c.nullable,
-    isIdentity: c.isIdentity,
-    defaultDefinition: c.defaultDefinition,
+    default: c.defaultDefinition,
     isPrimaryKey: c.isPrimaryKey,
+    extra: c.isIdentity ? "identity" : null,
   }));
 
   // SqlServerColumn carries no ordinal field, so position comes from the
@@ -524,9 +532,14 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
             onOpenChange={setInsertOpen}
             mode="insert"
             base={base}
-            schema={schema}
-            table={table}
+            title="Insert row"
+            description={
+              <span className="font-mono text-foreground/80">
+                {schema}.{table}
+              </span>
+            }
             columns={rowColumns}
+            dialect={sqlserverRowDialect}
             onSuccess={() => {
               setOffset(0);
               void loadData(0);

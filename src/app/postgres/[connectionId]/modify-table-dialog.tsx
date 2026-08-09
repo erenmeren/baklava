@@ -14,7 +14,22 @@ import { Input } from "@/components/ui/input";
 import { Loader2, Plus, RotateCcw, Trash2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import type { ColumnInfo } from "./databases/[db]/schemas/[schema]/tables/[table]/row-form-dialog";
+
+// Was previously imported from the per-table row-form-dialog.tsx; Task 9
+// collapsed that file (and its Postgres/MySQL/SQL Server siblings) into the
+// shared RowFormDialog, which consumes `SqlColumn` instead. This dialog
+// still needs the fuller Postgres-specific shape (`isUnique`, `comment`,
+// numeric `position`), so the type moved here rather than disappearing.
+export interface ColumnInfo {
+  name: string;
+  position: number;
+  dataType: string;
+  isNullable: boolean;
+  default: string | null;
+  isPrimaryKey: boolean;
+  isUnique?: boolean;
+  comment?: string | null;
+}
 
 type AlterTableOp =
   | { kind: "addColumn"; name: string; dataType: string; nullable: boolean; default?: string }

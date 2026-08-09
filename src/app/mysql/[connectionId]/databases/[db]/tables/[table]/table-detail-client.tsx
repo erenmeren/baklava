@@ -47,11 +47,8 @@ import {
   SquareTerminal,
 } from "lucide-react";
 import { toast } from "sonner";
-import {
-  RowFormDialog,
-  type ColumnInfo,
-  type ColumnValue,
-} from "./row-form-dialog";
+import { RowFormDialog } from "@/components/workspace/sql/row-form-dialog";
+import { mysqlRowDialect } from "./row-dialect";
 import { CreateIndexDialog } from "./create-index-dialog";
 import {
   rowsToCSV,
@@ -66,6 +63,27 @@ interface IndexInfo {
   type: string;
   columns: string[];
 }
+
+// Was previously imported from the per-table row-form-dialog.tsx; Task 9
+// collapsed that file (and its Postgres/SQL Server siblings) into the
+// shared RowFormDialog, which consumes `SqlColumn` instead. This file still
+// needs the fuller MySQL-specific shape (`columnType`, `extra`, `comment`,
+// `ordinal`) for its own metadata display, so the types moved here rather
+// than disappearing.
+export interface ColumnInfo {
+  name: string;
+  dataType: string;
+  /** Full COLUMN_TYPE, e.g. `varchar(255)`, `int unsigned`. */
+  columnType: string;
+  nullable: boolean;
+  default: string | null;
+  isPrimaryKey: boolean;
+  extra: string;
+  comment: string;
+  ordinal: number;
+}
+
+export type ColumnValue = string | number | boolean | null;
 
 interface TableMeta {
   columns: ColumnInfo[];
@@ -711,10 +729,14 @@ export function TableDetailClient({ connectionId, db, table }: Props) {
             onOpenChange={setInsertOpen}
             mode="insert"
             base={base}
-            db={db}
-            table={table}
-            columns={columns}
-            primaryKey={primaryKey}
+            title="Insert row"
+            description={
+              <span className="font-mono text-foreground/80">
+                {db}.{table}
+              </span>
+            }
+            columns={sqlColumns}
+            dialect={mysqlRowDialect}
             onSuccess={() => loadData(pageOffset)}
           />
           <RowFormDialog
@@ -724,11 +746,15 @@ export function TableDetailClient({ connectionId, db, table }: Props) {
             }}
             mode="edit"
             base={base}
-            db={db}
-            table={table}
-            columns={columns}
-            primaryKey={primaryKey}
+            title="Edit row"
+            description={
+              <span className="font-mono text-foreground/80">
+                {db}.{table}
+              </span>
+            }
+            columns={sqlColumns}
             initialRow={editTarget ?? undefined}
+            dialect={mysqlRowDialect}
             onSuccess={() => loadData(pageOffset)}
           />
         </>

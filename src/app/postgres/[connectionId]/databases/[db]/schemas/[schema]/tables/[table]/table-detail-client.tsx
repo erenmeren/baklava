@@ -39,9 +39,13 @@ import {
   Trash,
 } from "lucide-react";
 import { toast } from "sonner";
-import { RowFormDialog, type ColumnInfo } from "./row-form-dialog";
+import { RowFormDialog } from "@/components/workspace/sql/row-form-dialog";
+import { postgresRowDialect } from "./row-dialect";
 import { DropConfirm, type DropTarget } from "../../../../../../drop-confirm";
-import { ModifyTableDialog } from "../../../../../../modify-table-dialog";
+import {
+  ModifyTableDialog,
+  type ColumnInfo,
+} from "../../../../../../modify-table-dialog";
 import { CreateIndexDialog } from "./create-index-dialog";
 import { cn } from "@/lib/utils";
 
@@ -885,9 +889,14 @@ export function TableDetailClient({
             onOpenChange={setInsertOpen}
             mode="insert"
             base={base}
-            schema={schema}
-            table={table}
-            columns={columns}
+            title="Insert row"
+            description={
+              <span className="font-mono text-foreground/80">
+                {schema}.{table}
+              </span>
+            }
+            columns={sqlColumns}
+            dialect={postgresRowDialect}
             onSuccess={() => loadData(pageOffset)}
           />
           <RowFormDialog
@@ -897,10 +906,21 @@ export function TableDetailClient({
             }}
             mode="edit"
             base={base}
-            schema={schema}
-            table={table}
-            columns={columns}
-            initialRow={editTarget ?? undefined}
+            title="Edit row"
+            description={
+              <span className="font-mono text-foreground/80">
+                {schema}.{table}
+              </span>
+            }
+            columns={sqlColumns}
+            initialRow={
+              editTarget
+                ? Object.fromEntries(
+                    editTarget.fields.map((f, i) => [f.name, editTarget.cells[i]]),
+                  )
+                : undefined
+            }
+            dialect={postgresRowDialect}
             onSuccess={() => loadData(pageOffset)}
           />
         </>
