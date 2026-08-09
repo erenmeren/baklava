@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import { StructurePanel } from "./structure-panel";
 import type { SqlColumn } from "./types";
 
@@ -61,5 +61,34 @@ describe("StructurePanel", () => {
     );
     expect(screen.getByText("→ other.table.id")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Modify columns" })).toBeInTheDocument();
+  });
+
+  // The primary-key chip reads "pk" for every caller, including MySQL, whose
+  // native SHOW COLUMNS terminology is "pri" — the pre-shared MySQL panel
+  // rendered "pri" (git show 5d3e40f, table-detail-client.tsx:1195) and lost
+  // that wording when MySQL adopted this component. That's an intentional,
+  // ruled-on standardisation (docs/superpowers/plans/2026-08-09-sql-refactor-phase-2.md,
+  // Global Constraints), not an accident to be reverted, but the literal has
+  // no other guard anywhere in the codebase now that MySQL's own copy is
+  // gone — pin it here so it can't silently drift again (e.g. back to
+  // "pri", or to "PK", "primary key", etc.).
+  it('labels the primary-key chip exactly "pk"', () => {
+    render(<StructurePanel columns={COLUMNS} />);
+    const idRow = screen.getByText("id").closest("tr");
+    if (!idRow) throw new Error("id row not found");
+    expect(within(idRow).getByText("pk")).toBeInTheDocument();
+  });
+
+  // Same exposure as "pk" above — literals in the shared component with no
+  // other guard. Pinned together so a future rewording of either doesn't
+  // ship unnoticed the way "pri" -> "pk" did.
+  it('labels the not-null and unique chips exactly "not null" / "unique"', () => {
+    render(<StructurePanel columns={COLUMNS} />);
+    const idRow = screen.getByText("id").closest("tr");
+    const emailRow = screen.getByText("email").closest("tr");
+    if (!idRow || !emailRow) throw new Error("row not found");
+    expect(within(idRow).getByText("not null")).toBeInTheDocument();
+    expect(within(emailRow).getByText("not null")).toBeInTheDocument();
+    expect(within(emailRow).getByText("unique")).toBeInTheDocument();
   });
 });
