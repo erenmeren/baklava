@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import {
   Activity,
   Database,
@@ -13,6 +13,7 @@ import {
   Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useTableTabs } from "@/components/workspace/use-table-tabs";
 
 type Tab =
   | { kind: "overview" }
@@ -24,31 +25,6 @@ type Tab =
 
 interface Props {
   connectionId: string;
-}
-
-function storageKey(connectionId: string) {
-  return `baklava:mongo-tabs:${connectionId}`;
-}
-
-function loadTabs(connectionId: string): Tab[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = window.localStorage.getItem(storageKey(connectionId));
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as Tab[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveTabs(connectionId: string, tabs: Tab[]) {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(storageKey(connectionId), JSON.stringify(tabs));
-  } catch {
-    // ignore
-  }
 }
 
 function tabKey(t: Tab): string {
@@ -137,50 +113,19 @@ function tabFromPath(pathname: string, connectionId: string): Tab | null {
 
 export function MongoTabs({ connectionId }: Props) {
   const pathname = usePathname() ?? "";
-  const router = useRouter();
-  const [tabs, setTabs] = useState<Tab[]>([]);
-  const [hydrated, setHydrated] = useState(false);
-
-  useEffect(() => {
-    setTabs(loadTabs(connectionId));
-    setHydrated(true);
-  }, [connectionId]);
-
-  useEffect(() => {
-    if (hydrated) saveTabs(connectionId, tabs);
-  }, [tabs, hydrated, connectionId]);
 
   const activeTab = useMemo(
     () => tabFromPath(pathname, connectionId),
     [pathname, connectionId],
   );
-  const activeKey = activeTab ? tabKey(activeTab) : null;
 
-  // Auto-add the active tab if it's not already in the strip.
-  useEffect(() => {
-    if (!hydrated || !activeTab) return;
-    setTabs((prev) => {
-      const k = tabKey(activeTab);
-      if (prev.some((t) => tabKey(t) === k)) return prev;
-      return [...prev, activeTab];
-    });
-  }, [activeTab, hydrated]);
-
-  const closeTab = useCallback(
-    (key: string) => {
-      const idx = tabs.findIndex((t) => tabKey(t) === key);
-      if (idx < 0) return;
-      const next = tabs.filter((_, i) => i !== idx);
-      setTabs(next);
-      if (key === activeKey) {
-        const fallback = next[idx - 1] ?? next[idx] ?? null;
-        router.push(
-          fallback ? tabHref(connectionId, fallback) : `/mongo/${connectionId}/databases`,
-        );
-      }
-    },
-    [tabs, activeKey, router, connectionId],
-  );
+  const { tabs, hydrated, activeKey, closeTab } = useTableTabs<Tab>({
+    storageKey: `baklava:mongo-tabs:${connectionId}`,
+    activeTab,
+    key: tabKey,
+    href: (t) => tabHref(connectionId, t),
+    homeHref: `/mongo/${connectionId}/databases`,
+  });
 
   if (!hydrated) {
     return (

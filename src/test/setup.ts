@@ -15,3 +15,37 @@ afterEach(() => {
 if (!process.env.BAKLAVA_DATA_DIR) {
   process.env.BAKLAVA_DATA_DIR = "/tmp/__baklava_test_safety__";
 }
+
+// Node 22+ defines an experimental global `localStorage` accessor gated
+// behind `--localstorage-file`. That global already exists on `global`
+// before vitest's happy-dom environment populates it for a "client" test
+// file, and vitest only force-overrides an explicit allowlist of
+// known-conflicting globals (`fetch`, `URL`, `Headers`, ...) — `localStorage`
+// isn't on that list, so Node's own (inert without the flag) accessor wins
+// over happy-dom's simulated Storage, and `window.localStorage` reads back
+// `undefined`. Swap in a tiny in-memory Storage stand-in so `.dom.test.tsx`
+// files can use `window.localStorage` the way a real browser test would.
+// Only in the client (happy-dom) project — the server project has no
+// `window` at all.
+if (typeof window !== "undefined" && typeof window.localStorage === "undefined") {
+  const store = new Map<string, string>();
+  const memoryStorage = {
+    get length() {
+      return store.size;
+    },
+    clear: () => store.clear(),
+    getItem: (key: string) => (store.has(key) ? store.get(key)! : null),
+    key: (index: number) => Array.from(store.keys())[index] ?? null,
+    removeItem: (key: string) => {
+      store.delete(key);
+    },
+    setItem: (key: string, value: string) => {
+      store.set(key, String(value));
+    },
+  } as Storage;
+  Object.defineProperty(window, "localStorage", {
+    value: memoryStorage,
+    configurable: true,
+    writable: true,
+  });
+}
