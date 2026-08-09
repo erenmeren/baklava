@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import { DataGrid, GridToolbar, filterRows, type GridColumn } from "./data-grid";
 
 const COLUMNS: GridColumn[] = [
@@ -89,14 +89,83 @@ describe("DataGrid", () => {
   // so a null cell falling through to the object branch would still render
   // the literal text "null" via JSON.stringify(null) — the assertion above
   // ("renders null cells as an italic null...") can't tell that apart from
-  // the real italic span. This test pins the actual DOM shape (a <span> with
-  // the italic class) so deleting the `cell === null` branch is caught.
-  it("renders the null cell through the italic span, not a bare JSON.stringify(null)", () => {
-    render(<DataGrid columns={COLUMNS} rows={ROWS} density="compact" empty="No rows." />);
-    for (const node of screen.getAllByText("null")) {
+  // the real italic span. This is also the fix-round-1 pin for the ruled-on
+  // convergence decision: SQL Server's old `NULL` (uppercase, non-italic)
+  // is deliberately standardised on this literal now — see the report.
+  //
+  // Scoped with within(tbody) rather than a page-wide screen query: the
+  // header hint "int4 · NOT NULL" (COLUMNS[0]) contains the substring
+  // "NULL" too, and Task 6's pk-badge guard was nearly hollow for exactly
+  // this reason — matching prose elsewhere on the page instead of the cell
+  // under test. within(tbody) rules that out structurally, and the closest
+  // "thead" assertion below is a second, independent check of the same
+  // thing.
+  it("renders the null cell as an italic span inside the table body, not header hint text", () => {
+    const { container } = render(
+      <DataGrid columns={COLUMNS} rows={ROWS} density="compact" empty="No rows." />,
+    );
+    const tbody = container.querySelector("tbody");
+    if (!tbody) throw new Error("tbody not found");
+    const nullNodes = within(tbody).getAllByText("null");
+    expect(nullNodes).toHaveLength(2); // ROWS[1] has exactly two null cells
+    for (const node of nullNodes) {
       expect(node.tagName).toBe("SPAN");
-      expect(node.className).toContain("italic");
+      expect(node.className).toBe("text-muted-foreground/50 italic");
+      expect(node.closest("thead")).toBeNull();
     }
+  });
+
+  // Added in fix round 1: no test pinned the object-cell literal or its
+  // styling before now — deleting the JSON.stringify branch (falling to
+  // String(cell) -> "[object Object]") was only caught indirectly by the
+  // "renders null cells..." test's unrelated object-cell assertion, which
+  // doesn't check the class or element shape.
+  it("renders an object cell as brand-colored JSON, scoped to its own cell", () => {
+    const { container } = render(
+      <DataGrid columns={COLUMNS} rows={ROWS} density="compact" empty="No rows." />,
+    );
+    const tbody = container.querySelector("tbody");
+    if (!tbody) throw new Error("tbody not found");
+    const node = within(tbody).getByText('{"tier":"gold"}');
+    expect(node.tagName).toBe("SPAN");
+    expect(node.className).toBe("text-brand");
+  });
+
+  // Added in fix round 1: same exposure as the object cell, for booleans.
+  it("renders a boolean cell as brand-colored text, scoped to its own cell", () => {
+    const { container } = render(
+      <DataGrid columns={COLUMNS} rows={ROWS} density="compact" empty="No rows." />,
+    );
+    const tbody = container.querySelector("tbody");
+    if (!tbody) throw new Error("tbody not found");
+    const node = within(tbody).getByText("true");
+    expect(node.tagName).toBe("SPAN");
+    expect(node.className).toBe("text-brand");
+  });
+
+  // Added in fix round 1: restores MySQL's "Click to sort" hover affordance
+  // as a title on sortable headers, and guards it against leaking onto
+  // Postgres/SQL Server's non-sortable headers.
+  it("shows a sort-hint title on headers when sorting is wired", () => {
+    render(
+      <DataGrid
+        columns={COLUMNS}
+        rows={ROWS}
+        density="compact"
+        onToggleSort={() => {}}
+        empty="No rows."
+      />,
+    );
+    expect(
+      screen.getByRole("columnheader", { name: /email/ }),
+    ).toHaveAttribute("title", "Click to sort");
+  });
+
+  it("does not add a sort-hint title when sorting is not wired", () => {
+    render(<DataGrid columns={COLUMNS} rows={ROWS} density="compact" empty="No rows." />);
+    expect(
+      screen.getByRole("columnheader", { name: /email/ }),
+    ).not.toHaveAttribute("title");
   });
 
   // Added beyond the brief's Step 1 suite: none of the given tests render

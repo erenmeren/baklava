@@ -116,6 +116,7 @@ export function DataGrid(props: {
                     headPad,
                   )}
                   onClick={onToggleSort ? () => onToggleSort(col.name) : undefined}
+                  title={onToggleSort ? "Click to sort" : undefined}
                 >
                   <div className="flex items-center gap-1.5">
                     {col.isPrimaryKey ? (
