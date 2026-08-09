@@ -15,9 +15,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { WorkspacePage } from "@/components/workspace/workspace-page";
+import { ErrorState } from "@/components/workspace/error-state";
 import { cn } from "@/lib/utils";
-import { toast } from "sonner";
 import { Copy, Check, Plus, Trash, Wand2 } from "lucide-react";
+import { toast } from "sonner";
 import { RowFormDialog, type ColumnInfo as RowColumnInfo } from "./row-form-dialog";
 import { ModifyTableDialog } from "../../../../../modify-table-dialog";
 import { DropConfirm } from "../../../../../drop-confirm";
@@ -109,6 +110,8 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
   const [offset, setOffset] = useState(0);
   const [pageSize, setPageSize] = useState(100);
   const [loadingData, setLoadingData] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const [dataError, setDataError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [insertOpen, setInsertOpen] = useState(false);
   const [modifyOpen, setModifyOpen] = useState(false);
@@ -136,10 +139,16 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
   }));
 
   const loadDetail = useCallback(async () => {
-    const res = await fetch(base, { cache: "no-store" });
-    const d = await res.json();
-    if (res.ok) setDetail(d as Detail);
-    else toast.error("Could not load table", { description: d.error });
+    try {
+      const res = await fetch(base, { cache: "no-store" });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || `Request failed (${res.status})`);
+      setDetail(d as Detail);
+      setDetailError(null);
+    } catch (err) {
+      setDetailError(err instanceof Error ? err.message : String(err));
+      setDetail(null);
+    }
   }, [base]);
 
   const loadData = useCallback(
@@ -151,8 +160,16 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
           { cache: "no-store" },
         );
         const d = await res.json();
-        if (res.ok) setData(d as TableData);
-        else toast.error("Could not load data", { description: d.error });
+        if (!res.ok) throw new Error(d.error || `Request failed (${res.status})`);
+        setData(d as TableData);
+        setDataError(null);
+      } catch (err) {
+        setDataError(err instanceof Error ? err.message : String(err));
+        // Null the cached rows so Retry can re-satisfy the effect's guard.
+        // Without this, a failure that follows a success leaves `data`
+        // non-null, clearing the error alone never re-opens the guard, and
+        // Retry is a dead button. Postgres and MySQL both hit this.
+        setData(null);
       } finally {
         setLoadingData(false);
       }
@@ -160,12 +177,18 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
     [base, pageSize],
   );
 
+  // Both effects below are the SOLE callers of their loader on the retry
+  // path — onRetry only clears the error state, it never calls the loader
+  // itself. Clearing the error re-opens the guard (cache null + error
+  // null), and the effect fires again. An explicit call in onRetry would
+  // double-fire: clearing the error re-opens the guard *and* onRetry calls
+  // the loader, racing an uncancelled duplicate request.
   useEffect(() => {
-    void loadDetail();
-  }, [loadDetail]);
+    if (!detail && !detailError) void loadDetail();
+  }, [detail, detailError, loadDetail]);
   useEffect(() => {
-    if (tab === "data" && !data) void loadData(0);
-  }, [tab, data, loadData]);
+    if (tab === "data" && !data && !dataError) void loadData(offset);
+  }, [tab, data, dataError, offset, loadData]);
 
   const ddl = detail ? buildClientDdl(detail) : "";
 
@@ -236,10 +259,24 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
               Insert row
             </Button>
           </div>
-          {!data ? (
+          {dataError ? (
+            <ErrorState
+              title="Could not load data"
+              message={dataError}
+              onRetry={() => setDataError(null)}
+            />
+          ) : !data ? (
             <Skeleton className="h-40 w-full" />
           ) : (
             <>
+              {detailError ? (
+                <ErrorState
+                  title="Could not load column metadata"
+                  message={detailError}
+                  onRetry={() => setDetailError(null)}
+                  className="px-3 py-2 shrink-0"
+                />
+              ) : null}
               <div className="rounded-lg border border-border/60 overflow-auto flex-1 min-h-0">
                 <table className="w-full text-xs font-mono">
                   <thead className="bg-muted/40 sticky top-0">
@@ -285,7 +322,13 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
 
         {/* STRUCTURE */}
         <TabsContent value="structure" className="pt-4">
-          {!detail ? (
+          {detailError ? (
+            <ErrorState
+              title="Could not load table"
+              message={detailError}
+              onRetry={() => setDetailError(null)}
+            />
+          ) : !detail ? (
             <Skeleton className="h-40 w-full" />
           ) : (
             <div className="rounded-lg border border-border/60 overflow-hidden">
@@ -339,7 +382,13 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
 
         {/* INDEXES */}
         <TabsContent value="indexes" className="pt-4">
-          {!detail ? (
+          {detailError ? (
+            <ErrorState
+              title="Could not load table"
+              message={detailError}
+              onRetry={() => setDetailError(null)}
+            />
+          ) : !detail ? (
             <Skeleton className="h-40 w-full" />
           ) : detail.indexes.length === 0 ? (
             <p className="text-sm text-muted-foreground">No indexes.</p>
@@ -407,7 +456,13 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
 
         {/* CONSTRAINTS */}
         <TabsContent value="constraints" className="pt-4">
-          {!detail ? (
+          {detailError ? (
+            <ErrorState
+              title="Could not load table"
+              message={detailError}
+              onRetry={() => setDetailError(null)}
+            />
+          ) : !detail ? (
             <Skeleton className="h-40 w-full" />
           ) : detail.constraints.length === 0 ? (
             <p className="text-sm text-muted-foreground">No check/default constraints.</p>
@@ -439,7 +494,13 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
 
         {/* FOREIGN KEYS */}
         <TabsContent value="foreign_keys" className="pt-4">
-          {!detail ? (
+          {detailError ? (
+            <ErrorState
+              title="Could not load table"
+              message={detailError}
+              onRetry={() => setDetailError(null)}
+            />
+          ) : !detail ? (
             <Skeleton className="h-40 w-full" />
           ) : detail.foreignKeys.length === 0 ? (
             <p className="text-sm text-muted-foreground">No foreign keys.</p>
@@ -477,7 +538,13 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
 
         {/* DDL */}
         <TabsContent value="ddl" className="pt-4">
-          {!detail ? (
+          {detailError ? (
+            <ErrorState
+              title="Could not load table"
+              message={detailError}
+              onRetry={() => setDetailError(null)}
+            />
+          ) : !detail ? (
             <Skeleton className="h-40 w-full" />
           ) : (
             <div className="relative">
@@ -486,9 +553,13 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
                 variant="outline"
                 className="absolute top-2 right-2 gap-1"
                 onClick={async () => {
-                  await navigator.clipboard.writeText(ddl);
-                  setCopied(true);
-                  setTimeout(() => setCopied(false), 1500);
+                  try {
+                    await navigator.clipboard.writeText(ddl);
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 1500);
+                  } catch {
+                    toast.error("Could not copy");
+                  }
                 }}
               >
                 {copied ? <Check className="size-3" /> : <Copy className="size-3" />}

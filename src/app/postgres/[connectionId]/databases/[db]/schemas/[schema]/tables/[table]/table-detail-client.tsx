@@ -26,6 +26,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { WorkspacePage } from "@/components/workspace/workspace-page";
+import { ErrorState } from "@/components/workspace/error-state";
 import { RefreshButton } from "@/components/workspace/auto-refresh";
 import { DataPagination } from "@/components/sql/pagination";
 import {
@@ -118,6 +119,8 @@ interface Props {
   table: string;
 }
 
+type ViewKey = "data" | "structure" | "indexes" | "constraints" | "foreign_keys" | "ddl" | "stats";
+
 export function TableDetailClient({
   connectionId,
   db,
@@ -140,6 +143,16 @@ export function TableDetailClient({
   const [pageLimit, setPageLimit] = useState(100);
   const [pageOffset, setPageOffset] = useState(0);
   const [loadingData, setLoadingData] = useState(false);
+
+  const [errors, setErrors] = useState<Partial<Record<ViewKey, string>>>({});
+  const clearError = useCallback((view: ViewKey) => {
+    setErrors((prev) => {
+      if (!(view in prev)) return prev;
+      const next = { ...prev };
+      delete next[view];
+      return next;
+    });
+  }, []);
 
   const [insertOpen, setInsertOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<{
@@ -186,15 +199,19 @@ export function TableDetailClient({
     async (
       view: "structure" | "indexes" | "constraints" | "foreign_keys"
     ): Promise<unknown> => {
-      const res = await fetch(`${base}?view=${view}`, { cache: "no-store" });
-      const data = await res.json();
-      if (!res.ok) {
-        toast.error("Could not load", { description: data.error });
-        throw new Error(data.error);
+      try {
+        const res = await fetch(`${base}?view=${view}`, { cache: "no-store" });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+        clearError(view);
+        return data;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        setErrors((prev) => ({ ...prev, [view]: message }));
+        throw err;
       }
-      return data;
     },
-    [base]
+    [base, clearError]
   );
 
   const loadData = useCallback(
@@ -206,13 +223,29 @@ export function TableDetailClient({
           { cache: "no-store" }
         );
         const data = await res.json();
-        if (res.ok) setPageData(data as TableData);
-        else toast.error("Could not load data", { description: data.error });
+        if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+        setPageData(data as TableData);
+        clearError("data");
+      } catch (err) {
+        // Null pageData too, not just the error — Retry now only clears the
+        // error key (see the Data tab's onRetry) and relies on the lazy-tab
+        // effect's `pageData === null && !errors.data` guard to re-fire. If a
+        // *later* page load fails (pagination, refresh) while pageData still
+        // holds the previous page's rows, leaving it non-null would starve
+        // that guard forever: clearing the error alone would fall through to
+        // re-rendering the stale old page instead of issuing a new request.
+        // The render already checks `errors.data` before `pageData`, so this
+        // doesn't cause any stale-data flash while `errors.data` is set.
+        setPageData(null);
+        setErrors((prev) => ({
+          ...prev,
+          data: err instanceof Error ? err.message : String(err),
+        }));
       } finally {
         setLoadingData(false);
       }
     },
-    [base, pageLimit]
+    [base, pageLimit, clearError]
   );
 
   useEffect(() => {
@@ -224,18 +257,24 @@ export function TableDetailClient({
     setStats(null);
     setPageData(null);
     setPageOffset(0);
+    // Functional form so this bails out (same `{}` reference) when errors is
+    // already empty — otherwise this always-runs-on-mount effect hands the
+    // lazy-tab effect below a brand-new object every time, since it lists
+    // `errors` in its dependency array, and that spurious "change" makes it
+    // re-fire once immediately after mount, before the first fetch settles.
+    setErrors((prev) => (Object.keys(prev).length === 0 ? prev : {}));
   }, [base]);
 
   useEffect(() => {
-    if (columns === null) {
+    if (columns === null && !errors.structure) {
       fetchView("structure")
         .then((d) => setColumns((d as { columns: ColumnInfo[] }).columns))
         .catch(() => undefined);
     }
-  }, [columns, fetchView]);
+  }, [columns, fetchView, errors.structure]);
 
   useEffect(() => {
-    if (tab === "structure" && columns && foreignKeys === null) {
+    if (tab === "structure" && columns && foreignKeys === null && !errors.foreign_keys) {
       fetchView("foreign_keys")
         .then((d) =>
           setForeignKeys(
@@ -243,11 +282,11 @@ export function TableDetailClient({
           ),
         )
         .catch(() => undefined);
-    } else if (tab === "indexes" && indexes === null) {
+    } else if (tab === "indexes" && indexes === null && !errors.indexes) {
       fetchView("indexes")
         .then((d) => setIndexes((d as { indexes: IndexInfo[] }).indexes))
         .catch(() => undefined);
-    } else if (tab === "constraints" && constraints === null) {
+    } else if (tab === "constraints" && constraints === null && !errors.constraints) {
       fetchView("constraints")
         .then((d) =>
           setConstraints(
@@ -255,7 +294,7 @@ export function TableDetailClient({
           )
         )
         .catch(() => undefined);
-    } else if (tab === "foreign_keys" && foreignKeys === null) {
+    } else if (tab === "foreign_keys" && foreignKeys === null && !errors.foreign_keys) {
       fetchView("foreign_keys")
         .then((d) =>
           setForeignKeys(
@@ -263,7 +302,7 @@ export function TableDetailClient({
           )
         )
         .catch(() => undefined);
-    } else if (tab === "ddl" && ddl === null) {
+    } else if (tab === "ddl" && ddl === null && !errors.ddl) {
       fetch(`${base}?view=ddl`, { cache: "no-store" })
         .then(async (res) => {
           const data = await res.json();
@@ -271,11 +310,12 @@ export function TableDetailClient({
           setDdl(data.ddl as string);
         })
         .catch((err) => {
-          toast.error("Could not load DDL", {
-            description: err instanceof Error ? err.message : String(err),
-          });
+          setErrors((prev) => ({
+            ...prev,
+            ddl: err instanceof Error ? err.message : String(err),
+          }));
         });
-    } else if (tab === "stats" && stats === null) {
+    } else if (tab === "stats" && stats === null && !errors.stats) {
       fetch(`${base}?view=stats`, { cache: "no-store" })
         .then(async (res) => {
           const data = await res.json();
@@ -283,14 +323,15 @@ export function TableDetailClient({
           setStats(data.stats as TableStats);
         })
         .catch((err) => {
-          toast.error("Could not load statistics", {
-            description: err instanceof Error ? err.message : String(err),
-          });
+          setErrors((prev) => ({
+            ...prev,
+            stats: err instanceof Error ? err.message : String(err),
+          }));
         });
-    } else if (tab === "data" && pageData === null) {
-      loadData(0);
+    } else if (tab === "data" && pageData === null && !errors.data) {
+      loadData(pageOffset);
     }
-  }, [tab, columns, indexes, constraints, foreignKeys, ddl, stats, pageData, base, fetchView, loadData]);
+  }, [tab, columns, indexes, constraints, foreignKeys, ddl, stats, pageData, pageOffset, base, fetchView, loadData, errors]);
 
   const filteredRows = useMemo(() => {
     if (!pageData) return [];
@@ -461,125 +502,144 @@ export function TableDetailClient({
               />
             </div>
           </div>
-          {pageData ? (
-            <div className="rounded-lg border border-border/60 overflow-auto">
-              <table className="w-full text-xs font-mono border-collapse">
-                <thead className="bg-muted/60 sticky top-0 z-[1]">
-                  <tr>
-                    {pageData.fields.map((f) => {
-                      const col = columns?.find((c) => c.name === f.name);
-                      const isPk = !!col?.isPrimaryKey;
-                      return (
-                        <th
-                          key={f.name}
-                          className={cn(
-                            "text-left font-semibold border-b border-border/60 whitespace-nowrap",
-                            headPad,
-                          )}
-                        >
-                          <div className="flex items-center gap-1.5">
-                            {isPk ? (
-                              <span
-                                className="size-1.5 rounded-full bg-brand"
-                                title="Primary key"
-                                aria-hidden
-                              />
-                            ) : null}
-                            <span className="text-foreground">{f.name}</span>
-                          </div>
-                          <div className="text-[10px] font-normal text-muted-foreground">
-                            {col?.dataType ?? f.dataType}
-                            {col && !col.isNullable ? " · NOT NULL" : ""}
-                          </div>
-                        </th>
-                      );
-                    })}
-                    <th className="w-px border-b border-border/60" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredRows.map((row, i) => (
-                    <tr
-                      key={i}
-                      className="group border-b border-border/30 hover:bg-foreground/[0.025]"
-                    >
-                      {row.map((cell, j) => (
-                        <td
-                          key={j}
-                          className={cn(
-                            "max-w-[40ch] truncate align-top",
-                            cellPad,
-                          )}
-                          title={cell == null ? "null" : String(cell)}
-                        >
-                          {cell === null ? (
-                            <span className="text-muted-foreground/50 italic">
-                              null
-                            </span>
-                          ) : typeof cell === "object" ? (
-                            <span className="text-brand">
-                              {JSON.stringify(cell)}
-                            </span>
-                          ) : typeof cell === "boolean" ? (
-                            <span className="text-brand">
-                              {cell ? "true" : "false"}
-                            </span>
-                          ) : (
-                            String(cell)
-                          )}
-                        </td>
-                      ))}
-                      <td className="px-2 py-1 align-top whitespace-nowrap">
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            className="size-6"
-                            disabled={!canMutateRows}
-                            title={canMutateRows ? "Edit row" : noPkReason}
-                            onClick={() =>
-                              setEditTarget({
-                                fields: pageData.fields,
-                                cells: row,
-                              })
-                            }
-                          >
-                            <Pencil className="size-3" />
-                          </Button>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            className="size-6 text-destructive hover:text-destructive"
-                            disabled={!canMutateRows}
-                            title={canMutateRows ? "Delete row" : noPkReason}
-                            onClick={() =>
-                              setDeleteTarget({
-                                fields: pageData.fields,
-                                cells: row,
-                              })
-                            }
-                          >
-                            <Trash2 className="size-3" />
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                  {filteredRows.length === 0 ? (
+          {errors.data ? (
+            <ErrorState
+              title="Could not load data"
+              message={errors.data}
+              onRetry={() => clearError("data")}
+            />
+          ) : pageData ? (
+            <>
+              {errors.structure ? (
+                <ErrorState
+                  title="Could not load column metadata"
+                  message={errors.structure}
+                  onRetry={() => {
+                    clearError("structure");
+                    setColumns(null);
+                  }}
+                  className="px-3 py-2 mb-3"
+                />
+              ) : null}
+              <div className="rounded-lg border border-border/60 overflow-auto">
+                <table className="w-full text-xs font-mono border-collapse">
+                  <thead className="bg-muted/60 sticky top-0 z-[1]">
                     <tr>
-                      <td
-                        colSpan={(pageData.fields.length || 1) + 1}
-                        className="px-3 py-6 text-center text-muted-foreground"
-                      >
-                        {pageData.rows.length === 0
-                          ? "No rows."
-                          : `No rows match “${filter}”.`}
-                      </td>
+                      {pageData.fields.map((f) => {
+                        const col = columns?.find((c) => c.name === f.name);
+                        const isPk = !!col?.isPrimaryKey;
+                        return (
+                          <th
+                            key={f.name}
+                            className={cn(
+                              "text-left font-semibold border-b border-border/60 whitespace-nowrap",
+                              headPad,
+                            )}
+                          >
+                            <div className="flex items-center gap-1.5">
+                              {isPk ? (
+                                <span
+                                  className="size-1.5 rounded-full bg-brand"
+                                  title="Primary key"
+                                  aria-hidden
+                                />
+                              ) : null}
+                              <span className="text-foreground">{f.name}</span>
+                            </div>
+                            <div className="text-[10px] font-normal text-muted-foreground">
+                              {col?.dataType ?? f.dataType}
+                              {col && !col.isNullable ? " · NOT NULL" : ""}
+                            </div>
+                          </th>
+                        );
+                      })}
+                      <th className="w-px border-b border-border/60" />
                     </tr>
-                  ) : null}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {filteredRows.map((row, i) => (
+                      <tr
+                        key={i}
+                        className="group border-b border-border/30 hover:bg-foreground/[0.025]"
+                      >
+                        {row.map((cell, j) => (
+                          <td
+                            key={j}
+                            className={cn(
+                              "max-w-[40ch] truncate align-top",
+                              cellPad,
+                            )}
+                            title={cell == null ? "null" : String(cell)}
+                          >
+                            {cell === null ? (
+                              <span className="text-muted-foreground/50 italic">
+                                null
+                              </span>
+                            ) : typeof cell === "object" ? (
+                              <span className="text-brand">
+                                {JSON.stringify(cell)}
+                              </span>
+                            ) : typeof cell === "boolean" ? (
+                              <span className="text-brand">
+                                {cell ? "true" : "false"}
+                              </span>
+                            ) : (
+                              String(cell)
+                            )}
+                          </td>
+                        ))}
+                        <td className="px-2 py-1 align-top whitespace-nowrap">
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="size-6"
+                              disabled={!canMutateRows}
+                              title={canMutateRows ? "Edit row" : noPkReason}
+                              onClick={() =>
+                                setEditTarget({
+                                  fields: pageData.fields,
+                                  cells: row,
+                                })
+                              }
+                            >
+                              <Pencil className="size-3" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="size-6 text-destructive hover:text-destructive"
+                              disabled={!canMutateRows}
+                              title={canMutateRows ? "Delete row" : noPkReason}
+                              onClick={() =>
+                                setDeleteTarget({
+                                  fields: pageData.fields,
+                                  cells: row,
+                                })
+                              }
+                            >
+                              <Trash2 className="size-3" />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {filteredRows.length === 0 ? (
+                      <tr>
+                        <td
+                          colSpan={(pageData.fields.length || 1) + 1}
+                          className="px-3 py-6 text-center text-muted-foreground"
+                        >
+                          {pageData.rows.length === 0
+                            ? "No rows."
+                            : `No rows match “${filter}”.`}
+                        </td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
+            </>
           ) : (
             <div className="space-y-2">
               {Array.from({ length: 6 }).map((_, i) => (
@@ -607,7 +667,16 @@ export function TableDetailClient({
         </TabsContent>
 
         <TabsContent value="structure" className="pt-4 space-y-3">
-          {columns ? (
+          {errors.structure ? (
+            <ErrorState
+              title="Could not load structure"
+              message={errors.structure}
+              onRetry={() => {
+                clearError("structure");
+                setColumns(null);
+              }}
+            />
+          ) : columns ? (
             <StructurePanel
               columns={columns}
               foreignKeys={foreignKeys}
@@ -633,7 +702,16 @@ export function TableDetailClient({
               New index
             </Button>
           </div>
-          {indexes ? (
+          {errors.indexes ? (
+            <ErrorState
+              title="Could not load indexes"
+              message={errors.indexes}
+              onRetry={() => {
+                clearError("indexes");
+                setIndexes(null);
+              }}
+            />
+          ) : indexes ? (
             indexes.length === 0 ? (
               <p className="text-sm text-muted-foreground">No indexes.</p>
             ) : (
@@ -744,7 +822,16 @@ export function TableDetailClient({
         </TabsContent>
 
         <TabsContent value="constraints" className="pt-4">
-          {constraints ? (
+          {errors.constraints ? (
+            <ErrorState
+              title="Could not load constraints"
+              message={errors.constraints}
+              onRetry={() => {
+                clearError("constraints");
+                setConstraints(null);
+              }}
+            />
+          ) : constraints ? (
             constraints.length === 0 ? (
               <p className="text-sm text-muted-foreground">No constraints.</p>
             ) : (
@@ -783,7 +870,16 @@ export function TableDetailClient({
         </TabsContent>
 
         <TabsContent value="foreign_keys" className="pt-4">
-          {foreignKeys ? (
+          {errors.foreign_keys ? (
+            <ErrorState
+              title="Could not load foreign keys"
+              message={errors.foreign_keys}
+              onRetry={() => {
+                clearError("foreign_keys");
+                setForeignKeys(null);
+              }}
+            />
+          ) : foreignKeys ? (
             foreignKeys.length === 0 ? (
               <p className="text-sm text-muted-foreground">No foreign keys.</p>
             ) : (
@@ -829,7 +925,16 @@ export function TableDetailClient({
         </TabsContent>
 
         <TabsContent value="ddl" className="pt-4">
-          {ddl === null ? (
+          {errors.ddl ? (
+            <ErrorState
+              title="Could not load DDL"
+              message={errors.ddl}
+              onRetry={() => {
+                clearError("ddl");
+                setDdl(null);
+              }}
+            />
+          ) : ddl === null ? (
             <Skeleton className="h-40 w-full" />
           ) : (
             <div className="rounded-lg border border-border/60 bg-muted/30 relative">
@@ -868,7 +973,16 @@ export function TableDetailClient({
         </TabsContent>
 
         <TabsContent value="stats" className="pt-4">
-          {stats ? (
+          {errors.stats ? (
+            <ErrorState
+              title="Could not load statistics"
+              message={errors.stats}
+              onRetry={() => {
+                clearError("stats");
+                setStats(null);
+              }}
+            />
+          ) : stats ? (
             <StatsGrid stats={stats} columns={columns} indexes={indexes} />
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -917,6 +1031,7 @@ export function TableDetailClient({
         table={table}
         availableColumns={columns?.map((c) => c.name) ?? []}
         onCreated={() => {
+          clearError("indexes");
           setIndexes(null);
           // Re-trigger the lazy fetcher on the indexes tab.
           if (tab !== "indexes") setTab("indexes");
@@ -971,6 +1086,7 @@ export function TableDetailClient({
                     toast.error("Rename failed", { description: data.error });
                   } else {
                     toast.success("Index renamed");
+                    clearError("indexes");
                     setIndexes(null);
                     setRenameIdxTarget(null);
                   }
@@ -1021,6 +1137,7 @@ export function TableDetailClient({
                     toast.error("Drop failed", { description: data.error });
                   } else {
                     toast.success("Index dropped");
+                    clearError("indexes");
                     setIndexes(null);
                     setDropIdxTarget(null);
                   }
@@ -1047,7 +1164,9 @@ export function TableDetailClient({
         table={table}
         columns={columns ?? []}
         onApplied={() => {
+          clearError("structure");
           setColumns(null);
+          clearError("data");
           setPageData(null);
         }}
       />

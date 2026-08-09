@@ -144,17 +144,22 @@ INSERT INTO shop.Products (Sku, Name, Category, PriceCents, Stock) VALUES
 GO
 
 -- 60 random orders, each with a sequence-driven OrderNumber.
+WITH src AS (
+  SELECT TOP (60)
+    ((ABS(CHECKSUM(NEWID())) % 10) + 1) AS CustomerId,
+    ((ABS(CHECKSUM(NEWID())) % 5) + 1)  AS StatusIdx,
+    DATEADD(DAY, -ABS(CHECKSUM(NEWID())) % 60, SYSUTCDATETIME()) AS CreatedAt
+  FROM sys.all_objects
+  WHERE [object_id] IS NOT NULL
+)
 INSERT INTO shop.Orders (OrderNumber, CustomerId, Status, TotalCents, CreatedAt)
 SELECT
   NEXT VALUE FOR shop.OrderNumberSeq,
-  ((ABS(CHECKSUM(NEWID())) % 10) + 1),
-  CHOOSE((ABS(CHECKSUM(NEWID())) % 5) + 1, N'pending', N'paid', N'shipped', N'delivered', N'cancelled'),
+  CustomerId,
+  CHOOSE(StatusIdx, N'pending', N'paid', N'shipped', N'delivered', N'cancelled'),
   0,
-  DATEADD(DAY, -ABS(CHECKSUM(NEWID())) % 60, SYSUTCDATETIME())
-FROM sys.all_objects
-WHERE [object_id] IS NOT NULL
-ORDER BY (SELECT NULL)
-OFFSET 0 ROWS FETCH NEXT 60 ROWS ONLY;
+  CreatedAt
+FROM src;
 GO
 
 -- ~180 random items spread across the orders.

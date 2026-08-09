@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
-import { mockFetch } from "@/test/fetch-mock";
+import { mockFetch, httpError, netFail } from "@/test/fetch-mock";
 import { TableDetailClient } from "./table-detail-client";
 
 // TableDetailClient reads `useRouter` from next/navigation (only `router.push`
@@ -13,23 +13,14 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push, replace }),
 }));
 
-// The component's "Open query" action renders `<Button render={<a href=… />}>`
-// without `nativeButton={false}` (table-detail-client.tsx:350-362), so Base UI
-// logs a dev-mode console.error on every mount:
-//   "Base UI: A component that acts as a button expected a native <button>..."
-// This is a pre-existing defect in the component, which this task may not
-// touch (the postgres equivalent has no such Button and stays silent). Allow
-// exactly that one message and fail on any other console.error, so this file
-// still guarantees pristine output for everything else — a plain
-// "no console output happened" check would have missed this, since vitest
-// only prints captured console output for failing tests.
-const KNOWN_WARNING = "expected a native <button>";
+// The component renders `<Button render={<a href=… />} nativeButton={false}>`
+// for its "Open query" action, so base-ui logs nothing. Any console.error at
+// all is a failure — vitest only prints captured console output for failing
+// tests, so a plain "did anything log?" check would miss a regression here.
 let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
 beforeEach(() => {
   consoleErrorSpy = vi.spyOn(console, "error").mockImplementation((...args) => {
-    if (!String(args[0]).includes(KNOWN_WARNING)) {
-      throw new Error(`Unexpected console.error: ${String(args[0])}`);
-    }
+    throw new Error(`Unexpected console.error: ${String(args[0])}`);
   });
 });
 afterEach(() => consoleErrorSpy.mockRestore());
@@ -166,6 +157,160 @@ describe("mysql TableDetailClient (characterization)", () => {
     await screen.findByText("a@example.com");
     fireEvent.click(screen.getByText("email"));
     await waitFor(() => expect(calls().some((u) => u.includes("orderBy=email"))).toBe(true));
+  });
+
+  it("renders an error state when the rows request returns a non-200", async () => {
+    restore();
+    restore = mockFetch({
+      "/tables/users$": { columns: COLUMNS, indexes: [], ddl: "", primaryKey: ["id"] },
+      "/rows": httpError(502, "ER_ACCESS_DENIED_ERROR: access denied"),
+    });
+    renderIt();
+    expect(await screen.findByRole("alert")).toHaveTextContent(/could not load data/i);
+    expect(screen.getByText(/ER_ACCESS_DENIED_ERROR/)).toBeInTheDocument();
+  });
+
+  // base-ui's Tabs unmounts inactive panels, and the default tab is Data —
+  // so the meta-error ErrorState on Structure/Indexes/DDL (which all key off
+  // `errors.meta`) is nowhere in the DOM until one of those tabs is opened.
+  // Without clicking through, `findByRole("alert")` would resolve against
+  // the Data tab's own (rows) alert instead — which happens to also render
+  // here since `/rows` fails too — and pass even if all three `errors.meta`
+  // branches were deleted. Click to Structure and match its specific title
+  // so this actually exercises the meta error surface it's named for.
+  it("renders an error state on the Structure tab when the meta request rejects at the transport layer", async () => {
+    restore();
+    restore = mockFetch({
+      "/tables/users$": netFail("Failed to fetch"),
+      "/rows": netFail("Failed to fetch"),
+    });
+    renderIt();
+    fireEvent.click(await screen.findByRole("tab", { name: "Structure" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/could not load structure/i);
+  });
+
+  // Guards the Data tab's onRetry against firing twice: the lazy-tab effect
+  // (gated on `pageData === null && !errors.data`) is the sole caller of
+  // loadData once a load has failed, so onRetry must clear only the error
+  // key. A stray explicit loadData() call in onRetry — the shape the review
+  // caught — would issue this request a second time, uncancelled (loadData
+  // has no AbortController), racing the effect's own call.
+  it("Retry after a failed rows load issues exactly one more rows request", async () => {
+    restore();
+    let attempt = 0;
+    restore = mockFetch({
+      "/tables/users$": META,
+      "/rows": () => {
+        attempt += 1;
+        if (attempt === 1) {
+          return new Response(JSON.stringify({ error: "boom" }), {
+            status: 502,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        return ROWS;
+      },
+    });
+    renderIt();
+    await screen.findByRole("alert");
+    const before = calls().filter((u) => u.includes("/rows")).length;
+    fireEvent.click(screen.getByRole("button", { name: /retry/i }));
+    await screen.findByText("a@example.com");
+    expect(calls().filter((u) => u.includes("/rows")).length).toBe(before + 1);
+  });
+
+  // Guards against Retry silently reloading page 0 instead of the page the
+  // user was actually on when the load failed.
+  it("Retry re-requests the offset the user was on, not page 0", async () => {
+    restore();
+    const BIG_ROWS = { ...ROWS, totalRows: 250 };
+    let offset100Attempts = 0;
+    restore = mockFetch({
+      "/tables/users$": META,
+      "/rows": (url: string) => {
+        if (url.includes("offset=100")) {
+          offset100Attempts += 1;
+          if (offset100Attempts === 1) {
+            return new Response(JSON.stringify({ error: "boom" }), {
+              status: 502,
+              headers: { "content-type": "application/json" },
+            });
+          }
+        }
+        return BIG_ROWS;
+      },
+    });
+    renderIt();
+    await screen.findByText("a@example.com");
+    fireEvent.click(screen.getByRole("button", { name: /next page/i }));
+    await screen.findByRole("alert");
+    fireEvent.click(screen.getByRole("button", { name: /retry/i }));
+    await screen.findByText("a@example.com");
+    const rowsCalls = calls().filter((u) => u.includes("/rows"));
+    expect(rowsCalls[rowsCalls.length - 1]).toContain("offset=100");
+  });
+
+  // Guards against the fix for the above turning Retry into a dead button:
+  // once loadData no longer nulls pageData on failure, a load that fails
+  // *after* an earlier success would leave pageData non-null, the lazy-tab
+  // effect's guard would never re-satisfy, and clicking Retry would only
+  // clear the error — silently re-rendering the stale prior page instead of
+  // issuing a new request. Distinct data on the recovering response is what
+  // makes this test actually distinguish "a fetch happened" from "the old
+  // data was still sitting in state".
+  it("Retry recovers after a later load fails, not just the first one", async () => {
+    restore();
+    const ROWS_AFTER_RETRY = {
+      columns: ["id", "email"],
+      rows: [{ id: 3, email: "c@example.com" }],
+      totalRows: 1,
+      primaryKey: ["id"],
+    };
+    let attempt = 0;
+    restore = mockFetch({
+      "/tables/users$": META,
+      "/rows": () => {
+        attempt += 1;
+        if (attempt === 1) return ROWS;
+        if (attempt === 2) {
+          return new Response(JSON.stringify({ error: "boom" }), {
+            status: 502,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        return ROWS_AFTER_RETRY;
+      },
+    });
+    renderIt();
+    await screen.findByText("a@example.com");
+    fireEvent.click(screen.getByRole("button", { name: /^refresh$/i }));
+    await screen.findByRole("alert");
+    fireEvent.click(screen.getByRole("button", { name: /retry/i }));
+    expect(await screen.findByText("c@example.com")).toBeInTheDocument();
+  });
+
+  // Rows-loaded-but-schema-failed: the Data tab is the default tab, so if
+  // only the up-front `meta` request failed the user would otherwise see
+  // rows with no column types, no PK markers, and both mutation buttons
+  // silently disabled with no explanation in view.
+  it("shows a compact schema-error banner above the data grid when rows load but meta fails", async () => {
+    restore();
+    restore = mockFetch({
+      "/tables/users$": netFail("Failed to fetch"),
+      "/rows": ROWS,
+    });
+    renderIt();
+
+    expect(await screen.findByText("a@example.com")).toBeInTheDocument();
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/could not load column metadata/i);
+    expect(screen.getByText("b@example.com")).toBeInTheDocument();
+  });
+
+  it("does not show the schema-error banner on a full happy path", async () => {
+    renderIt();
+    await screen.findByText("a@example.com");
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   // No "surfaces a fetch failure instead of spinning forever" test here.

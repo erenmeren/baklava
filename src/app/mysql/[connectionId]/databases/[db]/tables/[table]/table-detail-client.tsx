@@ -32,6 +32,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { WorkspacePage } from "@/components/workspace/workspace-page";
+import { ErrorState } from "@/components/workspace/error-state";
 import { RefreshButton } from "@/components/workspace/auto-refresh";
 import { DataPagination } from "@/components/sql/pagination";
 import {
@@ -109,6 +110,17 @@ export function TableDetailClient({ connectionId, db, table }: Props) {
   const [sort, setSort] = useState<SortState>(null);
   const [loadingData, setLoadingData] = useState(false);
 
+  type ViewKey = "data" | "meta";
+  const [errors, setErrors] = useState<Partial<Record<ViewKey, string>>>({});
+  const clearError = useCallback((view: ViewKey) => {
+    setErrors((prev) => {
+      if (!(view in prev)) return prev;
+      const next = { ...prev };
+      delete next[view];
+      return next;
+    });
+  }, []);
+
   const [insertOpen, setInsertOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<Record<string, ColumnValue> | null>(
     null
@@ -145,15 +157,18 @@ export function TableDetailClient({ connectionId, db, table }: Props) {
     try {
       const res = await fetch(base, { cache: "no-store", signal: ac.signal });
       const data = await res.json();
-      if (res.ok) setMeta(data as TableMeta);
-      else toast.error("Could not load table", { description: data.error });
+      if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+      setMeta(data as TableMeta);
+      clearError("meta");
     } catch (err) {
-      if ((err as Error).name !== "AbortError")
-        toast.error("Could not load table", {
-          description: err instanceof Error ? err.message : String(err),
-        });
+      if ((err as Error).name !== "AbortError") {
+        setErrors((prev) => ({
+          ...prev,
+          meta: err instanceof Error ? err.message : String(err),
+        }));
+      }
     }
-  }, [base]);
+  }, [base, clearError]);
 
   const loadData = useCallback(
     async (
@@ -175,13 +190,29 @@ export function TableDetailClient({ connectionId, db, table }: Props) {
           cache: "no-store",
         });
         const data = await res.json();
-        if (res.ok) setPageData(data as TableData);
-        else toast.error("Could not load data", { description: data.error });
+        if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+        setPageData(data as TableData);
+        clearError("data");
+      } catch (err) {
+        // Null pageData too, not just the error — Retry now only clears the
+        // error key (see the Data tab's onRetry) and relies on the lazy-tab
+        // effect's `pageData === null && !errors.data` guard to re-fire. If a
+        // *later* page load fails (pagination, refresh) while pageData still
+        // holds the previous page's rows, leaving it non-null would starve
+        // that guard forever: clearing the error alone would fall through to
+        // re-rendering the stale old page instead of issuing a new request.
+        // The render already checks `errors.data` before `pageData`, so this
+        // doesn't cause any stale-data flash while `errors.data` is set.
+        setPageData(null);
+        setErrors((prev) => ({
+          ...prev,
+          data: err instanceof Error ? err.message : String(err),
+        }));
       } finally {
         setLoadingData(false);
       }
     },
-    [base, pageLimit, sort]
+    [base, pageLimit, sort, clearError]
   );
 
   // Reset on table change.
@@ -190,16 +221,23 @@ export function TableDetailClient({ connectionId, db, table }: Props) {
     setPageData(null);
     setPageOffset(0);
     setSort(null);
+    // Functional form so this bails out (same reference) when errors is
+    // already empty — otherwise this always-runs-on-mount effect hands the
+    // lazy-load effects below a brand-new object every time, since they list
+    // `errors` in their dependency arrays, and that spurious "change" makes
+    // them re-fire once immediately after mount, before the first fetch
+    // settles (a double fetch).
+    setErrors((prev) => (Object.keys(prev).length === 0 ? prev : {}));
   }, [base]);
 
   // Meta is needed by every tab (PK badges, column lists) — load eagerly.
   useEffect(() => {
-    if (meta === null) loadMeta();
-  }, [meta, loadMeta]);
+    if (meta === null && !errors.meta) loadMeta();
+  }, [meta, loadMeta, errors.meta]);
 
   useEffect(() => {
-    if (tab === "data" && pageData === null) loadData(0);
-  }, [tab, pageData, loadData]);
+    if (tab === "data" && pageData === null && !errors.data) loadData(pageOffset);
+  }, [tab, pageData, loadData, errors.data, pageOffset]);
 
   const toggleSort = (column: string) => {
     setSort((prev) => {
@@ -350,6 +388,7 @@ export function TableDetailClient({ connectionId, db, table }: Props) {
           <Button
             size="sm"
             variant="outline"
+            nativeButton={false}
             render={
               <a
                 href={`/mysql/${connectionId}/databases/${encodeURIComponent(db)}/query`}
@@ -477,126 +516,145 @@ export function TableDetailClient({ connectionId, db, table }: Props) {
               />
             </div>
           </div>
-          {pageData ? (
-            <div className="rounded-lg border border-border/60 overflow-auto">
-              <table className="w-full text-xs font-mono border-collapse">
-                <thead className="bg-muted/60 sticky top-0 z-[1]">
-                  <tr>
-                    {pageData.columns.map((name) => {
-                      const col = columns?.find((c) => c.name === name);
-                      const isPk = !!col?.isPrimaryKey;
-                      const sorted = sort?.column === name ? sort.dir : null;
-                      return (
-                        <th
-                          key={name}
-                          className={cn(
-                            "text-left font-semibold border-b border-border/60 whitespace-nowrap cursor-pointer select-none hover:bg-foreground/[0.04]",
-                            headPad
-                          )}
-                          onClick={() => toggleSort(name)}
-                          title="Click to sort"
-                        >
-                          <div className="flex items-center gap-1.5">
-                            {isPk ? (
-                              <span
-                                className="size-1.5 rounded-full bg-brand"
-                                title="Primary key"
-                                aria-hidden
-                              />
-                            ) : null}
-                            <span className="text-foreground">{name}</span>
-                            {sorted === "asc" ? (
-                              <ArrowUp className="size-3 text-brand" />
-                            ) : sorted === "desc" ? (
-                              <ArrowDown className="size-3 text-brand" />
-                            ) : null}
-                          </div>
-                          <div className="text-[10px] font-normal text-muted-foreground">
-                            {col?.columnType ?? ""}
-                            {col && !col.nullable ? " · NOT NULL" : ""}
-                          </div>
-                        </th>
-                      );
-                    })}
-                    <th className="w-px border-b border-border/60" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredRows.map((row, i) => (
-                    <tr
-                      key={i}
-                      className="group border-b border-border/30 hover:bg-foreground/[0.025]"
-                    >
-                      {pageData.columns.map((col) => {
-                        const cell = row[col];
+          {errors.data ? (
+            <ErrorState
+              title="Could not load data"
+              message={errors.data}
+              onRetry={() => clearError("data")}
+            />
+          ) : pageData ? (
+            <>
+              {errors.meta ? (
+                <ErrorState
+                  title="Could not load column metadata"
+                  message={errors.meta}
+                  onRetry={() => {
+                    clearError("meta");
+                    setMeta(null);
+                  }}
+                  className="px-3 py-2 mb-3"
+                />
+              ) : null}
+              <div className="rounded-lg border border-border/60 overflow-auto">
+                <table className="w-full text-xs font-mono border-collapse">
+                  <thead className="bg-muted/60 sticky top-0 z-[1]">
+                    <tr>
+                      {pageData.columns.map((name) => {
+                        const col = columns?.find((c) => c.name === name);
+                        const isPk = !!col?.isPrimaryKey;
+                        const sorted = sort?.column === name ? sort.dir : null;
                         return (
-                          <td
-                            key={col}
+                          <th
+                            key={name}
                             className={cn(
-                              "max-w-[40ch] truncate align-top",
-                              cellPad
+                              "text-left font-semibold border-b border-border/60 whitespace-nowrap cursor-pointer select-none hover:bg-foreground/[0.04]",
+                              headPad
                             )}
-                            title={cell == null ? "null" : String(cell)}
+                            onClick={() => toggleSort(name)}
+                            title="Click to sort"
                           >
-                            {cell === null ? (
-                              <span className="text-muted-foreground/50 italic">
-                                null
-                              </span>
-                            ) : typeof cell === "object" ? (
-                              <span className="text-brand">
-                                {JSON.stringify(cell)}
-                              </span>
-                            ) : typeof cell === "boolean" ? (
-                              <span className="text-brand">
-                                {cell ? "true" : "false"}
-                              </span>
-                            ) : (
-                              String(cell)
-                            )}
-                          </td>
+                            <div className="flex items-center gap-1.5">
+                              {isPk ? (
+                                <span
+                                  className="size-1.5 rounded-full bg-brand"
+                                  title="Primary key"
+                                  aria-hidden
+                                />
+                              ) : null}
+                              <span className="text-foreground">{name}</span>
+                              {sorted === "asc" ? (
+                                <ArrowUp className="size-3 text-brand" />
+                              ) : sorted === "desc" ? (
+                                <ArrowDown className="size-3 text-brand" />
+                              ) : null}
+                            </div>
+                            <div className="text-[10px] font-normal text-muted-foreground">
+                              {col?.columnType ?? ""}
+                              {col && !col.nullable ? " · NOT NULL" : ""}
+                            </div>
+                          </th>
                         );
                       })}
-                      <td className="px-2 py-1 align-top whitespace-nowrap">
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            className="size-6"
-                            disabled={!canMutateRows}
-                            title={canMutateRows ? "Edit row" : noPkReason}
-                            onClick={() => setEditTarget(row)}
-                          >
-                            <Pencil className="size-3" />
-                          </Button>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            className="size-6 text-destructive hover:text-destructive"
-                            disabled={!canMutateRows}
-                            title={canMutateRows ? "Delete row" : noPkReason}
-                            onClick={() => setDeleteTarget(row)}
-                          >
-                            <Trash2 className="size-3" />
-                          </Button>
-                        </div>
-                      </td>
+                      <th className="w-px border-b border-border/60" />
                     </tr>
-                  ))}
-                  {filteredRows.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan={(pageData.columns.length || 1) + 1}
-                        className="px-3 py-6 text-center text-muted-foreground"
+                  </thead>
+                  <tbody>
+                    {filteredRows.map((row, i) => (
+                      <tr
+                        key={i}
+                        className="group border-b border-border/30 hover:bg-foreground/[0.025]"
                       >
-                        {pageData.rows.length === 0
-                          ? "No rows."
-                          : `No rows match “${filter}”.`}
-                      </td>
-                    </tr>
-                  ) : null}
-                </tbody>
-              </table>
-            </div>
+                        {pageData.columns.map((col) => {
+                          const cell = row[col];
+                          return (
+                            <td
+                              key={col}
+                              className={cn(
+                                "max-w-[40ch] truncate align-top",
+                                cellPad
+                              )}
+                              title={cell == null ? "null" : String(cell)}
+                            >
+                              {cell === null ? (
+                                <span className="text-muted-foreground/50 italic">
+                                  null
+                                </span>
+                              ) : typeof cell === "object" ? (
+                                <span className="text-brand">
+                                  {JSON.stringify(cell)}
+                                </span>
+                              ) : typeof cell === "boolean" ? (
+                                <span className="text-brand">
+                                  {cell ? "true" : "false"}
+                                </span>
+                              ) : (
+                                String(cell)
+                              )}
+                            </td>
+                          );
+                        })}
+                        <td className="px-2 py-1 align-top whitespace-nowrap">
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="size-6"
+                              disabled={!canMutateRows}
+                              title={canMutateRows ? "Edit row" : noPkReason}
+                              onClick={() => setEditTarget(row)}
+                            >
+                              <Pencil className="size-3" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="size-6 text-destructive hover:text-destructive"
+                              disabled={!canMutateRows}
+                              title={canMutateRows ? "Delete row" : noPkReason}
+                              onClick={() => setDeleteTarget(row)}
+                            >
+                              <Trash2 className="size-3" />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {filteredRows.length === 0 ? (
+                      <tr>
+                        <td
+                          colSpan={(pageData.columns.length || 1) + 1}
+                          className="px-3 py-6 text-center text-muted-foreground"
+                        >
+                          {pageData.rows.length === 0
+                            ? "No rows."
+                            : `No rows match “${filter}”.`}
+                        </td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
+            </>
           ) : (
             <div className="space-y-2">
               {Array.from({ length: 6 }).map((_, i) => (
@@ -624,7 +682,16 @@ export function TableDetailClient({ connectionId, db, table }: Props) {
         </TabsContent>
 
         <TabsContent value="structure" className="pt-4 space-y-3">
-          {columns ? (
+          {errors.meta ? (
+            <ErrorState
+              title="Could not load structure"
+              message={errors.meta}
+              onRetry={() => {
+                clearError("meta");
+                setMeta(null);
+              }}
+            />
+          ) : columns ? (
             <StructurePanel columns={columns} />
           ) : (
             <Skeleton className="h-32 w-full" />
@@ -648,7 +715,16 @@ export function TableDetailClient({ connectionId, db, table }: Props) {
               New index
             </Button>
           </div>
-          {indexes ? (
+          {errors.meta ? (
+            <ErrorState
+              title="Could not load indexes"
+              message={errors.meta}
+              onRetry={() => {
+                clearError("meta");
+                setMeta(null);
+              }}
+            />
+          ) : indexes ? (
             indexes.length === 0 ? (
               <p className="text-sm text-muted-foreground">No indexes.</p>
             ) : (
@@ -711,7 +787,16 @@ export function TableDetailClient({ connectionId, db, table }: Props) {
         </TabsContent>
 
         <TabsContent value="ddl" className="pt-4">
-          {meta === null ? (
+          {errors.meta ? (
+            <ErrorState
+              title="Could not load DDL"
+              message={errors.meta}
+              onRetry={() => {
+                clearError("meta");
+                setMeta(null);
+              }}
+            />
+          ) : meta === null ? (
             <Skeleton className="h-40 w-full" />
           ) : (
             <div className="rounded-lg border border-border/60 bg-muted/30 relative">

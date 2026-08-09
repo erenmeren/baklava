@@ -55,6 +55,11 @@ export function mockFetch(routes: RouteMap): () => void {
     }
     const [, payload] = matches[0];
     const body = typeof payload === "function" ? (payload as (u: string) => unknown)(url) : payload;
+    // A route may hand back a fully-formed Response to model a non-200 reply.
+    // Always produce it from a *function* payload (see httpError) — a Response
+    // body can only be read once, so a shared instance breaks on the second
+    // request to the same route.
+    if (body instanceof Response) return body;
     return new Response(JSON.stringify(body), {
       status: 200,
       headers: { "content-type": "application/json" },
@@ -62,5 +67,30 @@ export function mockFetch(routes: RouteMap): () => void {
   }) as typeof fetch;
   return () => {
     globalThis.fetch = original;
+  };
+}
+
+/**
+ * Route payload modelling an HTTP error reply, in the `{ error }` shape every
+ * Baklava API route uses via `errorResponse` / `formatError`.
+ *
+ *   mockFetch({ "view=data": httpError(502, "ECONNREFUSED 127.0.0.1:5432") })
+ */
+export function httpError(status: number, message: string): () => Response {
+  return () =>
+    new Response(JSON.stringify({ error: message }), {
+      status,
+      headers: { "content-type": "application/json" },
+    });
+}
+
+/**
+ * Route payload modelling a transport-level failure — the promise returned by
+ * `fetch` rejects, as it does for a dropped socket or DNS failure. This is the
+ * case that produced unhandled promise rejections before Phase 2.
+ */
+export function netFail(message = "Failed to fetch"): () => never {
+  return () => {
+    throw new TypeError(message);
   };
 }
