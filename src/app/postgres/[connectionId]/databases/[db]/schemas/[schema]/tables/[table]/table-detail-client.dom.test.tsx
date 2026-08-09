@@ -318,6 +318,79 @@ describe("postgres TableDetailClient (characterization)", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
+  // Same guard-pairing bug as the CreateIndexDialog test above, but for
+  // ModifyTableDialog's onApplied, which nulls both `columns` and
+  // `pageData`. Unlike the per-row index rename/drop icons (unreachable
+  // while errors.indexes is set, because they only render once `indexes`
+  // itself has loaded — and `indexes` truthy and errors.indexes truthy are
+  // mutually exclusive by construction), the "Modify" button is reachable
+  // here: it's gated on `!columns` alone (:405), entirely decoupled from
+  // `errors.data`/`pageData`. So `view=structure` succeeding while the
+  // concurrent `view=data` fails on the default Data tab leaves Modify
+  // enabled right next to a stale "Could not load data" banner.
+  it("applying a table modification after the data view failed re-fetches and clears the stale error", async () => {
+    restore();
+    let dataAttempts = 0;
+    const ROWS_AFTER_MODIFY = {
+      fields: [
+        { name: "id", dataType: "int4" },
+        { name: "email", dataType: "text" },
+      ],
+      rows: [
+        [1, "a@example.com"],
+        [2, "b@example.com"],
+        [3, "c@example.com"],
+      ],
+      rowCount: 3,
+      totalRows: 3,
+    };
+    restore = mockFetch({
+      // A single anchored pattern covers every request to this path —
+      // `view=structure`, `view=data` (twice), and the PATCH modify
+      // request all share the same path (only the query string or method
+      // differs), so declaring separate patterns for them would make more
+      // than one match the same URL and mockFetch would reject it as
+      // ambiguous (see src/test/fetch-mock.ts's doc comment: the "$"
+      // anchor ignores the query string entirely). Branch inside instead.
+      "/tables/users$": (url: string) => {
+        if (url.includes("view=structure")) return { columns: COLUMNS };
+        if (url.includes("view=data")) {
+          dataAttempts += 1;
+          if (dataAttempts === 1) {
+            return new Response(JSON.stringify({ error: "ECONNREFUSED" }), {
+              status: 502,
+              headers: { "content-type": "application/json" },
+            });
+          }
+          return ROWS_AFTER_MODIFY;
+        }
+        // No "view=" query string at all → the PATCH modify request.
+        return { ok: true };
+      },
+    });
+    renderIt();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/could not load data/i);
+    expect(dataAttempts).toBe(1);
+
+    // Modify is enabled (columns loaded) even though the Data tab is
+    // showing a stale error.
+    fireEvent.click(screen.getByRole("button", { name: /^modify$/i }));
+    const dialog = await screen.findByRole("dialog");
+    const emailNameInput = within(dialog).getByDisplayValue("email");
+    const emailRow = emailNameInput.closest("tr");
+    if (!emailRow) throw new Error("email row not found");
+    fireEvent.click(within(emailRow).getByTitle("Drop column on apply"));
+    fireEvent.click(within(dialog).getByRole("button", { name: /^apply/i }));
+
+    // The stale error clears and the freshly (re)fetched rows render —
+    // proving both that a new view=data request went out and that the
+    // guard let it through.
+    await waitFor(() => expect(dataAttempts).toBe(2));
+    expect(await screen.findByText("c@example.com")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   // Rows-loaded-but-schema-failed: the Data tab is the default tab in all
   // three SQL techs, so if only the schema-describing request failed the
   // user would otherwise see rows with no column types, no PK markers, and
