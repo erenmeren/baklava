@@ -16,6 +16,8 @@ import {
 } from "@/components/ui/table";
 import { WorkspacePage } from "@/components/workspace/workspace-page";
 import { ErrorState } from "@/components/workspace/error-state";
+import { StructurePanel } from "@/components/workspace/sql/structure-panel";
+import type { SqlColumn } from "@/components/workspace/sql/types";
 import { cn } from "@/lib/utils";
 import { Copy, Check, Plus, Trash, Wand2 } from "lucide-react";
 import { toast } from "sonner";
@@ -136,6 +138,23 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
     isIdentity: c.isIdentity,
     defaultDefinition: c.defaultDefinition,
     isPrimaryKey: c.isPrimaryKey,
+  }));
+
+  // SqlServerColumn carries no ordinal field, so position comes from the
+  // array index: getSqlServerTableDetail's catalog query returns columns in
+  // ordinal order, which is the only ordering the Structure tab ever showed.
+  const sqlColumns: SqlColumn[] = (detail?.columns ?? []).map((c, i) => ({
+    name: c.name,
+    position: i + 1,
+    dataType: c.dataType,
+    nullable: c.nullable,
+    default: c.isComputed ? c.computedDefinition : c.defaultDefinition,
+    isPrimaryKey: c.isPrimaryKey,
+    extra: c.isIdentity
+      ? `IDENTITY(${c.identitySeed},${c.identityIncrement})`
+      : c.isComputed
+        ? "computed"
+        : null,
   }));
 
   const loadDetail = useCallback(async () => {
@@ -331,52 +350,7 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
           ) : !detail ? (
             <Skeleton className="h-40 w-full" />
           ) : (
-            <div className="rounded-lg border border-border/60 overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Column</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Nullable</TableHead>
-                    <TableHead>Flags</TableHead>
-                    <TableHead>Default</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {detail.columns.map((c) => (
-                    <TableRow key={c.name}>
-                      <TableCell className="font-mono text-xs">
-                        <span className="inline-flex items-center gap-1.5">
-                          {c.name}
-                          {c.isPrimaryKey ? <Badge>PK</Badge> : null}
-                        </span>
-                      </TableCell>
-                      <TableCell className="font-mono text-xs text-muted-foreground">
-                        {c.dataType}
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        {c.nullable ? "NULL" : "NOT NULL"}
-                      </TableCell>
-                      <TableCell className="space-x-1">
-                        {c.isIdentity ? (
-                          <Badge variant="secondary">
-                            IDENTITY({c.identitySeed},{c.identityIncrement})
-                          </Badge>
-                        ) : null}
-                        {c.isComputed ? (
-                          <Badge variant="secondary">computed</Badge>
-                        ) : null}
-                      </TableCell>
-                      <TableCell className="font-mono text-[11px] text-muted-foreground">
-                        {c.isComputed
-                          ? c.computedDefinition
-                          : c.defaultDefinition ?? ""}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+            <StructurePanel columns={sqlColumns} />
           )}
         </TabsContent>
 

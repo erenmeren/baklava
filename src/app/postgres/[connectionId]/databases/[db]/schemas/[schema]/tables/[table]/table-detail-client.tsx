@@ -29,6 +29,9 @@ import { WorkspacePage } from "@/components/workspace/workspace-page";
 import { ErrorState } from "@/components/workspace/error-state";
 import { RefreshButton } from "@/components/workspace/auto-refresh";
 import { DataPagination } from "@/components/sql/pagination";
+import { StructurePanel } from "@/components/workspace/sql/structure-panel";
+import { DdlPanel } from "@/components/workspace/sql/ddl-panel";
+import type { SqlColumn } from "@/components/workspace/sql/types";
 import {
   Loader2,
   Pencil,
@@ -39,8 +42,6 @@ import {
   Rows4,
   Wand2,
   Trash,
-  Copy,
-  Check,
 } from "lucide-react";
 import { toast } from "sonner";
 import { RowFormDialog, type ColumnInfo } from "./row-form-dialog";
@@ -137,7 +138,6 @@ export function TableDetailClient({
   const [foreignKeys, setForeignKeys] = useState<ForeignKeyInfo[] | null>(null);
   const [ddl, setDdl] = useState<string | null>(null);
   const [stats, setStats] = useState<TableStats | null>(null);
-  const [ddlCopied, setDdlCopied] = useState(false);
 
   const [pageData, setPageData] = useState<TableData | null>(null);
   const [pageLimit, setPageLimit] = useState(100);
@@ -383,6 +383,17 @@ export function TableDetailClient({
       setDeleting(false);
     }
   };
+
+  const sqlColumns: SqlColumn[] = (columns ?? []).map((c) => ({
+    name: c.name,
+    position: c.position,
+    dataType: c.dataType,
+    nullable: c.isNullable,
+    default: c.default,
+    isPrimaryKey: c.isPrimaryKey,
+    isUnique: c.isUnique,
+    comment: c.comment,
+  }));
 
   return (
     <WorkspacePage
@@ -678,9 +689,30 @@ export function TableDetailClient({
             />
           ) : columns ? (
             <StructurePanel
-              columns={columns}
-              foreignKeys={foreignKeys}
-              onModify={() => setModifyOpen(true)}
+              columns={sqlColumns}
+              extraChips={(c) =>
+                columnFkLinks(c.name, foreignKeys).map((fk, i) => (
+                  <span
+                    key={i}
+                    className={cn(
+                      "inline-flex items-center px-1.5 py-px rounded border text-[10px] uppercase tracking-wider whitespace-nowrap",
+                      "bg-foreground/5 text-foreground/80 border-border normal-case tracking-normal text-[10.5px]",
+                    )}
+                  >
+                    → {fk.refSchema}.{fk.refTable}.{fk.refColumn}
+                  </span>
+                ))
+              }
+              action={
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setModifyOpen(true)}
+                >
+                  <Wand2 className="size-3.5" />
+                  Modify columns
+                </Button>
+              }
             />
           ) : (
             <Skeleton className="h-32 w-full" />
@@ -937,38 +969,7 @@ export function TableDetailClient({
           ) : ddl === null ? (
             <Skeleton className="h-40 w-full" />
           ) : (
-            <div className="rounded-lg border border-border/60 bg-muted/30 relative">
-              <div className="flex items-center justify-between border-b border-border/40 px-3 py-1.5">
-                <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
-                  generated CREATE TABLE
-                </span>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-7"
-                  onClick={async () => {
-                    if (!ddl) return;
-                    try {
-                      await navigator.clipboard.writeText(ddl);
-                      setDdlCopied(true);
-                      setTimeout(() => setDdlCopied(false), 1500);
-                    } catch {
-                      toast.error("Could not copy");
-                    }
-                  }}
-                >
-                  {ddlCopied ? (
-                    <Check className="size-3.5" />
-                  ) : (
-                    <Copy className="size-3.5" />
-                  )}
-                  {ddlCopied ? "Copied" : "Copy"}
-                </Button>
-              </div>
-              <pre className="p-4 text-[12px] font-mono leading-[1.55] whitespace-pre overflow-x-auto max-h-[60vh] overflow-y-auto">
-                {ddl}
-              </pre>
-            </div>
+            <DdlPanel label="generated CREATE TABLE" ddl={ddl} />
           )}
         </TabsContent>
 
@@ -1496,261 +1497,3 @@ function columnFkLinks(
   return out;
 }
 
-function StructurePanel({
-  columns,
-  foreignKeys,
-  onModify,
-}: {
-  columns: ColumnInfo[];
-  foreignKeys: ForeignKeyInfo[] | null;
-  onModify: () => void;
-}) {
-  const [filter, setFilter] = useState("");
-  const [density, setDensity] = useState<"compact" | "normal">("compact");
-
-  const q = filter.trim().toLowerCase();
-  const visible = q
-    ? columns.filter(
-        (c) =>
-          c.name.toLowerCase().includes(q) ||
-          c.dataType.toLowerCase().includes(q) ||
-          (c.comment ?? "").toLowerCase().includes(q),
-      )
-    : columns;
-
-  const cellPad = density === "compact" ? "px-3 py-1" : "px-3 py-2";
-  const headPad = density === "compact" ? "px-3 py-1.5" : "px-3 py-2.5";
-
-  const pkCount = columns.filter((c) => c.isPrimaryKey).length;
-  const notNullCount = columns.filter((c) => !c.isNullable).length;
-  const withDefault = columns.filter((c) => c.default !== null).length;
-
-  return (
-    <>
-      <div className="flex flex-wrap items-center gap-2 justify-between">
-        <div className="flex items-center gap-2 min-w-0">
-          <div className="relative">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none" />
-            <Input
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              placeholder="Filter by name, type, comment…"
-              className="h-8 w-[260px] pl-7 text-xs font-mono"
-              spellCheck={false}
-            />
-          </div>
-          <div className="inline-flex rounded-md border border-border/60 overflow-hidden">
-            <button
-              type="button"
-              onClick={() => setDensity("compact")}
-              title="Compact rows"
-              className={cn(
-                "size-8 grid place-items-center transition-colors",
-                density === "compact"
-                  ? "bg-foreground/10 text-foreground"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              <Rows4 className="size-3.5" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setDensity("normal")}
-              title="Normal rows"
-              className={cn(
-                "size-8 grid place-items-center transition-colors border-l border-border/60",
-                density === "normal"
-                  ? "bg-foreground/10 text-foreground"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              <Rows3 className="size-3.5" />
-            </button>
-          </div>
-          <p className="text-[11px] text-muted-foreground font-mono whitespace-nowrap">
-            {columns.length} columns · {pkCount} pk · {notNullCount} not null ·{" "}
-            {withDefault} with default
-            {q ? ` · ${visible.length} match${visible.length === 1 ? "" : "es"}` : ""}
-          </p>
-        </div>
-        <Button size="sm" variant="outline" onClick={onModify}>
-          <Wand2 className="size-3.5" />
-          Modify columns
-        </Button>
-      </div>
-
-      <div className="rounded-lg border border-border/60 overflow-auto">
-        <table className="w-full text-xs font-mono border-collapse">
-          <thead className="bg-muted/60 sticky top-0 z-[1]">
-            <tr>
-              <th
-                className={cn(
-                  "text-right font-semibold border-b border-border/60 whitespace-nowrap w-10 text-muted-foreground",
-                  headPad,
-                )}
-              >
-                #
-              </th>
-              <th
-                className={cn(
-                  "text-left font-semibold border-b border-border/60 whitespace-nowrap",
-                  headPad,
-                )}
-              >
-                Name
-              </th>
-              <th
-                className={cn(
-                  "text-left font-semibold border-b border-border/60 whitespace-nowrap",
-                  headPad,
-                )}
-              >
-                Type
-              </th>
-              <th
-                className={cn(
-                  "text-left font-semibold border-b border-border/60 whitespace-nowrap",
-                  headPad,
-                )}
-              >
-                Constraints
-              </th>
-              <th
-                className={cn(
-                  "text-left font-semibold border-b border-border/60 whitespace-nowrap",
-                  headPad,
-                )}
-              >
-                Default
-              </th>
-              <th
-                className={cn(
-                  "text-left font-semibold border-b border-border/60 whitespace-nowrap",
-                  headPad,
-                )}
-              >
-                Comment
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {visible.map((c) => {
-              const fkLinks = columnFkLinks(c.name, foreignKeys);
-              return (
-                <tr
-                  key={c.name}
-                  className="border-b border-border/30 hover:bg-foreground/[0.025]"
-                >
-                  <td
-                    className={cn(
-                      "text-right text-muted-foreground tabular-nums align-top",
-                      cellPad,
-                    )}
-                  >
-                    {c.position}
-                  </td>
-                  <td className={cn("align-top", cellPad)}>
-                    <div className="flex items-center gap-1.5">
-                      {c.isPrimaryKey ? (
-                        <span
-                          className="size-1.5 rounded-full bg-brand shrink-0"
-                          aria-label="primary key"
-                          title="primary key"
-                        />
-                      ) : (
-                        <span className="size-1.5 shrink-0" aria-hidden />
-                      )}
-                      <span className="text-foreground">{c.name}</span>
-                    </div>
-                  </td>
-                  <td
-                    className={cn(
-                      "text-foreground/90 align-top whitespace-nowrap",
-                      cellPad,
-                    )}
-                  >
-                    {c.dataType}
-                  </td>
-                  <td className={cn("align-top", cellPad)}>
-                    <div className="flex flex-wrap items-center gap-1">
-                      {c.isPrimaryKey ? <Chip tone="brand">pk</Chip> : null}
-                      {!c.isNullable ? <Chip tone="muted">not null</Chip> : null}
-                      {c.isUnique ? <Chip tone="muted">unique</Chip> : null}
-                      {fkLinks.map((fk, i) => (
-                        <Chip key={i} tone="link">
-                          → {fk.refSchema}.{fk.refTable}.{fk.refColumn}
-                        </Chip>
-                      ))}
-                      {c.isNullable &&
-                      !c.isPrimaryKey &&
-                      !c.isUnique &&
-                      fkLinks.length === 0 ? (
-                        <span className="text-muted-foreground/50 italic">
-                          —
-                        </span>
-                      ) : null}
-                    </div>
-                  </td>
-                  <td
-                    className={cn(
-                      "text-muted-foreground align-top max-w-[28ch] truncate",
-                      cellPad,
-                    )}
-                    title={c.default ?? undefined}
-                  >
-                    {c.default ?? (
-                      <span className="text-muted-foreground/50 italic">—</span>
-                    )}
-                  </td>
-                  <td
-                    className={cn(
-                      "text-muted-foreground align-top max-w-[40ch] truncate",
-                      cellPad,
-                    )}
-                    title={c.comment ?? undefined}
-                  >
-                    {c.comment ?? (
-                      <span className="text-muted-foreground/40 italic">—</span>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-            {visible.length === 0 ? (
-              <tr>
-                <td
-                  colSpan={6}
-                  className="px-3 py-6 text-center text-muted-foreground"
-                >
-                  No columns match “{filter}”.
-                </td>
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
-      </div>
-    </>
-  );
-}
-
-function Chip({
-  children,
-  tone,
-}: {
-  children: React.ReactNode;
-  tone: "brand" | "muted" | "link";
-}) {
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center px-1.5 py-px rounded border text-[10px] uppercase tracking-wider whitespace-nowrap",
-        tone === "brand" && "bg-brand/15 text-brand border-brand/40",
-        tone === "muted" && "bg-foreground/5 text-foreground/80 border-border",
-        tone === "link" &&
-          "bg-foreground/5 text-foreground/80 border-border normal-case tracking-normal text-[10.5px]",
-      )}
-    >
-      {children}
-    </span>
-  );
-}
