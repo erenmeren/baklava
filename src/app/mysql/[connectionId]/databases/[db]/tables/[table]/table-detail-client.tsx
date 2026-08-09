@@ -194,6 +194,16 @@ export function TableDetailClient({ connectionId, db, table }: Props) {
         setPageData(data as TableData);
         clearError("data");
       } catch (err) {
+        // Null pageData too, not just the error — Retry now only clears the
+        // error key (see the Data tab's onRetry) and relies on the lazy-tab
+        // effect's `pageData === null && !errors.data` guard to re-fire. If a
+        // *later* page load fails (pagination, refresh) while pageData still
+        // holds the previous page's rows, leaving it non-null would starve
+        // that guard forever: clearing the error alone would fall through to
+        // re-rendering the stale old page instead of issuing a new request.
+        // The render already checks `errors.data` before `pageData`, so this
+        // doesn't cause any stale-data flash while `errors.data` is set.
+        setPageData(null);
         setErrors((prev) => ({
           ...prev,
           data: err instanceof Error ? err.message : String(err),
@@ -226,8 +236,8 @@ export function TableDetailClient({ connectionId, db, table }: Props) {
   }, [meta, loadMeta, errors.meta]);
 
   useEffect(() => {
-    if (tab === "data" && pageData === null && !errors.data) loadData(0);
-  }, [tab, pageData, loadData, errors.data]);
+    if (tab === "data" && pageData === null && !errors.data) loadData(pageOffset);
+  }, [tab, pageData, loadData, errors.data, pageOffset]);
 
   const toggleSort = (column: string) => {
     setSort((prev) => {
@@ -510,10 +520,7 @@ export function TableDetailClient({ connectionId, db, table }: Props) {
             <ErrorState
               title="Could not load data"
               message={errors.data}
-              onRetry={() => {
-                clearError("data");
-                loadData(pageOffset);
-              }}
+              onRetry={() => clearError("data")}
             />
           ) : pageData ? (
             <div className="rounded-lg border border-border/60 overflow-auto">

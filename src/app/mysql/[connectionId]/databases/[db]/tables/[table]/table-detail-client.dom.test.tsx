@@ -180,6 +180,106 @@ describe("mysql TableDetailClient (characterization)", () => {
     expect(await screen.findByRole("alert")).toBeInTheDocument();
   });
 
+  // Guards the Data tab's onRetry against firing twice: the lazy-tab effect
+  // (gated on `pageData === null && !errors.data`) is the sole caller of
+  // loadData once a load has failed, so onRetry must clear only the error
+  // key. A stray explicit loadData() call in onRetry — the shape the review
+  // caught — would issue this request a second time, uncancelled (loadData
+  // has no AbortController), racing the effect's own call.
+  it("Retry after a failed rows load issues exactly one more rows request", async () => {
+    restore();
+    let attempt = 0;
+    restore = mockFetch({
+      "/tables/users$": META,
+      "/rows": () => {
+        attempt += 1;
+        if (attempt === 1) {
+          return new Response(JSON.stringify({ error: "boom" }), {
+            status: 502,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        return ROWS;
+      },
+    });
+    renderIt();
+    await screen.findByRole("alert");
+    const before = calls().filter((u) => u.includes("/rows")).length;
+    fireEvent.click(screen.getByRole("button", { name: /retry/i }));
+    await screen.findByText("a@example.com");
+    expect(calls().filter((u) => u.includes("/rows")).length).toBe(before + 1);
+  });
+
+  // Guards against Retry silently reloading page 0 instead of the page the
+  // user was actually on when the load failed.
+  it("Retry re-requests the offset the user was on, not page 0", async () => {
+    restore();
+    const BIG_ROWS = { ...ROWS, totalRows: 250 };
+    let offset100Attempts = 0;
+    restore = mockFetch({
+      "/tables/users$": META,
+      "/rows": (url: string) => {
+        if (url.includes("offset=100")) {
+          offset100Attempts += 1;
+          if (offset100Attempts === 1) {
+            return new Response(JSON.stringify({ error: "boom" }), {
+              status: 502,
+              headers: { "content-type": "application/json" },
+            });
+          }
+        }
+        return BIG_ROWS;
+      },
+    });
+    renderIt();
+    await screen.findByText("a@example.com");
+    fireEvent.click(screen.getByRole("button", { name: /next page/i }));
+    await screen.findByRole("alert");
+    fireEvent.click(screen.getByRole("button", { name: /retry/i }));
+    await screen.findByText("a@example.com");
+    const rowsCalls = calls().filter((u) => u.includes("/rows"));
+    expect(rowsCalls[rowsCalls.length - 1]).toContain("offset=100");
+  });
+
+  // Guards against the fix for the above turning Retry into a dead button:
+  // once loadData no longer nulls pageData on failure, a load that fails
+  // *after* an earlier success would leave pageData non-null, the lazy-tab
+  // effect's guard would never re-satisfy, and clicking Retry would only
+  // clear the error — silently re-rendering the stale prior page instead of
+  // issuing a new request. Distinct data on the recovering response is what
+  // makes this test actually distinguish "a fetch happened" from "the old
+  // data was still sitting in state".
+  it("Retry recovers after a later load fails, not just the first one", async () => {
+    restore();
+    const ROWS_AFTER_RETRY = {
+      columns: ["id", "email"],
+      rows: [{ id: 3, email: "c@example.com" }],
+      totalRows: 1,
+      primaryKey: ["id"],
+    };
+    let attempt = 0;
+    restore = mockFetch({
+      "/tables/users$": META,
+      "/rows": () => {
+        attempt += 1;
+        if (attempt === 1) return ROWS;
+        if (attempt === 2) {
+          return new Response(JSON.stringify({ error: "boom" }), {
+            status: 502,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        return ROWS_AFTER_RETRY;
+      },
+    });
+    renderIt();
+    await screen.findByText("a@example.com");
+    fireEvent.click(screen.getByRole("button", { name: /^refresh$/i }));
+    await screen.findByRole("alert");
+    fireEvent.click(screen.getByRole("button", { name: /retry/i }));
+    expect(await screen.findByText("c@example.com")).toBeInTheDocument();
+  });
+
   // No "surfaces a fetch failure instead of spinning forever" test here.
   // loadData's fetch() has no .catch() — only a try/finally around
   // setLoadingData — and it fires unconditionally on mount (the default tab
