@@ -107,15 +107,19 @@ async function clickThroughTabs(page: Page) {
   // called right after asserting is visible (see call sites below).
   const tablist = page
     .getByRole("tablist")
-    .filter({ has: page.getByRole("tab", { name: "Data" }) });
+    .filter({ has: page.getByRole("tab", { name: "Data", exact: true }) });
   const tabs = tablist.getByRole("tab");
   const count = await tabs.count();
   expect(count).toBeGreaterThan(0);
   for (let i = 0; i < count; i++) {
     await tabs.nth(i).click();
 
-    // Positive signal: the active panel's loading skeletons are gone.
+    // Positive signal: the active panel's loading skeletons are gone. This
+    // only means something if a panel actually exists — assert that first,
+    // so a future zero-panel regression can't make the negative assertions
+    // below pass vacuously against an empty DOM.
     const panel = page.getByRole("tabpanel");
+    await expect(panel).toHaveCount(1);
     await expect(panel.locator('[data-slot="skeleton"]')).toHaveCount(0, {
       timeout: 10_000,
     });

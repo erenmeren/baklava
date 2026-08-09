@@ -18,6 +18,7 @@ import { WorkspacePage } from "@/components/workspace/workspace-page";
 import { ErrorState } from "@/components/workspace/error-state";
 import { cn } from "@/lib/utils";
 import { Copy, Check, Plus, Trash, Wand2 } from "lucide-react";
+import { toast } from "sonner";
 import { RowFormDialog, type ColumnInfo as RowColumnInfo } from "./row-form-dialog";
 import { ModifyTableDialog } from "../../../../../modify-table-dialog";
 import { DropConfirm } from "../../../../../drop-confirm";
@@ -268,6 +269,14 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
             <Skeleton className="h-40 w-full" />
           ) : (
             <>
+              {detailError ? (
+                <ErrorState
+                  title="Could not load column metadata"
+                  message={detailError}
+                  onRetry={() => setDetailError(null)}
+                  className="px-3 py-2 shrink-0"
+                />
+              ) : null}
               <div className="rounded-lg border border-border/60 overflow-auto flex-1 min-h-0">
                 <table className="w-full text-xs font-mono">
                   <thead className="bg-muted/40 sticky top-0">
@@ -544,9 +553,13 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
                 variant="outline"
                 className="absolute top-2 right-2 gap-1"
                 onClick={async () => {
-                  await navigator.clipboard.writeText(ddl);
-                  setCopied(true);
-                  setTimeout(() => setCopied(false), 1500);
+                  try {
+                    await navigator.clipboard.writeText(ddl);
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 1500);
+                  } catch {
+                    toast.error("Could not copy");
+                  }
                 }}
               >
                 {copied ? <Check className="size-3" /> : <Copy className="size-3" />}

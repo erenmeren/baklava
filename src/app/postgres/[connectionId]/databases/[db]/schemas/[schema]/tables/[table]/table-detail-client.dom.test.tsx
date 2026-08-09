@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent, within } from "@testing-library/react";
 import { mockFetch, httpError, netFail } from "@/test/fetch-mock";
 import { TableDetailClient } from "./table-detail-client";
 
@@ -265,5 +265,83 @@ describe("postgres TableDetailClient (characterization)", () => {
       fetchedUrls().filter((u) => u.includes("view=data") && u.includes("offset=100")).length,
     ).toBe(2);
     expect(fetchedUrls().filter((u) => u.includes("view=data") && u.includes("offset=0")).length).toBe(1);
+  });
+
+  // Guards the four post-mutation refresh sites (CreateIndexDialog's
+  // onCreated, index rename, index drop, ModifyTableDialog's onApplied)
+  // against pairing a cache-null with a stale error key that's never
+  // cleared. The lazy-tab effect's guard is `indexes === null &&
+  // !errors.indexes` — nulling the cache alone, without also clearing the
+  // error, leaves that guard permanently unsatisfied and the stale
+  // ErrorState (plus its "Retry" button) stuck on screen even though the
+  // mutation that just ran succeeded. "New index" is the reachable path:
+  // unlike the per-row rename/drop icons (which only render once the
+  // indexes table itself has loaded, i.e. never while errors.indexes is
+  // set), it's gated only on `!columns`, so it stays clickable while the
+  // Indexes tab is showing a stale error.
+  it("creating an index after the indexes view failed re-fetches and clears the stale error", async () => {
+    restore();
+    let indexAttempts = 0;
+    restore = mockFetch({
+      "view=structure": { columns: COLUMNS },
+      "view=data": ROWS,
+      "view=indexes": () => {
+        indexAttempts += 1;
+        if (indexAttempts === 1) {
+          return new Response(JSON.stringify({ error: "ECONNREFUSED" }), {
+            status: 502,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        return { indexes: INDEXES };
+      },
+      // The create-index POST goes to `${base}/indexes` — distinct from the
+      // GET's `?view=indexes` query string (no "/indexes" path substring).
+      "/indexes": { index: { name: "idx_email" } },
+    });
+    renderIt();
+
+    fireEvent.click(await screen.findByRole("tab", { name: "Indexes" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/could not load indexes/i);
+    expect(indexAttempts).toBe(1);
+
+    fireEvent.click(screen.getByRole("button", { name: /new index/i }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "email" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: /^create$/i }));
+
+    // The stale error clears and the freshly (re)fetched index list renders
+    // — proving both that a new request went out (indexAttempts advanced)
+    // and that the guard let it through.
+    await waitFor(() => expect(indexAttempts).toBe(2));
+    expect(await screen.findByText("users_pkey")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  // Rows-loaded-but-schema-failed: the Data tab is the default tab in all
+  // three SQL techs, so if only the schema-describing request failed the
+  // user would otherwise see rows with no column types, no PK markers, and
+  // both mutation buttons silently disabled with no explanation in view.
+  it("shows a compact schema-error banner above the data grid when rows load but structure fails", async () => {
+    restore();
+    restore = mockFetch({
+      "view=structure": httpError(502, "ECONNREFUSED 127.0.0.1:5432"),
+      "view=data": ROWS,
+    });
+    renderIt();
+
+    // Rows are visible...
+    expect(await screen.findByText("a@example.com")).toBeInTheDocument();
+    // ...and the schema-error banner sits above them, distinguishable from
+    // the rows error by title.
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/could not load column metadata/i);
+    expect(screen.getByText("b@example.com")).toBeInTheDocument();
+  });
+
+  it("does not show the schema-error banner on a full happy path", async () => {
+    renderIt();
+    await screen.findByText("a@example.com");
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 });

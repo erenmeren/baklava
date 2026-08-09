@@ -345,4 +345,28 @@ describe("sqlserver TableDetailClient (characterization)", () => {
     expect(await screen.findByText("email")).toBeInTheDocument();
     expect(calls().filter((u) => u.endsWith("/tables/dbo/users")).length).toBe(before + 1);
   });
+
+  // Rows-loaded-but-schema-failed: the Data tab is the default tab, so if
+  // only the table-detail request failed the user would otherwise see rows
+  // with no column types, no PK markers, and "Insert row" silently disabled
+  // with no explanation in view.
+  it("shows a compact schema-error banner above the data grid when rows load but detail fails", async () => {
+    restore();
+    restore = mockFetch({
+      "/tables/dbo/users$": httpError(502, "Login failed for user 'sa'."),
+      "/data?": DATA,
+    });
+    renderIt();
+
+    expect(await screen.findByText("a@example.com")).toBeInTheDocument();
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/could not load column metadata/i);
+    expect(screen.getByText("b@example.com")).toBeInTheDocument();
+  });
+
+  it("does not show the schema-error banner on a full happy path", async () => {
+    renderIt();
+    await screen.findByText("a@example.com");
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
 });

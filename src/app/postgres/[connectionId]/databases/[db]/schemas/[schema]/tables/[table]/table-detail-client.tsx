@@ -509,124 +509,137 @@ export function TableDetailClient({
               onRetry={() => clearError("data")}
             />
           ) : pageData ? (
-            <div className="rounded-lg border border-border/60 overflow-auto">
-              <table className="w-full text-xs font-mono border-collapse">
-                <thead className="bg-muted/60 sticky top-0 z-[1]">
-                  <tr>
-                    {pageData.fields.map((f) => {
-                      const col = columns?.find((c) => c.name === f.name);
-                      const isPk = !!col?.isPrimaryKey;
-                      return (
-                        <th
-                          key={f.name}
-                          className={cn(
-                            "text-left font-semibold border-b border-border/60 whitespace-nowrap",
-                            headPad,
-                          )}
-                        >
-                          <div className="flex items-center gap-1.5">
-                            {isPk ? (
-                              <span
-                                className="size-1.5 rounded-full bg-brand"
-                                title="Primary key"
-                                aria-hidden
-                              />
-                            ) : null}
-                            <span className="text-foreground">{f.name}</span>
-                          </div>
-                          <div className="text-[10px] font-normal text-muted-foreground">
-                            {col?.dataType ?? f.dataType}
-                            {col && !col.isNullable ? " · NOT NULL" : ""}
-                          </div>
-                        </th>
-                      );
-                    })}
-                    <th className="w-px border-b border-border/60" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredRows.map((row, i) => (
-                    <tr
-                      key={i}
-                      className="group border-b border-border/30 hover:bg-foreground/[0.025]"
-                    >
-                      {row.map((cell, j) => (
-                        <td
-                          key={j}
-                          className={cn(
-                            "max-w-[40ch] truncate align-top",
-                            cellPad,
-                          )}
-                          title={cell == null ? "null" : String(cell)}
-                        >
-                          {cell === null ? (
-                            <span className="text-muted-foreground/50 italic">
-                              null
-                            </span>
-                          ) : typeof cell === "object" ? (
-                            <span className="text-brand">
-                              {JSON.stringify(cell)}
-                            </span>
-                          ) : typeof cell === "boolean" ? (
-                            <span className="text-brand">
-                              {cell ? "true" : "false"}
-                            </span>
-                          ) : (
-                            String(cell)
-                          )}
-                        </td>
-                      ))}
-                      <td className="px-2 py-1 align-top whitespace-nowrap">
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            className="size-6"
-                            disabled={!canMutateRows}
-                            title={canMutateRows ? "Edit row" : noPkReason}
-                            onClick={() =>
-                              setEditTarget({
-                                fields: pageData.fields,
-                                cells: row,
-                              })
-                            }
-                          >
-                            <Pencil className="size-3" />
-                          </Button>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            className="size-6 text-destructive hover:text-destructive"
-                            disabled={!canMutateRows}
-                            title={canMutateRows ? "Delete row" : noPkReason}
-                            onClick={() =>
-                              setDeleteTarget({
-                                fields: pageData.fields,
-                                cells: row,
-                              })
-                            }
-                          >
-                            <Trash2 className="size-3" />
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                  {filteredRows.length === 0 ? (
+            <>
+              {errors.structure ? (
+                <ErrorState
+                  title="Could not load column metadata"
+                  message={errors.structure}
+                  onRetry={() => {
+                    clearError("structure");
+                    setColumns(null);
+                  }}
+                  className="px-3 py-2 mb-3"
+                />
+              ) : null}
+              <div className="rounded-lg border border-border/60 overflow-auto">
+                <table className="w-full text-xs font-mono border-collapse">
+                  <thead className="bg-muted/60 sticky top-0 z-[1]">
                     <tr>
-                      <td
-                        colSpan={(pageData.fields.length || 1) + 1}
-                        className="px-3 py-6 text-center text-muted-foreground"
-                      >
-                        {pageData.rows.length === 0
-                          ? "No rows."
-                          : `No rows match “${filter}”.`}
-                      </td>
+                      {pageData.fields.map((f) => {
+                        const col = columns?.find((c) => c.name === f.name);
+                        const isPk = !!col?.isPrimaryKey;
+                        return (
+                          <th
+                            key={f.name}
+                            className={cn(
+                              "text-left font-semibold border-b border-border/60 whitespace-nowrap",
+                              headPad,
+                            )}
+                          >
+                            <div className="flex items-center gap-1.5">
+                              {isPk ? (
+                                <span
+                                  className="size-1.5 rounded-full bg-brand"
+                                  title="Primary key"
+                                  aria-hidden
+                                />
+                              ) : null}
+                              <span className="text-foreground">{f.name}</span>
+                            </div>
+                            <div className="text-[10px] font-normal text-muted-foreground">
+                              {col?.dataType ?? f.dataType}
+                              {col && !col.isNullable ? " · NOT NULL" : ""}
+                            </div>
+                          </th>
+                        );
+                      })}
+                      <th className="w-px border-b border-border/60" />
                     </tr>
-                  ) : null}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {filteredRows.map((row, i) => (
+                      <tr
+                        key={i}
+                        className="group border-b border-border/30 hover:bg-foreground/[0.025]"
+                      >
+                        {row.map((cell, j) => (
+                          <td
+                            key={j}
+                            className={cn(
+                              "max-w-[40ch] truncate align-top",
+                              cellPad,
+                            )}
+                            title={cell == null ? "null" : String(cell)}
+                          >
+                            {cell === null ? (
+                              <span className="text-muted-foreground/50 italic">
+                                null
+                              </span>
+                            ) : typeof cell === "object" ? (
+                              <span className="text-brand">
+                                {JSON.stringify(cell)}
+                              </span>
+                            ) : typeof cell === "boolean" ? (
+                              <span className="text-brand">
+                                {cell ? "true" : "false"}
+                              </span>
+                            ) : (
+                              String(cell)
+                            )}
+                          </td>
+                        ))}
+                        <td className="px-2 py-1 align-top whitespace-nowrap">
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="size-6"
+                              disabled={!canMutateRows}
+                              title={canMutateRows ? "Edit row" : noPkReason}
+                              onClick={() =>
+                                setEditTarget({
+                                  fields: pageData.fields,
+                                  cells: row,
+                                })
+                              }
+                            >
+                              <Pencil className="size-3" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="size-6 text-destructive hover:text-destructive"
+                              disabled={!canMutateRows}
+                              title={canMutateRows ? "Delete row" : noPkReason}
+                              onClick={() =>
+                                setDeleteTarget({
+                                  fields: pageData.fields,
+                                  cells: row,
+                                })
+                              }
+                            >
+                              <Trash2 className="size-3" />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {filteredRows.length === 0 ? (
+                      <tr>
+                        <td
+                          colSpan={(pageData.fields.length || 1) + 1}
+                          className="px-3 py-6 text-center text-muted-foreground"
+                        >
+                          {pageData.rows.length === 0
+                            ? "No rows."
+                            : `No rows match “${filter}”.`}
+                        </td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
+            </>
           ) : (
             <div className="space-y-2">
               {Array.from({ length: 6 }).map((_, i) => (
@@ -1018,6 +1031,7 @@ export function TableDetailClient({
         table={table}
         availableColumns={columns?.map((c) => c.name) ?? []}
         onCreated={() => {
+          clearError("indexes");
           setIndexes(null);
           // Re-trigger the lazy fetcher on the indexes tab.
           if (tab !== "indexes") setTab("indexes");
@@ -1072,6 +1086,7 @@ export function TableDetailClient({
                     toast.error("Rename failed", { description: data.error });
                   } else {
                     toast.success("Index renamed");
+                    clearError("indexes");
                     setIndexes(null);
                     setRenameIdxTarget(null);
                   }
@@ -1122,6 +1137,7 @@ export function TableDetailClient({
                     toast.error("Drop failed", { description: data.error });
                   } else {
                     toast.success("Index dropped");
+                    clearError("indexes");
                     setIndexes(null);
                     setDropIdxTarget(null);
                   }
@@ -1148,7 +1164,9 @@ export function TableDetailClient({
         table={table}
         columns={columns ?? []}
         onApplied={() => {
+          clearError("structure");
           setColumns(null);
+          clearError("data");
           setPageData(null);
         }}
       />

@@ -523,125 +523,138 @@ export function TableDetailClient({ connectionId, db, table }: Props) {
               onRetry={() => clearError("data")}
             />
           ) : pageData ? (
-            <div className="rounded-lg border border-border/60 overflow-auto">
-              <table className="w-full text-xs font-mono border-collapse">
-                <thead className="bg-muted/60 sticky top-0 z-[1]">
-                  <tr>
-                    {pageData.columns.map((name) => {
-                      const col = columns?.find((c) => c.name === name);
-                      const isPk = !!col?.isPrimaryKey;
-                      const sorted = sort?.column === name ? sort.dir : null;
-                      return (
-                        <th
-                          key={name}
-                          className={cn(
-                            "text-left font-semibold border-b border-border/60 whitespace-nowrap cursor-pointer select-none hover:bg-foreground/[0.04]",
-                            headPad
-                          )}
-                          onClick={() => toggleSort(name)}
-                          title="Click to sort"
-                        >
-                          <div className="flex items-center gap-1.5">
-                            {isPk ? (
-                              <span
-                                className="size-1.5 rounded-full bg-brand"
-                                title="Primary key"
-                                aria-hidden
-                              />
-                            ) : null}
-                            <span className="text-foreground">{name}</span>
-                            {sorted === "asc" ? (
-                              <ArrowUp className="size-3 text-brand" />
-                            ) : sorted === "desc" ? (
-                              <ArrowDown className="size-3 text-brand" />
-                            ) : null}
-                          </div>
-                          <div className="text-[10px] font-normal text-muted-foreground">
-                            {col?.columnType ?? ""}
-                            {col && !col.nullable ? " · NOT NULL" : ""}
-                          </div>
-                        </th>
-                      );
-                    })}
-                    <th className="w-px border-b border-border/60" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredRows.map((row, i) => (
-                    <tr
-                      key={i}
-                      className="group border-b border-border/30 hover:bg-foreground/[0.025]"
-                    >
-                      {pageData.columns.map((col) => {
-                        const cell = row[col];
+            <>
+              {errors.meta ? (
+                <ErrorState
+                  title="Could not load column metadata"
+                  message={errors.meta}
+                  onRetry={() => {
+                    clearError("meta");
+                    setMeta(null);
+                  }}
+                  className="px-3 py-2 mb-3"
+                />
+              ) : null}
+              <div className="rounded-lg border border-border/60 overflow-auto">
+                <table className="w-full text-xs font-mono border-collapse">
+                  <thead className="bg-muted/60 sticky top-0 z-[1]">
+                    <tr>
+                      {pageData.columns.map((name) => {
+                        const col = columns?.find((c) => c.name === name);
+                        const isPk = !!col?.isPrimaryKey;
+                        const sorted = sort?.column === name ? sort.dir : null;
                         return (
-                          <td
-                            key={col}
+                          <th
+                            key={name}
                             className={cn(
-                              "max-w-[40ch] truncate align-top",
-                              cellPad
+                              "text-left font-semibold border-b border-border/60 whitespace-nowrap cursor-pointer select-none hover:bg-foreground/[0.04]",
+                              headPad
                             )}
-                            title={cell == null ? "null" : String(cell)}
+                            onClick={() => toggleSort(name)}
+                            title="Click to sort"
                           >
-                            {cell === null ? (
-                              <span className="text-muted-foreground/50 italic">
-                                null
-                              </span>
-                            ) : typeof cell === "object" ? (
-                              <span className="text-brand">
-                                {JSON.stringify(cell)}
-                              </span>
-                            ) : typeof cell === "boolean" ? (
-                              <span className="text-brand">
-                                {cell ? "true" : "false"}
-                              </span>
-                            ) : (
-                              String(cell)
-                            )}
-                          </td>
+                            <div className="flex items-center gap-1.5">
+                              {isPk ? (
+                                <span
+                                  className="size-1.5 rounded-full bg-brand"
+                                  title="Primary key"
+                                  aria-hidden
+                                />
+                              ) : null}
+                              <span className="text-foreground">{name}</span>
+                              {sorted === "asc" ? (
+                                <ArrowUp className="size-3 text-brand" />
+                              ) : sorted === "desc" ? (
+                                <ArrowDown className="size-3 text-brand" />
+                              ) : null}
+                            </div>
+                            <div className="text-[10px] font-normal text-muted-foreground">
+                              {col?.columnType ?? ""}
+                              {col && !col.nullable ? " · NOT NULL" : ""}
+                            </div>
+                          </th>
                         );
                       })}
-                      <td className="px-2 py-1 align-top whitespace-nowrap">
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            className="size-6"
-                            disabled={!canMutateRows}
-                            title={canMutateRows ? "Edit row" : noPkReason}
-                            onClick={() => setEditTarget(row)}
-                          >
-                            <Pencil className="size-3" />
-                          </Button>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            className="size-6 text-destructive hover:text-destructive"
-                            disabled={!canMutateRows}
-                            title={canMutateRows ? "Delete row" : noPkReason}
-                            onClick={() => setDeleteTarget(row)}
-                          >
-                            <Trash2 className="size-3" />
-                          </Button>
-                        </div>
-                      </td>
+                      <th className="w-px border-b border-border/60" />
                     </tr>
-                  ))}
-                  {filteredRows.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan={(pageData.columns.length || 1) + 1}
-                        className="px-3 py-6 text-center text-muted-foreground"
+                  </thead>
+                  <tbody>
+                    {filteredRows.map((row, i) => (
+                      <tr
+                        key={i}
+                        className="group border-b border-border/30 hover:bg-foreground/[0.025]"
                       >
-                        {pageData.rows.length === 0
-                          ? "No rows."
-                          : `No rows match “${filter}”.`}
-                      </td>
-                    </tr>
-                  ) : null}
-                </tbody>
-              </table>
-            </div>
+                        {pageData.columns.map((col) => {
+                          const cell = row[col];
+                          return (
+                            <td
+                              key={col}
+                              className={cn(
+                                "max-w-[40ch] truncate align-top",
+                                cellPad
+                              )}
+                              title={cell == null ? "null" : String(cell)}
+                            >
+                              {cell === null ? (
+                                <span className="text-muted-foreground/50 italic">
+                                  null
+                                </span>
+                              ) : typeof cell === "object" ? (
+                                <span className="text-brand">
+                                  {JSON.stringify(cell)}
+                                </span>
+                              ) : typeof cell === "boolean" ? (
+                                <span className="text-brand">
+                                  {cell ? "true" : "false"}
+                                </span>
+                              ) : (
+                                String(cell)
+                              )}
+                            </td>
+                          );
+                        })}
+                        <td className="px-2 py-1 align-top whitespace-nowrap">
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="size-6"
+                              disabled={!canMutateRows}
+                              title={canMutateRows ? "Edit row" : noPkReason}
+                              onClick={() => setEditTarget(row)}
+                            >
+                              <Pencil className="size-3" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="size-6 text-destructive hover:text-destructive"
+                              disabled={!canMutateRows}
+                              title={canMutateRows ? "Delete row" : noPkReason}
+                              onClick={() => setDeleteTarget(row)}
+                            >
+                              <Trash2 className="size-3" />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {filteredRows.length === 0 ? (
+                      <tr>
+                        <td
+                          colSpan={(pageData.columns.length || 1) + 1}
+                          className="px-3 py-6 text-center text-muted-foreground"
+                        >
+                          {pageData.rows.length === 0
+                            ? "No rows."
+                            : `No rows match “${filter}”.`}
+                        </td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
+            </>
           ) : (
             <div className="space-y-2">
               {Array.from({ length: 6 }).map((_, i) => (

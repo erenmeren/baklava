@@ -170,14 +170,23 @@ describe("mysql TableDetailClient (characterization)", () => {
     expect(screen.getByText(/ER_ACCESS_DENIED_ERROR/)).toBeInTheDocument();
   });
 
-  it("renders an error state when the meta request rejects at the transport layer", async () => {
+  // base-ui's Tabs unmounts inactive panels, and the default tab is Data —
+  // so the meta-error ErrorState on Structure/Indexes/DDL (which all key off
+  // `errors.meta`) is nowhere in the DOM until one of those tabs is opened.
+  // Without clicking through, `findByRole("alert")` would resolve against
+  // the Data tab's own (rows) alert instead — which happens to also render
+  // here since `/rows` fails too — and pass even if all three `errors.meta`
+  // branches were deleted. Click to Structure and match its specific title
+  // so this actually exercises the meta error surface it's named for.
+  it("renders an error state on the Structure tab when the meta request rejects at the transport layer", async () => {
     restore();
     restore = mockFetch({
       "/tables/users$": netFail("Failed to fetch"),
       "/rows": netFail("Failed to fetch"),
     });
     renderIt();
-    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("tab", { name: "Structure" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/could not load structure/i);
   });
 
   // Guards the Data tab's onRetry against firing twice: the lazy-tab effect
@@ -278,6 +287,30 @@ describe("mysql TableDetailClient (characterization)", () => {
     await screen.findByRole("alert");
     fireEvent.click(screen.getByRole("button", { name: /retry/i }));
     expect(await screen.findByText("c@example.com")).toBeInTheDocument();
+  });
+
+  // Rows-loaded-but-schema-failed: the Data tab is the default tab, so if
+  // only the up-front `meta` request failed the user would otherwise see
+  // rows with no column types, no PK markers, and both mutation buttons
+  // silently disabled with no explanation in view.
+  it("shows a compact schema-error banner above the data grid when rows load but meta fails", async () => {
+    restore();
+    restore = mockFetch({
+      "/tables/users$": netFail("Failed to fetch"),
+      "/rows": ROWS,
+    });
+    renderIt();
+
+    expect(await screen.findByText("a@example.com")).toBeInTheDocument();
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/could not load column metadata/i);
+    expect(screen.getByText("b@example.com")).toBeInTheDocument();
+  });
+
+  it("does not show the schema-error banner on a full happy path", async () => {
+    renderIt();
+    await screen.findByText("a@example.com");
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   // No "surfaces a fetch failure instead of spinning forever" test here.
