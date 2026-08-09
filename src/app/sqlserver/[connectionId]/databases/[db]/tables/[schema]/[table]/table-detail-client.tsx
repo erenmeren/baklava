@@ -298,14 +298,13 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
                   className="px-3 py-2 shrink-0"
                 />
               ) : null}
-              <div className="flex-1 min-h-0">
-                <DataGrid
-                  columns={gridColumns}
-                  rows={data.rows}
-                  density="compact"
-                  empty="No rows."
-                />
-              </div>
+              <DataGrid
+                columns={gridColumns}
+                rows={data.rows}
+                density="compact"
+                empty="No rows."
+                className="flex-1 min-h-0"
+              />
               <DataPagination
                 offset={offset}
                 pageSize={pageSize}

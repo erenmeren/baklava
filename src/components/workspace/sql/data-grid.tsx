@@ -95,13 +95,24 @@ export function DataGrid(props: {
   onToggleSort?: (column: string) => void;
   rowActions?: (row: unknown[], index: number) => React.ReactNode;
   empty: React.ReactNode;
+  /**
+   * Merged onto the scroll-container wrapper (the same element that carries
+   * `overflow-auto`) — not a separate outer div. A caller that needs the
+   * grid to be a bounded flex item (so it scrolls internally instead of the
+   * page around it) must pass its sizing classes here, e.g. "flex-1
+   * min-h-0", so they land on the *same* box as overflow-auto. Wrapping
+   * DataGrid in an outer div with those classes does not work: DataGrid's
+   * own div would still be a plain block child with auto height, so
+   * overflow-auto on it would never trigger.
+   */
+  className?: string;
 }): React.ReactElement {
-  const { columns, rows, density, sort, onToggleSort, rowActions, empty } = props;
+  const { columns, rows, density, sort, onToggleSort, rowActions, empty, className } = props;
   const cellPad = density === "compact" ? "px-3 py-1" : "px-3 py-2";
   const headPad = density === "compact" ? "px-3 py-1.5" : "px-3 py-2.5";
 
   return (
-    <div className="rounded-lg border border-border/60 overflow-auto">
+    <div className={cn("rounded-lg border border-border/60 overflow-auto", className)}>
       <table className="w-full text-xs font-mono border-collapse">
         <thead className="bg-muted/60 sticky top-0 z-[1]">
           <tr>

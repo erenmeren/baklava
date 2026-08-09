@@ -199,6 +199,77 @@ describe("DataGrid", () => {
     );
     expect(container.querySelectorAll("thead th").length).toBe(COLUMNS.length);
   });
+
+  // Fix round 2 — Critical: a caller that needs the grid to be a bounded
+  // flex item (SQL Server's Data tab, so DataPagination stays pinned below
+  // instead of the whole page scrolling) must land its sizing classes on
+  // the *same* element that carries overflow-auto, not a wrapping div.
+  // Wrapping DataGrid in an outer flex-1/min-h-0 div doesn't work: DataGrid's
+  // own div would still be a plain block child with auto height, so
+  // overflow-auto on it never triggers and the box model silently breaks —
+  // invisible to jsdom (no layout engine) and to Playwright (only checks
+  // for an error banner), which is why this needs a structural DOM
+  // assertion instead: the className must merge onto the same node as
+  // "overflow-auto", not appear on some ancestor.
+  it("merges a caller className onto the same element that carries overflow-auto", () => {
+    const { container } = render(
+      <DataGrid
+        columns={COLUMNS}
+        rows={ROWS}
+        density="compact"
+        empty="No rows."
+        className="flex-1 min-h-0"
+      />,
+    );
+    const wrapper = container.firstElementChild;
+    expect(wrapper?.className).toContain("overflow-auto");
+    expect(wrapper?.className).toContain("flex-1");
+    expect(wrapper?.className).toContain("min-h-0");
+  });
+
+  // Fix round 2 — Important: the MySQL client derives `filteredObjects` and
+  // `filteredGridRows` from the same filter+map pair so `rowActions`
+  // indexing stays correct after filtering (see table-detail-client.tsx).
+  // That correctness rests entirely on DataGrid's contract: `rowActions`
+  // must receive the row actually rendered at its position in the *already
+  // filtered* `rows` array DataGrid was given, not some index into a larger
+  // or differently-ordered set. This test pins that contract directly, so a
+  // future change to DataGrid's iteration (e.g. an off-by-one, or indexing
+  // into something other than the `rows` prop) fails here — independent of
+  // whether MySQL's own two-array derivation still happens to agree.
+  it("passes rowActions the row actually displayed at that position in the (pre-filtered) rows array", () => {
+    const fullRows: unknown[][] = [
+      [1, "keep-a"],
+      [2, "drop-b"],
+      [3, "keep-c"],
+    ];
+    // Mirrors what a caller does before ever handing rows to DataGrid —
+    // MySQL's filteredObjects/filteredGridRows split does exactly this.
+    const filtered = filterRows(fullRows, "keep");
+    expect(filtered).toEqual([
+      [1, "keep-a"],
+      [3, "keep-c"],
+    ]);
+    const received: Array<{ row: unknown[]; index: number }> = [];
+    render(
+      <DataGrid
+        columns={[{ name: "id" }, { name: "label" }]}
+        rows={filtered}
+        density="compact"
+        rowActions={(row, i) => {
+          received.push({ row, index: i });
+          return (
+            <button type="button">act {i}</button>
+          );
+        }}
+        empty="No rows."
+      />,
+    );
+    expect(received).toEqual([
+      { row: [1, "keep-a"], index: 0 },
+      { row: [3, "keep-c"], index: 1 },
+    ]);
+  });
 });
 
 describe("GridToolbar", () => {
