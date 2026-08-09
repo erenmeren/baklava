@@ -17,10 +17,10 @@ import {
 import { WorkspacePage } from "@/components/workspace/workspace-page";
 import { ErrorState } from "@/components/workspace/error-state";
 import { StructurePanel } from "@/components/workspace/sql/structure-panel";
+import { DdlPanel } from "@/components/workspace/sql/ddl-panel";
 import type { SqlColumn } from "@/components/workspace/sql/types";
 import { cn } from "@/lib/utils";
-import { Copy, Check, Plus, Trash, Wand2 } from "lucide-react";
-import { toast } from "sonner";
+import { Plus, Trash, Wand2 } from "lucide-react";
 import { RowFormDialog, type ColumnInfo as RowColumnInfo } from "./row-form-dialog";
 import { ModifyTableDialog } from "../../../../../modify-table-dialog";
 import { DropConfirm } from "../../../../../drop-confirm";
@@ -114,7 +114,6 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
   const [loadingData, setLoadingData] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [dataError, setDataError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
   const [insertOpen, setInsertOpen] = useState(false);
   const [modifyOpen, setModifyOpen] = useState(false);
   const [dropOpen, setDropOpen] = useState(false);
@@ -521,28 +520,7 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
           ) : !detail ? (
             <Skeleton className="h-40 w-full" />
           ) : (
-            <div className="relative">
-              <Button
-                size="xs"
-                variant="outline"
-                className="absolute top-2 right-2 gap-1"
-                onClick={async () => {
-                  try {
-                    await navigator.clipboard.writeText(ddl);
-                    setCopied(true);
-                    setTimeout(() => setCopied(false), 1500);
-                  } catch {
-                    toast.error("Could not copy");
-                  }
-                }}
-              >
-                {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
-                {copied ? "copied" : "copy"}
-              </Button>
-              <pre className="rounded-md border border-border/60 bg-zinc-950 text-zinc-100 p-4 text-xs font-mono whitespace-pre-wrap break-words overflow-auto max-h-[60vh]">
-                {ddl}
-              </pre>
-            </div>
+            <DdlPanel label="generated CREATE TABLE" ddl={ddl} />
           )}
         </TabsContent>
       </Tabs>
