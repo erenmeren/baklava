@@ -17,13 +17,26 @@ import { useRouter } from "next/navigation";
 export interface UseTableTabsOptions<T> {
   /** Full localStorage key, e.g. `baklava:pg-tabs:${connectionId}`. */
   storageKey: string;
-  /** The tab the current route maps to, or null if the route isn't a tab. */
+  /**
+   * The tab the current route maps to, or null if the route isn't a tab.
+   * Must have a stable identity across re-renders whenever its value is
+   * unchanged — every real call site provides this via `useMemo` (see e.g.
+   * `postgres-tabs.tsx`'s `activeTab`). A fresh object every render defeats
+   * the auto-add effect's `[activeTab, hydrated]` dependency, making it
+   * re-fire on every render instead of only when the route actually changes.
+   */
   activeTab: T | null;
   key: (tab: T) => string;
   href: (tab: T) => string;
   /** Where to go when the last tab is closed. */
   homeHref: string;
-  /** Adjust a tab as it is auto-added (used to number query tabs). */
+  /**
+   * Adjust a tab as it is auto-added (used to number query tabs). Must not
+   * mutate any field `key()` reads: the auto-add effect's "is this tab
+   * already open?" guard compares the *raw*, pre-decoration `activeTab`'s
+   * key against tabs already in the strip, so a decorator that changes a
+   * keyed field makes the guard miss its own freshly-added tab.
+   */
   onAdd?: (tab: T, existing: T[]) => T;
 }
 

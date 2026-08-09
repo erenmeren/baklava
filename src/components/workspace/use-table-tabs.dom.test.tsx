@@ -39,6 +39,29 @@ describe("useTableTabs", () => {
     expect(result.current.tabs).toEqual([{ kind: "table", name: "users" }]);
   });
 
+  it("never writes an empty array to storage before hydration completes", async () => {
+    // The persist effect's `if (hydrated) save(...)` guard exists because,
+    // without it, the effect still fires on the very first commit — with
+    // the pre-hydrate `tabs` state ([]) — and would clobber whatever was
+    // already in storage before the hydrate effect's loaded value has had a
+    // chance to land. That bad write then gets silently self-corrected on
+    // the NEXT commit (tabs/hydrated changing re-fires the same effect with
+    // the real value), so asserting only on the settled end state — what
+    // every other test in this file does — can never catch a missing guard:
+    // by the time `waitFor` resolves, the correction has already happened.
+    // Spying on every `setItem` call and inspecting the first one is the
+    // only way to see the transient bad write.
+    const seeded = [{ kind: "table" as const, name: "users" }];
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(seeded));
+    const setItemSpy = vi.spyOn(window.localStorage, "setItem");
+    const { result } = setup(null);
+    await waitFor(() => expect(result.current.hydrated).toBe(true));
+    const callsForKey = setItemSpy.mock.calls.filter(([k]) => k === STORAGE_KEY);
+    expect(callsForKey.length).toBeGreaterThan(0);
+    expect(JSON.parse(callsForKey[0][1] as string)).toEqual(seeded);
+    setItemSpy.mockRestore();
+  });
+
   it("starts empty when the stored value is corrupt rather than throwing", async () => {
     window.localStorage.setItem(STORAGE_KEY, "{not json");
     const { result } = setup(null);
@@ -64,6 +87,36 @@ describe("useTableTabs", () => {
     await waitFor(() => expect(result.current.tabs).toHaveLength(1));
     rerender();
     expect(result.current.tabs).toHaveLength(1);
+  });
+
+  it("does not duplicate a tab when activeTab is re-supplied as a new object with the same value", async () => {
+    // setup()'s activeTab is captured once by closure, so a plain rerender()
+    // (as in the test above) reuses the same reference and never re-runs the
+    // auto-add effect at all — that only proves the effect's dependency
+    // array is correct, not that the internal "already open?" guard works.
+    // Real re-navigation to an already-open tab produces exactly this case:
+    // tabFromPath returns a brand-new object every call, and only useMemo's
+    // dependency equality (on pathname/connectionId, not on the returned
+    // Tab's structural value) prevents identity churn — navigating to the
+    // SAME tab twice still yields two different Tab object references with
+    // identical field values. Passing new props here forces the auto-add
+    // effect to genuinely re-run, so this exercises the dedup check itself.
+    const { result, rerender } = renderHook(
+      (props: { activeTab: Tab }) =>
+        useTableTabs<Tab>({
+          storageKey: STORAGE_KEY,
+          activeTab: props.activeTab,
+          key,
+          href,
+          homeHref: "/pg/c1",
+        }),
+      { initialProps: { activeTab: { kind: "table", name: "orders" } } },
+    );
+    await waitFor(() => expect(result.current.tabs).toHaveLength(1));
+    rerender({ activeTab: { kind: "table", name: "orders" } });
+    await waitFor(() =>
+      expect(result.current.tabs).toEqual([{ kind: "table", name: "orders" }]),
+    );
   });
 
   it("closing the active tab navigates to the previous one", async () => {

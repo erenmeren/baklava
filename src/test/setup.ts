@@ -49,3 +49,17 @@ if (typeof window !== "undefined" && typeof window.localStorage === "undefined")
     writable: true,
   });
 }
+
+// This polyfill (or happy-dom's own Storage, if a future vitest version
+// stops shadowing it — see above) is shared module-level state across every
+// `.dom.test.tsx` file: nothing tears it down between test files on its
+// own, and nothing resets it between individual `it()` blocks within one
+// file unless that file's own `beforeEach` remembers to. Clear it after
+// every test so a write in one test can never leak into the next test's
+// initial render — matching real browser test isolation, where each test
+// would get a fresh tab/storage partition.
+afterEach(() => {
+  if (typeof window !== "undefined" && window.localStorage) {
+    window.localStorage.clear();
+  }
+});
