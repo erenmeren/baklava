@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { mockFetch, httpError, netFail } from "@/test/fetch-mock";
 import { TableDetailClient } from "./table-detail-client";
 
@@ -139,16 +139,77 @@ describe("sqlserver TableDetailClient (characterization)", () => {
     expect(await screen.findByText("a@example.com")).toBeInTheDocument();
   });
 
-  // Phase 2 wires edit/delete up. insertSqlServerRow already exists on the
-  // server side; only the UI for per-row edit/delete is missing. Paired with
-  // the positive "Insert row" assertion so this can't pass off a component
-  // that failed to render.
-  it("offers insert but no per-row edit or delete today", async () => {
+  // Task 12 wired edit/delete up: the driver (updateSqlServerRow /
+  // deleteSqlServerRow) and the PATCH/DELETE routes already existed and were
+  // unused. Paired with the "Insert row" assertion so this can't pass off a
+  // component that failed to render.
+  it("offers row-level insert, edit and delete once the table has a primary key", async () => {
     renderIt();
     await screen.findByText("a@example.com");
     expect(screen.getByRole("button", { name: /insert row/i })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /^edit$/i })).toBeNull();
-    expect(screen.queryByRole("button", { name: /^delete$/i })).toBeNull();
+    expect(screen.getAllByRole("button", { name: /edit row/i }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("button", { name: /delete row/i }).length).toBeGreaterThan(0);
+  });
+
+  it("DELETEs the row with its primary key when the confirm is accepted", async () => {
+    restore();
+    restore = mockFetch({
+      "/data?": DATA,
+      "/tables/dbo/users$": DETAIL,
+      "/rows": { rowsAffected: 1 },
+    });
+    renderIt();
+    await screen.findByText("a@example.com");
+    fireEvent.click(screen.getAllByRole("button", { name: /delete row/i })[0]);
+    fireEvent.click(await screen.findByRole("button", { name: /^delete$/i }));
+    await waitFor(() => {
+      const call = (
+        globalThis.fetch as unknown as { mock: { calls: [string, RequestInit?][] } }
+      ).mock.calls.find(([, init]) => init?.method === "DELETE");
+      expect(call).toBeDefined();
+      expect(JSON.parse(String(call![1]!.body))).toEqual({ pk: [{ column: "id", value: 1 }] });
+    });
+  });
+
+  it("PATCHes the row with its primary key and the edited values", async () => {
+    restore();
+    restore = mockFetch({
+      "/data?": DATA,
+      "/tables/dbo/users$": DETAIL,
+      "/rows": { rowsAffected: 1 },
+    });
+    renderIt();
+    await screen.findByText("a@example.com");
+    fireEvent.click(screen.getAllByRole("button", { name: /edit row/i })[0]);
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("email"), {
+      target: { value: "z@example.com" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: /^save changes$/i }));
+    await waitFor(() => {
+      const call = (
+        globalThis.fetch as unknown as { mock: { calls: [string, RequestInit?][] } }
+      ).mock.calls.find(([, init]) => init?.method === "PATCH");
+      expect(call).toBeDefined();
+      const body = JSON.parse(String(call![1]!.body));
+      expect(body.pk).toEqual([{ column: "id", value: 1 }]);
+      expect(body.values.email).toEqual({ kind: "value", value: "z@example.com" });
+    });
+  });
+
+  it("disables row actions on a table with no primary key", async () => {
+    restore();
+    restore = mockFetch({
+      "/data?": DATA,
+      "/tables/dbo/users$": {
+        ...DETAIL,
+        columns: DETAIL.columns.map((c) => ({ ...c, isPrimaryKey: false })),
+      },
+    });
+    renderIt();
+    await screen.findByText("a@example.com");
+    expect(screen.getAllByRole("button", { name: /edit row/i })[0]).toBeDisabled();
+    expect(screen.getAllByRole("button", { name: /delete row/i })[0]).toBeDisabled();
   });
 
   // buildClientDdl assembles the DDL in the browser from the detail payload

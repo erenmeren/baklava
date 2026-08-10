@@ -395,6 +395,10 @@ export function SqlTableDetail<TCtx>(props: {
                             variant="ghost"
                             className="size-6"
                             disabled={!canEdit}
+                            // The accessible name stays "Edit row" even when
+                            // disabled — the reason belongs in the tooltip,
+                            // not in the button's identity.
+                            aria-label="Edit row"
                             title={canEdit ? "Edit row" : descriptor.readOnlyReason}
                             onClick={() => onEditRow?.(rowObject(row))}
                           >
@@ -407,6 +411,7 @@ export function SqlTableDetail<TCtx>(props: {
                             variant="ghost"
                             className="size-6 text-destructive hover:text-destructive"
                             disabled={!canDelete}
+                            aria-label="Delete row"
                             title={canDelete ? "Delete row" : descriptor.readOnlyReason}
                             onClick={() => onDeleteRow?.(rowObject(row))}
                           >
