@@ -60,8 +60,11 @@ export interface TableDetailControl {
    * unsatisfied and strand a stale ErrorState on screen.
    */
   refresh(...tabs: TableTab[]): void;
-  /** Re-request the current page of rows, at the offset the user is on. */
-  reloadData(): void;
+  /**
+   * Re-request the rows. Defaults to the offset the user is on; pass one to
+   * jump (a freshly inserted row lands on page 1, not on page 7).
+   */
+  reloadData(offset?: number): void;
 }
 
 export interface TabRenderArgs<TCtx> {

@@ -256,9 +256,13 @@ export function SqlTableDetail<TCtx>(props: {
     [sourceOf],
   );
 
-  const reloadData = useCallback(() => {
-    loadPage(offset, limit, sort);
-  }, [loadPage, offset, limit, sort]);
+  const reloadData = useCallback(
+    (nextOffset?: number) => {
+      if (nextOffset !== undefined) setOffset(nextOffset);
+      loadPage(nextOffset ?? offset, limit, sort);
+    },
+    [loadPage, offset, limit, sort],
+  );
 
   const all: TabData = useMemo(() => {
     const out: TabData = {};
