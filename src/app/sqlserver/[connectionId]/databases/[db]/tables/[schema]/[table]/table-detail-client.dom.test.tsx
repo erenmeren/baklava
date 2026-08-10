@@ -15,6 +15,18 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(),
 }));
 
+// Any console.error at all is a failure — vitest only prints captured console
+// output for failing tests, so a plain "did anything log?" check would miss a
+// regression. Mirrors the guard the mysql characterization suite has carried
+// since Task 3.
+let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
+beforeEach(() => {
+  consoleErrorSpy = vi.spyOn(console, "error").mockImplementation((...args) => {
+    throw new Error(`Unexpected console.error: ${String(args[0])}`);
+  });
+});
+afterEach(() => consoleErrorSpy.mockRestore());
+
 // Shape matches SqlServerTableDetail from
 // src/lib/connections/sqlserver/catalog.ts (getSqlServerTableDetail). The
 // brief's fixture omitted `schema`/`table`/`isHeap`/`rowCount` — the

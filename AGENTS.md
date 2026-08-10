@@ -117,6 +117,18 @@ shadcn wrappers in `src/components/ui/` re-export `@base-ui/react/*` primitives.
 - **Dialogs use imperative open state** — keep a `[open, setOpen]` and bind it to the `<Dialog open onOpenChange>` props. Don't reach for the (nonexistent) `DialogClose asChild` pattern.
 - Add new shadcn components via `npx shadcn@latest add <component> --yes`. They drop into `src/components/ui/` and need no further wiring.
 
+### Shared SQL workspace layer (`src/components/workspace/sql/`)
+
+The three SQL table-detail workspaces (postgres / mysql / sqlserver) are **not** hand-rolled. Each `table-detail-client.tsx` is a descriptor plus its own dialogs, composed onto one shell:
+
+- **`<SqlTableDetail descriptor ctx>`** owns tab state, the fetch dispatch, `AbortController` wiring, the error map and its `ErrorState` rendering, Retry, the whole Data tab (toolbar, grid, row actions, pagination), and refresh-after-mutation. New SQL workspace UI composes it — don't write another table-detail client.
+- **`descriptor.ts`** carries the per-tech parts: `tabs`, `capabilities`, `paths`, `load` (named **sources** — one request, fetched at most once, feeding any number of tabs), `data` (the rows adapter), and `render` / `toolbar` / `skeleton` per tab. Per-tech behaviour arrives here or through the row dialect — **never** as a `tech === "…"` conditional inside a shared primitive.
+- **Panels**: `StructurePanel`, `DdlPanel`, `MetaTable`, `DataGrid` / `GridToolbar` / `filterRows`, and one `RowFormDialog` parameterized by a per-tech dialect object co-located with each client (`row-dialect.tsx`). `SqlColumn` (`sql/types.ts`) is the normalized column model they all read.
+- **Per-tech panels live in their own co-located file** next to the client (`stats-grid.tsx`, `meta-columns.tsx`, `index-dialogs.tsx`, `table-actions.tsx`, `table-types.ts`), not as a tail on the client.
+- **`ErrorState`** (`src/components/workspace/error-state.tsx`) is the one error surface. It renders `role="alert"` plus the `text-destructive` class token — `e2e/sql-workspaces.spec.ts` asserts on exactly that pair, so don't change either without updating the spec.
+- **`ConfirmDialog`** (`src/components/workspace/confirm-dialog.tsx`) is the shared "…? This cannot be undone." confirm for delete-row / truncate / drop.
+- **Tab strips** use `useTableTabs` (`@/components/workspace/use-table-tabs`) for the localStorage-backed hydrate / persist / auto-add / close-with-fallback logic. The middle-click and stale-tab-pruner notes above still apply — they describe the strip components, not the hook.
+
 ## Conventions to follow
 
 - **Server pages**: `await params` (Next 15+ Promise-shaped params), then call `requireConnection`. Client logic lives in sibling `*-client.tsx`; the page hands over `connectionId` and route params.
@@ -164,6 +176,16 @@ Catalog, `connectionSummaries`, `FIRST_PAGE`, secret keys, health probes, and co
 npm run dev      # http://localhost:3000
 npm run build    # production build
 npm run lint     # eslint (react-hooks/set-state-in-effect is intentionally off)
+npm test         # vitest
 ```
 
-For real services to point Baklava at, see the `docker run` snippets in `README.md`.
+Local stack + demo data:
+
+```bash
+docker compose up -d              # postgres, mysql, sqlserver, kafka
+bash seed/all.sh                  # or per-tech: bash seed/mysql.sh
+npm run test:integration          # vitest suites gated on TCP reachability
+npx playwright test               # e2e
+```
+
+`compose.yaml` carries a `mysql` service (mysql:8.4, port 3306, root / `Baklava123!`); `seed/mysql.sh` creates the `demo` storefront the MySQL workspace and its e2e block target. For services outside compose, see the `docker run` snippets in `README.md`.
