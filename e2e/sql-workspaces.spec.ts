@@ -11,9 +11,14 @@ import { reachable } from "@/test/integration-helpers";
  * The postgres and sqlserver blocks have run green against real services
  * (docker containers `baklava-postgres` / `baklava-sqlserver`, seeded per
  * `seed/postgres.sh` / `seed/sqlserver.sh`) in both chromium-light and
- * chromium-dark, including `clickThroughTabs` on a seeded demo table. The
- * mysql block below is still unrun against a live service — it stays
- * `test.fixme` until Phase 2 adds a MySQL compose service and seed script.
+ * chromium-dark, including `clickThroughTabs` on a seeded demo table.
+ *
+ * The mysql block was un-fixme'd in Phase 2 Task 14, once `compose.yaml`
+ * gained a mysql service and `seed/mysql.sh` gave it a named `demo` database
+ * with a `customers` table — so its selectors are named the same way the
+ * other two blocks' are, rather than "first button in the sidebar". It has
+ * not yet had a green run against a live server; the reachability gate below
+ * is what keeps that honest on a machine without the stack up.
  *
  * Each block is gated on a plain TCP reachability probe of the service's
  * compose port — mirroring the `reachable()` gate that
@@ -22,18 +27,9 @@ import { reachable } from "@/test/integration-helpers";
  * a run against a machine without the stack up is loud about having tested
  * nothing rather than quietly reporting green.
  *
- * Demo data: run `docker compose up -d postgres sqlserver` then
- * `bash seed/postgres.sh` / `bash seed/sqlserver.sh` (or `bash seed/all.sh`)
- * first — the table names below (`shop.customers` / `shop.Customers`) come
- * from those seed scripts, which create a `shop` schema with `customers`,
- * `products`, `orders`, and `order_items` tables.
- *
- * MySQL has no service in compose.yaml at all (only postgres, sqlserver,
- * kafka — see that file's own header comment), so the mysql block below
- * always skips today, on every machine, until a later phase adds one. When
- * it does, this block only needs MYSQL_PORT flipped to reachable — the rest
- * of the flow (connection form, sidebar, table tabs) is already wired the
- * same way as the other two.
+ * Demo data: run `docker compose up -d postgres mysql sqlserver` then
+ * `bash seed/all.sh` first — the table names below (`shop.customers`,
+ * `shop.Customers`, `demo.customers`) come from those seed scripts.
  */
 
 const PW = "Baklava123!";
@@ -236,67 +232,42 @@ test.describe("sqlserver SQL workspace", () => {
 });
 
 test.describe("mysql SQL workspace", () => {
-  // MySQL has no service in compose.yaml at all (only postgres, sqlserver,
-  // kafka), so `up` is always false today — this block always skips, on
-  // every machine, until a later phase adds a compose service for it. It's
-  // still written and wired here (rather than omitted) so that phase only
-  // has to add the service and flip MYSQL_PORT to reachable, not author a
-  // new spec.
   let up = false;
   test.beforeAll(async () => {
     up = await reachable("localhost", MYSQL_PORT);
     if (!up) {
       console.warn(
         `[skip] mysql SQL workspace e2e — mysql not reachable on localhost:${MYSQL_PORT}. ` +
-          "There is no mysql service in compose.yaml yet (Phase 2) — this block always skips today.",
+          "Run `docker compose up -d mysql && bash seed/mysql.sh` first.",
       );
     }
   });
 
-  test("sidebar renders, a table opens, and every tab is error-free", async ({
+  test("sidebar renders, a seeded table opens, and every tab is error-free", async ({
     page,
   }) => {
     test.skip(!up, `mysql not reachable on localhost:${MYSQL_PORT}`);
 
-    // Unverified against a live service: there's no MySQL seed script or
-    // compose entry yet, so the generic "click the first button/link"
-    // selectors below have never actually run and cannot be trusted —
-    // without scoping, "first button on the page" is just as likely to be
-    // app chrome (theme toggle, tab strip, sidebar header) as a database
-    // row. Keep as fixme (not a silent skip) until Phase 2 adds a seed
-    // script, this block runs for real, and the selectors get named like
-    // the Postgres/SQL Server blocks above.
-    test.fixme(true, "needs a MySQL seed script + a real run before these selectors can be trusted");
-
     await createConnection(page, {
       tileName: /open mysql connections/i,
       passwordFieldId: "my-pass",
+      fill: { "my-db": "demo" },
     });
 
-    await expect(page.getByText("Databases", { exact: true })).toBeVisible({
+    const sidebar = page.getByRole("complementary");
+    await expect(sidebar.getByText("Databases", { exact: true })).toBeVisible({
       timeout: 15_000,
     });
 
-    // Unlike Postgres/SQL Server, MySQL's sidebar has no schema/"Tables"-group
-    // level at all — `renderDb` in mysql-sidebar.tsx lists a database's
-    // tables directly as <TableRow> children the moment the database row
-    // itself is expanded (no toggleSchema/toggleGroup step, so there's no
-    // auto-open-then-re-collapse hazard here the way there is in the other
-    // two blocks). There is also no seed script or demo database for MySQL
-    // yet (no compose service — this block always skips today), so there's
-    // no known database/table name to target the way the Postgres/SQL
-    // Server blocks above do by exact name; expand the first database row
-    // generically instead. Revisit once Phase 2 adds a MySQL seed script:
-    // name the specific database/table like the other two blocks do.
-    //
-    // Scoped to the sidebar landmark (WorkspaceShell renders it as an
-    // `<aside>`, which Playwright exposes via the "complementary" role) so
-    // this doesn't fall back to clicking the first button/link on the
-    // *page* — that would just as likely be app chrome (theme toggle, tab
-    // strip, sidebar header) as a database row.
-    const sidebar = page.getByRole("complementary");
-    await sidebar.getByRole("button").filter({ hasText: /.+/ }).first().click();
-    await sidebar.getByRole("link", { name: /.+/ }).first().click();
+    // MySQL's sidebar has no schema level and no "Tables" group — `renderDb`
+    // (mysql-sidebar.tsx:176-235) lists a database's tables directly as
+    // <TableRow> children the moment the database row is expanded. So this is
+    // genuinely two clicks, not three, and there's no
+    // auto-open-then-re-collapse hazard like the other two blocks have.
+    // Exact-matched and sidebar-scoped for the same strict-mode reason as
+    // above.
+    await sidebar.getByRole("button", { name: /^demo$/ }).click();
+    await sidebar.getByRole("link", { name: "customers", exact: true }).click();
 
     await expect(page.getByRole("tab", { name: "Data" })).toBeVisible({
       timeout: 10_000,
