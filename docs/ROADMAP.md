@@ -1,9 +1,9 @@
 # Baklava Roadmap
 
-Goal: Portainer-grade Docker workspace inside Baklava, plus pgAdmin-grade Postgres and kafka-ui-grade Kafka. One console, all the layers.
+Goal: one ops console covering twelve technologies — Docker, PostgreSQL, MySQL, SQL Server, MongoDB, Kafka, Kubernetes, Redis, Qdrant, Cloudflare R2, MinIO and Amazon S3 — each workspace modelled on the dedicated tool people already use (Portainer-grade Docker, pgAdmin-grade Postgres, kafka-ui-grade Kafka, and so on). One console, all the layers.
 
 ## Done
-- Connection management for Docker / Kafka / Postgres (in-memory).
+- Connection management for all twelve techs. Connections live in a `globalThis` store mirrored to `~/.baklava/connections.json`, **encrypted at rest** (AES-256-GCM envelope). Server-side auth sessions, multi-user accounts and per-connection RBAC (`admin` / `member`) sit on top, enforced in `src/proxy.ts` as defense-in-depth.
 - Docker workspace: containers (list, start/stop/restart/remove, logs, inspect, env, mounts), images (list, pull, remove), volumes (list, create, remove), networks (list, remove).
 - Postgres workspace: tree (db→schema→tables/views), table tabs (Data/Structure/Indexes/Constraints/FKs), SQL editor.
 - Kafka workspace: topics (list, create, delete, partitions, configs, messages, produce), consumer groups (list+detail with lag), brokers.
@@ -46,10 +46,36 @@ Goal: Portainer-grade Docker workspace inside Baklava, plus pgAdmin-grade Postgr
 - Shared row form dialog: per-column input with null toggle, default toggle (insert only), boolean pills, textarea for `text`/`json`/`jsonb`. Pre-populates on edit from the current row.
 - Data tab: Insert button in toolbar, hover-revealed Edit / Delete on every row, AlertDialog confirm on delete. Edit/Delete disabled when the table has no primary key. Refresh after every mutation.
 
-## Postgres Phase 2 — DDL & ops (in progress)
+## Postgres Phase 2 — DDL & ops (done)
 - Create table from UI (done): per-schema hover-revealed "+" in the sidebar tree opens a column-driven `CREATE TABLE` dialog — name, type, nullable, default, PK (multi-checkbox = composite PK), `IF NOT EXISTS`. Identifiers quoted via `quoteIdent`; type and default are SQL expressions (`varchar(50)`, `numeric(10,2)`, `now()`, `gen_random_uuid()`) so users aren't boxed in. New `createTable()` helper in `src/lib/connections/postgres.ts`, `POST /api/postgres/[id]/databases/[db]/schemas/[schema]/tables`, `<CreateTableDialog>` co-located with the sidebar.
-- Up next: EXPLAIN visualizer in the SQL editor, Activity sidebar entry (`pg_stat_activity` + `pg_terminate_backend`), Roles sidebar entry (`pg_roles`).
+- EXPLAIN visualizer in the SQL editor (done): `src/components/postgres/explain-plan-viewer.tsx`, wired as a fourth result tab in `query-editor-client.tsx` against a dedicated endpoint that wraps the user SQL in `EXPLAIN (…, FORMAT JSON)`.
+- Activity sidebar entry (done): `src/app/postgres/[connectionId]/activity/` — `pg_stat_activity` + `pg_terminate_backend`.
+- Roles sidebar entry (done): `src/app/postgres/[connectionId]/roles/` — `pg_roles`.
 
 ## Stretch — other techs
 - Kafka: schema registry, ACLs, message search/filter, consumer-group offset reset.
-- New techs to add (one driver each, same workspace pattern): Redis, MongoDB, MQTT.
+- New techs to add (one driver each, same workspace pattern): MQTT. Redis and MongoDB shipped — both are registered tech modules under `src/techs/` with full workspaces.
+- Command palette coverage is 10 of 12: `src/techs/kubernetes/meta.ts` and `src/techs/redis/meta.ts` declare no `commandObjects`, so their objects aren't reachable from ⌘K (verify with `grep -L commandObjects src/techs/*/meta.ts`).
+
+## SQL workspace refactor
+
+- **Phase 1 — driver split + safety net (done, 2026-08-08).** `postgres.ts` and
+  `sqlserver.ts` became `<tech>/` directories of focused modules behind a
+  barrel, with cross-module privates in `<tech>/internal.ts`, and each SQL
+  table-detail client gained a characterization suite.
+  Plan: `docs/superpowers/plans/2026-08-08-sql-refactor-phase-1.md`.
+- **Phase 2 — shared workspace layer (this cycle).** A real error surface in
+  all three SQL table workspaces (`ErrorState` + Retry), then the shared
+  primitives in `src/components/workspace/sql/` (`StructurePanel`, `DdlPanel`,
+  `DataGrid` / `GridToolbar` / `filterRows`, `MetaTable`, one `RowFormDialog`
+  with per-tech dialects), then the `SqlTableDetail` shell all three clients
+  compose with a descriptor. Closed the two capability gaps — SQL Server
+  per-row edit/delete, MySQL Constraints and Foreign keys — and gave MySQL a
+  compose service and seed script so any of it can run against a real server.
+  Plan: `docs/superpowers/plans/2026-08-09-sql-refactor-phase-2.md`.
+- **Phase 3 — query-editor convergence (deferred, not dropped).** The three
+  query editors (1086 / 1273 / 734 lines) share a CodeMirror setup, result
+  grid, statement splitter and history strip, but diverge on a different axis
+  from table-detail — editor extensions and history, not fetch strategy — so
+  they need their own descriptor and their own plan. See Phase 2's Scope
+  section for the full reasoning.
