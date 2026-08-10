@@ -4,13 +4,17 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { MetaTable, type MetaColumn } from "@/components/workspace/sql/meta-table";
 import { Plus, Trash2 } from "lucide-react";
-import type { IndexInfo } from "./table-types";
+import type {
+  IndexInfo,
+  MysqlConstraintRow,
+  MysqlForeignKeyRow,
+} from "./table-types";
 
 /**
- * The MySQL Indexes panel and its toolbar. Per-tech panel definitions like
- * these are what the L2 shell's descriptor points at — they live beside the
- * client rather than inside it so the client stays a descriptor and its
- * dialogs.
+ * The MySQL metadata panels — Indexes (with its toolbar), Constraints and
+ * Foreign keys. Per-tech panel definitions like these are what the L2 shell's
+ * descriptor points at; they live beside the client rather than inside it so
+ * the client stays a descriptor and its dialogs.
  */
 
 export function IndexesToolbar({
@@ -51,6 +55,87 @@ export function IndexesPanel({
     />
   );
 }
+
+export function ConstraintsPanel({ constraints }: { constraints: MysqlConstraintRow[] }) {
+  return (
+    <MetaTable
+      items={constraints}
+      columns={constraintColumns}
+      rowKey={(c) => c.name}
+      empty="No constraints."
+    />
+  );
+}
+
+export function ForeignKeysPanel({
+  foreignKeys,
+}: {
+  foreignKeys: MysqlForeignKeyRow[];
+}) {
+  return (
+    <MetaTable
+      items={foreignKeys}
+      columns={foreignKeyColumns}
+      rowKey={(f) => f.name}
+      empty="No foreign keys."
+    />
+  );
+}
+
+const constraintColumns: MetaColumn<MysqlConstraintRow>[] = [
+  {
+    header: "Name",
+    className: () => "font-mono text-xs",
+    cell: (c) => c.name,
+  },
+  {
+    header: "Type",
+    cell: (c) => (
+      <Badge variant="secondary" className="font-mono">
+        {c.type}
+      </Badge>
+    ),
+  },
+  {
+    header: "Definition",
+    className: () => "font-mono text-[11px] text-muted-foreground break-all",
+    // Only CHECK constraints carry a clause; PRIMARY KEY / UNIQUE / FOREIGN
+    // KEY rows come back with an empty definition from information_schema.
+    cell: (c) => c.definition || "—",
+  },
+];
+
+const foreignKeyColumns: MetaColumn<MysqlForeignKeyRow>[] = [
+  {
+    header: "Name",
+    className: () => "font-mono text-xs",
+    cell: (f) => f.name,
+  },
+  {
+    header: "Columns",
+    className: () => "font-mono text-xs",
+    cell: (f) => f.columns.join(", "),
+  },
+  {
+    header: "References",
+    className: () => "font-mono text-xs",
+    cell: (f) => (
+      <>
+        {f.refSchema}.{f.refTable} ({f.refColumns.join(", ")})
+      </>
+    ),
+  },
+  {
+    header: "On update",
+    className: () => "font-mono text-xs",
+    cell: (f) => f.onUpdate,
+  },
+  {
+    header: "On delete",
+    className: () => "font-mono text-xs",
+    cell: (f) => f.onDelete,
+  },
+];
 
 function indexColumns(onDrop: (name: string) => void): MetaColumn<IndexInfo>[] {
   return [

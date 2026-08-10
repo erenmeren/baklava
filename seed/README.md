@@ -1,8 +1,8 @@
 # Seed scripts
 
-Demo data for the four techs Baklava integrates with. Run after
-`docker compose up -d` (the SQL Server / Postgres / Kafka services need
-to be healthy first).
+Demo data for the five techs these scripts cover. Run after
+`docker compose up -d` (the SQL Server / Postgres / MySQL / Kafka
+services need to be healthy first).
 
 ```bash
 bash seed/all.sh                 # run everything
@@ -16,6 +16,7 @@ demo objects, so it's safe to iterate.
 |---|---|---|
 | [`docker.sh`](#dockersh) | Docker daemon | 4 images, a `demo` stack (nginx + busybox + alpine), a network, a volume |
 | [`postgres.sh`](#postgressh) | Postgres | `shop` + `analytics` schemas, 4 tables, 2 views, ~250 rows |
+| [`mysql.sh`](#mysqlsh) | MySQL | `demo` database, 4 tables, 1 view, 3 foreign keys, 2 check constraints |
 | [`kafka.sh`](#kafkash) | Kafka | 5 topics, 27 keyed messages, a consumer group with committed offsets |
 | [`sqlserver.sh`](#sqlserversh) | SQL Server | `BaklavaDemo` database with one of every SSMS-style object kind |
 
@@ -64,6 +65,36 @@ Creates inside the `demo` database:
 
 In the Baklava UI: PostgreSQL workspace → expand `demo` → `shop` /
 `analytics`. The overview dashboard shows the new tables + queries.
+
+---
+
+## `mysql.sh`
+
+```bash
+bash seed/mysql.sh
+```
+
+Connects via local `mysql` if available, otherwise `docker compose exec`.
+Default credentials match `compose.yaml`. To target a remote instance
+override `MYSQL_HOST` / `MYSQL_PORT` / `MYSQL_USER` / `MYSQL_PASSWORD` /
+`MYSQL_DATABASE`.
+
+MySQL has no schema layer, so everything lives in the `demo` database:
+
+- `customers` (5 rows) — `AUTO_INCREMENT` PK, a `UNIQUE` email, column
+  comments, a secondary index on `country`
+- `products` (5 rows) — `UNIQUE` sku, index on `category`, a `CHECK`
+  constraint on price
+- `orders` (5 rows) — an `ENUM` status column, FK to `customers`
+- `order_items` (6 rows) — composite `(order_id, line_no)` PK, two FKs,
+  a `CHECK` constraint
+- `top_customers` view — lifetime value with the vip flag
+
+Chosen so every tab of the table workspace has something to show:
+Structure (comments, defaults, `AUTO_INCREMENT`), Indexes, Constraints,
+Foreign keys, and an `ENUM` that exercises the row form's type detection.
+
+In the Baklava UI: MySQL workspace → expand `demo`.
 
 ---
 

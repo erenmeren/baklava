@@ -138,21 +138,28 @@ export interface SqlTableDetailDescriptor<TCtx> {
   readOnlyReason?: string;
   paths: { base(ctx: TCtx): string; rows(ctx: TCtx): string };
   /**
-   * `per-tab` fetches each tab's payload when that tab first opens (Postgres,
-   * whose catalog views are separate round-trips). `single` fetches one
-   * payload on mount and fans it out to every non-data tab (MySQL, SQL
-   * Server). The Data tab is its own request either way.
+   * Where each tab's payload comes from.
+   *
+   * A *source* is one request, fetched at most once, feeding any number of
+   * tabs. That covers all three techs without a per-tech branch: Postgres
+   * gives every tab its own source (separate `?view=` round-trips, each lazy
+   * until its tab opens), SQL Server points all six at one, and MySQL points
+   * three at its table-meta response and two at its constraints endpoint.
+   * The Data tab is always its own request — see `data`.
    */
-  load:
-    | {
-        strategy: "per-tab";
-        /** Tabs fetched on mount regardless of which tab is open. */
-        eager?: TableTab[];
-        /** Opening the key tab also loads these. */
-        prefetch?: Partial<Record<TableTab, TableTab[]>>;
-        fetchTab(tab: TableTab, ctx: TCtx, signal: AbortSignal): Promise<unknown>;
-      }
-    | { strategy: "single"; fetchAll(ctx: TCtx, signal: AbortSignal): Promise<unknown> };
+  load: {
+    sources: Record<string, (ctx: TCtx, signal: AbortSignal) => Promise<unknown>>;
+    /**
+     * Which source each tab reads. Defaults to the tab's own name, which is
+     * what a tech with one round-trip per tab (Postgres) wants; techs that
+     * share a payload across tabs name the shared source here.
+     */
+    tabSource?: Partial<Record<TableTab, string>>;
+    /** Sources fetched on mount, whatever tab is open. */
+    eager?: string[];
+    /** Opening this tab also loads these sources. */
+    prefetch?: Partial<Record<TableTab, string[]>>;
+  };
   data: DataTabSpec<TCtx>;
   /** Panel per tab. `data` is the shell's own; anything listed for it is ignored. */
   render: Partial<Record<TableTab, (args: TabRenderArgs<TCtx>) => React.ReactNode>>;

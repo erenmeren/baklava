@@ -24,10 +24,21 @@ import { toast } from "sonner";
 import { RowFormDialog } from "@/components/workspace/sql/row-form-dialog";
 import { mysqlRowDialect } from "./row-dialect";
 import { CreateIndexDialog } from "./create-index-dialog";
-import { IndexesPanel, IndexesToolbar } from "./meta-columns";
+import {
+  ConstraintsPanel,
+  ForeignKeysPanel,
+  IndexesPanel,
+  IndexesToolbar,
+} from "./meta-columns";
 import { TableActionDialog, type TableAction } from "./table-actions";
 import { rowsToCSV, rowsToJSON, downloadText } from "@/lib/sql/result-export";
-import type { ColumnInfo, ColumnValue, RowsPage, TableMeta } from "./table-types";
+import type {
+  ColumnInfo,
+  ColumnValue,
+  ConstraintsPayload,
+  RowsPage,
+  TableMeta,
+} from "./table-types";
 
 interface Props {
   connectionId: string;
@@ -84,12 +95,28 @@ export function TableDetailClient({ connectionId, db, table }: Props) {
   const descriptor = useMemo<SqlTableDetailDescriptor<Ctx>>(
     () => ({
       tech: "mysql",
-      tabs: ["data", "structure", "indexes", "ddl"],
+      tabs: ["data", "structure", "indexes", "constraints", "foreign_keys", "ddl"],
       capabilities: { insertRow: true, editRow: true, deleteRow: true },
       rowsMutable: (all) => ((all.structure as TableMeta | undefined)?.primaryKey.length ?? 0) > 0,
       readOnlyReason: "no primary key — read only",
       paths: { base: (c) => c.base, rows: (c) => `${c.base}/rows` },
-      load: { strategy: "single", fetchAll: (c, signal) => getJson(c.base, signal) },
+      load: {
+        // One table-meta request feeds Structure / Indexes / DDL; the
+        // constraints endpoint feeds the two tabs Task 13 added, and stays
+        // unfetched until one of them opens.
+        sources: {
+          meta: (c, signal) => getJson(c.base, signal),
+          constraints: (c, signal) => getJson(`${c.base}/constraints`, signal),
+        },
+        tabSource: {
+          structure: "meta",
+          indexes: "meta",
+          ddl: "meta",
+          constraints: "constraints",
+          foreign_keys: "constraints",
+        },
+        eager: ["meta"],
+      },
       data: {
         schemaTab: "structure",
         toolbar: true,
@@ -171,6 +198,12 @@ export function TableDetailClient({ connectionId, db, table }: Props) {
             indexes={(data as TableMeta).indexes}
             onDrop={(name) => setAction({ kind: "drop-index", name })}
           />
+        ),
+        constraints: ({ data }) => (
+          <ConstraintsPanel constraints={(data as ConstraintsPayload).constraints} />
+        ),
+        foreign_keys: ({ data }) => (
+          <ForeignKeysPanel foreignKeys={(data as ConstraintsPayload).foreignKeys} />
         ),
         ddl: ({ data }) => (
           <DdlPanel label="SHOW CREATE TABLE" ddl={(data as TableMeta).ddl} />

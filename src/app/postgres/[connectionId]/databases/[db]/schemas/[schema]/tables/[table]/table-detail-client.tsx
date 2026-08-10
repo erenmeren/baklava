@@ -58,6 +58,12 @@ async function getJson(url: string, signal: AbortSignal): Promise<Record<string,
   return data;
 }
 
+/** One `?view=<name>` source, unwrapped to the field the panels actually read. */
+function view(name: string, field: string) {
+  return async (c: Ctx, signal: AbortSignal) =>
+    (await getJson(`${c.base}?view=${name}`, signal))[field];
+}
+
 function toSqlColumns(columns: ColumnInfo[]): SqlColumn[] {
   return columns.map((c) => ({
     name: c.name,
@@ -110,29 +116,22 @@ export function TableDetailClient({ connectionId, db, schema, table }: Props) {
       readOnlyReason: "This table has no primary key",
       paths: { base: (c) => c.base, rows: (c) => `${c.base}/rows` },
       load: {
-        strategy: "per-tab",
+        // Every catalog view is its own `?view=` round-trip, so every tab is
+        // its own source (the default `tabSource`) and stays unfetched until
+        // that tab opens.
+        sources: {
+          structure: view("structure", "columns"),
+          indexes: view("indexes", "indexes"),
+          constraints: view("constraints", "constraints"),
+          foreign_keys: view("foreign_keys", "foreignKeys"),
+          ddl: view("ddl", "ddl"),
+          stats: view("stats", "stats"),
+        },
         // Columns drive the Data tab's header hints, the PK markers and both
         // mutation buttons, so they load whichever tab is open.
         eager: ["structure"],
         // The Structure tab's FK chips come from a second view.
         prefetch: { structure: ["foreign_keys"] },
-        async fetchTab(tab, c, signal) {
-          const data = await getJson(`${c.base}?view=${tab}`, signal);
-          switch (tab) {
-            case "structure":
-              return data.columns;
-            case "indexes":
-              return data.indexes;
-            case "constraints":
-              return data.constraints;
-            case "foreign_keys":
-              return data.foreignKeys;
-            case "ddl":
-              return data.ddl;
-            default:
-              return data.stats;
-          }
-        },
       },
       data: {
         schemaTab: "structure",

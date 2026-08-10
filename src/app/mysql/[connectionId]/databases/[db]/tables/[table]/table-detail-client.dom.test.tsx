@@ -84,6 +84,26 @@ const ROWS = {
   primaryKey: ["id"],
 };
 
+// The constraints endpoint Task 13 added — its own request, feeding both the
+// Constraints and the Foreign keys tab.
+const CONSTRAINTS = {
+  constraints: [
+    { name: "PRIMARY", type: "PRIMARY KEY", definition: "" },
+    { name: "users_email_ck", type: "CHECK", definition: "(`email` like '%@%')" },
+  ],
+  foreignKeys: [
+    {
+      name: "fk_users_org",
+      columns: ["org_id"],
+      refSchema: "appdb",
+      refTable: "orgs",
+      refColumns: ["id"],
+      onUpdate: "NO ACTION",
+      onDelete: "CASCADE",
+    },
+  ],
+};
+
 let restore: () => void;
 
 function calls(): string[] {
@@ -97,6 +117,7 @@ beforeEach(() => {
     // so an unanchored "/tables/users" would also match it — see
     // src/test/fetch-mock.ts's doc comment.
     "/tables/users$": META,
+    "/constraints": CONSTRAINTS,
   });
 });
 
@@ -107,22 +128,54 @@ function renderIt() {
 }
 
 describe("mysql TableDetailClient (characterization)", () => {
-  it("renders exactly four tabs", async () => {
+  it("renders all six tabs", async () => {
     renderIt();
-    for (const label of ["Data", "Structure", "Indexes", "DDL"]) {
+    for (const label of [
+      "Data",
+      "Structure",
+      "Indexes",
+      "Constraints",
+      "Foreign keys",
+      "DDL",
+    ]) {
       expect(await screen.findByRole("tab", { name: label })).toBeInTheDocument();
     }
   });
 
-  // Phase 2 adds these. Their absence is the thing being recorded. Paired
-  // with the positive assertion above (in the same suite) so this can't
-  // pass vacuously off a component that failed to render at all.
-  it("has no Constraints, Foreign keys or Statistics tab today", async () => {
+  // Statistics stays Postgres-only — MySQL has no pg_stat_user_tables
+  // equivalent this workspace reads. Paired with the positive assertion above
+  // so this can't pass vacuously off a component that failed to render.
+  it("has no Statistics tab", async () => {
     renderIt();
     await screen.findByRole("tab", { name: "Data" });
-    expect(screen.queryByRole("tab", { name: "Constraints" })).toBeNull();
-    expect(screen.queryByRole("tab", { name: "Foreign keys" })).toBeNull();
     expect(screen.queryByRole("tab", { name: "Statistics" })).toBeNull();
+  });
+
+  // The constraints endpoint is a *second* source, unlike Structure /
+  // Indexes / DDL which all read the one up-front table-meta response. It
+  // must stay unfetched until one of its two tabs opens.
+  it("does not request constraints until the Constraints tab opens", async () => {
+    renderIt();
+    await screen.findByText("a@example.com");
+    expect(calls().some((u) => u.includes("/constraints"))).toBe(false);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Constraints" }));
+    await waitFor(() =>
+      expect(calls().some((u) => u.includes("/constraints"))).toBe(true),
+    );
+    expect(await screen.findByText("users_email_ck")).toBeInTheDocument();
+  });
+
+  // Both tabs share one source, so opening the second issues no new request.
+  it("serves the Foreign keys tab from the same constraints request", async () => {
+    renderIt();
+    fireEvent.click(await screen.findByRole("tab", { name: "Constraints" }));
+    await screen.findByText("users_email_ck");
+    const before = calls().filter((u) => u.includes("/constraints")).length;
+
+    fireEvent.click(screen.getByRole("tab", { name: "Foreign keys" }));
+    expect(await screen.findByText("fk_users_org")).toBeInTheDocument();
+    expect(calls().filter((u) => u.includes("/constraints")).length).toBe(before);
   });
 
   it("shows row data on the default Data tab", async () => {

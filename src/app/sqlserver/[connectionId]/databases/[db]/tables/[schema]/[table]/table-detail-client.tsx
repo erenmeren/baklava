@@ -6,10 +6,15 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StructurePanel } from "@/components/workspace/sql/structure-panel";
 import { DdlPanel } from "@/components/workspace/sql/ddl-panel";
+import { ConfirmDialog } from "@/components/workspace/confirm-dialog";
 import type { SqlColumn } from "@/components/workspace/sql/types";
 import { SqlTableDetail } from "@/components/workspace/sql/sql-table-detail";
-import type { SqlTableDetailDescriptor } from "@/components/workspace/sql/descriptor";
+import type {
+  SqlTableDetailDescriptor,
+  TableDetailControl,
+} from "@/components/workspace/sql/descriptor";
 import { Trash, Wand2 } from "lucide-react";
+import { toast } from "sonner";
 import { RowFormDialog } from "@/components/workspace/sql/row-form-dialog";
 import { sqlserverRowDialect } from "./row-dialect";
 import { ModifyTableDialog } from "../../../../../modify-table-dialog";
@@ -81,6 +86,9 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
   const ctx = useMemo<Ctx>(() => ({ base }), [base]);
 
   const [insertOpen, setInsertOpen] = useState(false);
+  const [editRow, setEditRow] = useState<Record<string, unknown> | null>(null);
+  const [deleteRow, setDeleteRow] = useState<Record<string, unknown> | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [modifyOpen, setModifyOpen] = useState(false);
   const [dropOpen, setDropOpen] = useState(false);
 
@@ -101,12 +109,23 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
     return {
       tech: "sqlserver",
       tabs: ["data", "structure", "indexes", "constraints", "foreign_keys", "ddl"],
-      // Row edit and delete land in Task 12 — the driver and route exist.
-      capabilities: { insertRow: true, editRow: false, deleteRow: false },
+      capabilities: { insertRow: true, editRow: true, deleteRow: true },
+      rowsMutable: (all) =>
+        ((all.structure as Detail | undefined)?.columns ?? []).some((c) => c.isPrimaryKey),
+      readOnlyReason: "This table has no primary key",
       paths: { base: (c) => c.base, rows: (c) => `${c.base}/rows` },
       load: {
-        strategy: "single",
-        fetchAll: (c, signal) => getJson(c.base, signal),
+        // One detail request feeds all five schema tabs — they share its
+        // payload, its error and its Retry.
+        sources: { detail: (c, signal) => getJson(c.base, signal) },
+        tabSource: {
+          structure: "detail",
+          indexes: "detail",
+          constraints: "detail",
+          foreign_keys: "detail",
+          ddl: "detail",
+        },
+        eager: ["detail"],
       },
       data: {
         schemaTab: "structure",
@@ -170,6 +189,32 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
     };
   }, []);
 
+  async function performDelete(ctl: TableDetailControl, detail: Detail) {
+    if (!deleteRow) return;
+    const pk = detail.columns
+      .filter((c) => c.isPrimaryKey)
+      .map((c) => ({ column: c.name, value: deleteRow[c.name] ?? null }));
+    setDeleting(true);
+    try {
+      const res = await fetch(`${base}/rows`, {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ pk }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error("Delete failed", { description: data.error });
+        return;
+      }
+      toast.success("Row deleted");
+      setDeleteRow(null);
+      ctl.reloadData();
+      ctl.refresh("structure");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
     <SqlTableDetail
       descriptor={descriptor}
@@ -210,10 +255,17 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
         </>
       )}
       onInsertRow={() => setInsertOpen(true)}
+      onEditRow={setEditRow}
+      onDeleteRow={setDeleteRow}
     >
       {(ctl) => {
         const detail = ctl.all.structure as Detail | undefined;
         if (!detail) return null;
+        const label = (
+          <span className="font-mono text-foreground/80">
+            {schema}.{table}
+          </span>
+        );
         return (
           <>
             <RowFormDialog
@@ -222,11 +274,7 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
               mode="insert"
               base={base}
               title="Insert row"
-              description={
-                <span className="font-mono text-foreground/80">
-                  {schema}.{table}
-                </span>
-              }
+              description={label}
               columns={toRowColumns(detail.columns)}
               dialect={sqlserverRowDialect}
               onSuccess={() => {
@@ -236,6 +284,37 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
                 ctl.reloadData(0);
                 ctl.refresh("structure");
               }}
+            />
+            <RowFormDialog
+              open={editRow !== null}
+              onOpenChange={(v) => {
+                if (!v) setEditRow(null);
+              }}
+              mode="edit"
+              base={base}
+              title="Edit row"
+              description={label}
+              columns={toRowColumns(detail.columns)}
+              initialRow={editRow ?? undefined}
+              dialect={sqlserverRowDialect}
+              onSuccess={() => ctl.reloadData()}
+            />
+            <ConfirmDialog
+              open={deleteRow !== null}
+              onOpenChange={() => setDeleteRow(null)}
+              title="Delete row?"
+              description={
+                <>
+                  This will run{" "}
+                  <span className="font-mono">
+                    DELETE FROM [{schema}].[{table}]
+                  </span>{" "}
+                  for the selected row. This cannot be undone.
+                </>
+              }
+              confirmLabel="Delete"
+              working={deleting}
+              onConfirm={() => void performDelete(ctl, detail)}
             />
             <ModifyTableDialog
               open={modifyOpen}

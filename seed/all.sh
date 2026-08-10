@@ -16,6 +16,10 @@ echo "═══ postgres ══════════════════�
 bash "$here/postgres.sh"
 echo
 
+echo "═══ mysql ════════════════════════════════════════════════════════"
+bash "$here/mysql.sh"
+echo
+
 echo "═══ kafka ════════════════════════════════════════════════════════"
 bash "$here/kafka.sh"
 echo

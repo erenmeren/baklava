@@ -30,13 +30,6 @@ const DEFAULT_LABELS: Record<TableTab, string> = {
   stats: "Statistics",
 };
 
-/**
- * The load key a tab reads from. Under `per-tab` that's the tab itself;
- * under `single` every non-data tab shares one payload, so one failed
- * request means one error and one Retry across all of them.
- */
-const META = "meta";
-
 function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
@@ -120,25 +113,22 @@ export function SqlTableDetail<TCtx>(props: {
     [controllers, inflight],
   );
 
+  // Tabs sharing a source share its payload, its error and its Retry — that
+  // is how SQL Server's one detail request serves six tabs.
   const sourceOf = useCallback(
-    (t: TableTab): string => {
-      if (t === "data") return "data";
-      return load.strategy === "single" ? META : t;
-    },
-    [load.strategy],
+    (t: TableTab): string => (t === "data" ? "data" : (load.tabSource?.[t] ?? t)),
+    [load.tabSource],
   );
 
   const runLoad = useCallback(
-    (source: string, forTab: TableTab) => {
+    (source: string) => {
+      const fetchSource = load.sources[source];
+      if (!fetchSource) return;
       controllers.get(source)?.abort();
       const ac = new AbortController();
       controllers.set(source, ac);
       inflight.add(source);
-      const request =
-        load.strategy === "single"
-          ? load.fetchAll(ctx, ac.signal)
-          : load.fetchTab(forTab, ctx, ac.signal);
-      request
+      fetchSource(ctx, ac.signal)
         .then((payload) => {
           if (ac.signal.aborted) return;
           setCache((prev) => ({ ...prev, [source]: payload }));
@@ -206,24 +196,16 @@ export function SqlTableDetail<TCtx>(props: {
     setSort((prev) => (prev === null ? prev : null));
   }, [base, controllers, inflight]);
 
-  // Schema loads: eager tabs plus whatever the open tab needs.
+  // Schema loads: the eager sources, plus whatever the open tab needs.
   useEffect(() => {
-    const wanted: TableTab[] = [];
-    if (load.strategy === "single") {
-      const firstSchemaTab = descriptor.tabs.find((t) => t !== "data");
-      if (firstSchemaTab) wanted.push(firstSchemaTab);
-    } else {
-      wanted.push(...(load.eager ?? []));
-      if (tab !== "data") wanted.push(tab);
-      wanted.push(...(load.prefetch?.[tab] ?? []));
-    }
-    for (const t of wanted) {
-      const source = sourceOf(t);
+    const wanted = [...(load.eager ?? []), ...(load.prefetch?.[tab] ?? [])];
+    if (tab !== "data") wanted.push(sourceOf(tab));
+    for (const source of wanted) {
       if (cache[source] === undefined && !errors[source] && !inflight.has(source)) {
-        runLoad(source, t);
+        runLoad(source);
       }
     }
-  }, [base, tab, cache, errors, runLoad, sourceOf, load, descriptor.tabs, inflight]);
+  }, [base, tab, cache, errors, runLoad, sourceOf, load, inflight]);
 
   // The Data tab's own request. Firing it from the effect rather than from
   // Retry is what keeps the request count exact: Retry clears the error, the
@@ -395,6 +377,10 @@ export function SqlTableDetail<TCtx>(props: {
                             variant="ghost"
                             className="size-6"
                             disabled={!canEdit}
+                            // The accessible name stays "Edit row" even when
+                            // disabled — the reason belongs in the tooltip,
+                            // not in the button's identity.
+                            aria-label="Edit row"
                             title={canEdit ? "Edit row" : descriptor.readOnlyReason}
                             onClick={() => onEditRow?.(rowObject(row))}
                           >
@@ -407,6 +393,7 @@ export function SqlTableDetail<TCtx>(props: {
                             variant="ghost"
                             className="size-6 text-destructive hover:text-destructive"
                             disabled={!canDelete}
+                            aria-label="Delete row"
                             title={canDelete ? "Delete row" : descriptor.readOnlyReason}
                             onClick={() => onDeleteRow?.(rowObject(row))}
                           >

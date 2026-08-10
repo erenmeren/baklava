@@ -2,7 +2,7 @@
 #
 #   docker compose up -d         # start everything
 #   docker compose down -v       # stop and wipe data
-#   docker compose up -d <svc>   # just one service (postgres, kafka, sqlserver)
+#   docker compose up -d <svc>   # just one service (postgres, mysql, kafka, sqlserver)
 #
 # Docker itself is the host daemon — no container needed. Baklava reads
 # unix:///var/run/docker.sock by default on macOS/Linux.
@@ -27,6 +27,18 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: Baklava123!
+      MYSQL_DATABASE: demo
+    ports: ["3306:3306"]
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-pBaklava123!"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
 
   sqlserver:
     image: mcr.microsoft.com/mssql/server:2022-latest
