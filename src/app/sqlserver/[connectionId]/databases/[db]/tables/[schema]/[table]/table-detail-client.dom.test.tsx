@@ -153,12 +153,17 @@ describe("sqlserver TableDetailClient (characterization)", () => {
 
   // buildClientDdl assembles the DDL in the browser from the detail payload
   // already loaded up front — opening the tab issues no request of its own.
+  //
+  // DdlPanel's own "generated CREATE TABLE" label also matches a loose
+  // /CREATE TABLE/ pattern, so match the fixture's actual DDL text instead —
+  // same reasoning as postgres's `/CREATE TABLE public\.users/` and mysql's
+  // `/CREATE TABLE \`users\`/` in their sibling suites.
   it("renders the DDL tab without any DDL-specific request", async () => {
     renderIt();
     await screen.findByText("a@example.com");
     const before = calls().length;
     fireEvent.click(screen.getByRole("tab", { name: "DDL" }));
-    expect(await screen.findByText(/CREATE TABLE/)).toBeInTheDocument();
+    expect(await screen.findByText(/CREATE TABLE \[dbo\]\.\[users\]/)).toBeInTheDocument();
     expect(calls().length).toBe(before);
   });
 

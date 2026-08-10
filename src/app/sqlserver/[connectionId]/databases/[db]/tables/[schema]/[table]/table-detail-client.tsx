@@ -6,20 +6,17 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { WorkspacePage } from "@/components/workspace/workspace-page";
 import { ErrorState } from "@/components/workspace/error-state";
+import { StructurePanel } from "@/components/workspace/sql/structure-panel";
+import { DdlPanel } from "@/components/workspace/sql/ddl-panel";
+import { MetaTable, type MetaColumn } from "@/components/workspace/sql/meta-table";
+import type { SqlColumn } from "@/components/workspace/sql/types";
+import { DataGrid, type GridColumn } from "@/components/workspace/sql/data-grid";
 import { cn } from "@/lib/utils";
-import { Copy, Check, Plus, Trash, Wand2 } from "lucide-react";
-import { toast } from "sonner";
-import { RowFormDialog, type ColumnInfo as RowColumnInfo } from "./row-form-dialog";
+import { Plus, Trash, Wand2 } from "lucide-react";
+import { RowFormDialog } from "@/components/workspace/sql/row-form-dialog";
+import { sqlserverRowDialect } from "./row-dialect";
 import { ModifyTableDialog } from "../../../../../modify-table-dialog";
 import { DropConfirm } from "../../../../../drop-confirm";
 import { DataPagination } from "@/components/sql/pagination";
@@ -94,13 +91,6 @@ function fmtBytes(n: number): string {
   if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
   return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
-function fmtCell(v: unknown): React.ReactNode {
-  if (v === null || v === undefined)
-    return <span className="text-muted-foreground/40">NULL</span>;
-  if (v instanceof Date) return v.toISOString();
-  if (typeof v === "object") return JSON.stringify(v);
-  return String(v);
-}
 
 export function TableDetailClient({ connectionId, database, schema, table }: Props) {
   const base = `/api/sqlserver/${connectionId}/databases/${encodeURIComponent(database)}/tables/${encodeURIComponent(schema)}/${encodeURIComponent(table)}`;
@@ -112,7 +102,6 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
   const [loadingData, setLoadingData] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [dataError, setDataError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
   const [insertOpen, setInsertOpen] = useState(false);
   const [modifyOpen, setModifyOpen] = useState(false);
   const [dropOpen, setDropOpen] = useState(false);
@@ -129,14 +118,47 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
     }
   }, [searchParams, router, pathname]);
 
-  const rowColumns: RowColumnInfo[] = (detail?.columns ?? []).map((c) => ({
+  // A SqlColumn[] built specifically for RowFormDialog — separate from
+  // `sqlColumns` below (used for StructurePanel), whose `default` folds in
+  // computed-column definitions and whose `extra` carries the
+  // "IDENTITY(seed,increment)" display string for a different purpose. This
+  // one's `extra` is the sqlserverRowDialect's own "identity" marker (see
+  // row-dialect.tsx) and its `default` is the raw column default only.
+  const rowColumns: SqlColumn[] = (detail?.columns ?? []).map((c, i) => ({
     name: c.name,
+    position: i + 1,
     dataType: c.dataType,
     nullable: c.nullable,
-    isIdentity: c.isIdentity,
-    defaultDefinition: c.defaultDefinition,
+    default: c.defaultDefinition,
     isPrimaryKey: c.isPrimaryKey,
+    extra: c.isIdentity ? "identity" : null,
   }));
+
+  // SqlServerColumn carries no ordinal field, so position comes from the
+  // array index: getSqlServerTableDetail's catalog query returns columns in
+  // ordinal order, which is the only ordering the Structure tab ever showed.
+  const sqlColumns: SqlColumn[] = (detail?.columns ?? []).map((c, i) => ({
+    name: c.name,
+    position: i + 1,
+    dataType: c.dataType,
+    nullable: c.nullable,
+    default: c.isComputed ? c.computedDefinition : c.defaultDefinition,
+    isPrimaryKey: c.isPrimaryKey,
+    extra: c.isIdentity
+      ? `IDENTITY(${c.identitySeed},${c.identityIncrement})`
+      : c.isComputed
+        ? "computed"
+        : null,
+  }));
+
+  const gridColumns: GridColumn[] = (data?.fields ?? []).map((f) => {
+    const col = detail?.columns.find((c) => c.name === f);
+    return {
+      name: f,
+      hint: `${col?.dataType ?? ""}${col && !col.nullable ? " · NOT NULL" : ""}`,
+      isPrimaryKey: !!col?.isPrimaryKey,
+    };
+  });
 
   const loadDetail = useCallback(async () => {
     try {
@@ -191,6 +213,114 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
   }, [tab, data, dataError, offset, loadData]);
 
   const ddl = detail ? buildClientDdl(detail) : "";
+
+  const indexColumns: MetaColumn<Index>[] = [
+    {
+      header: "Name",
+      className: () => "font-mono text-xs",
+      cell: (i) => (
+        <span className="inline-flex items-center gap-1.5">
+          {i.name}
+          {i.isPrimaryKey ? <Badge>PK</Badge> : null}
+          {i.isUnique && !i.isPrimaryKey ? (
+            <Badge variant="secondary">unique</Badge>
+          ) : null}
+          {i.unused ? (
+            <span className="inline-flex items-center rounded border border-amber-500/30 bg-amber-500/10 px-1 py-px text-[9px] uppercase tracking-wider text-amber-600">
+              unused
+            </span>
+          ) : null}
+        </span>
+      ),
+    },
+    {
+      header: "Type",
+      className: () => "text-[11px] font-mono text-muted-foreground",
+      cell: (i) => i.typeDesc,
+    },
+    {
+      header: "Key columns",
+      className: () => "font-mono text-[11px]",
+      cell: (i) => (
+        <>
+          {i.keyColumns.join(", ")}
+          {i.includedColumns.length > 0 ? (
+            <span className="text-muted-foreground/60">
+              {" "}
+              INCLUDE ({i.includedColumns.join(", ")})
+            </span>
+          ) : null}
+        </>
+      ),
+    },
+    {
+      header: "Size",
+      align: "right",
+      className: () => "font-mono text-[11px] tabular-nums text-muted-foreground",
+      cell: (i) => fmtBytes(i.sizeBytes),
+    },
+    {
+      header: "Seeks/Scans",
+      align: "right",
+      className: (i) =>
+        cn(
+          "font-mono text-[11px] tabular-nums",
+          i.userSeeks + i.userScans === 0
+            ? "text-amber-600"
+            : "text-muted-foreground",
+        ),
+      cell: (i) => (i.userSeeks + i.userScans + i.userLookups).toLocaleString(),
+    },
+  ];
+
+  const constraintColumns: MetaColumn<ConstraintRow>[] = [
+    {
+      header: "Name",
+      className: () => "font-mono text-xs",
+      cell: (c) => c.name,
+    },
+    {
+      header: "Type",
+      className: () => "text-xs",
+      cell: (c) => c.type,
+    },
+    {
+      header: "Definition",
+      className: () => "font-mono text-[11px] text-muted-foreground break-all",
+      cell: (c) => c.definition,
+    },
+  ];
+
+  const foreignKeyColumns: MetaColumn<ForeignKeyRow>[] = [
+    {
+      header: "Name",
+      className: () => "font-mono text-xs",
+      cell: (f) => f.name,
+    },
+    {
+      header: "Columns",
+      className: () => "font-mono text-[11px]",
+      cell: (f) => f.columns.join(", "),
+    },
+    {
+      header: "References",
+      className: () => "font-mono text-[11px]",
+      cell: (f) => (
+        <>
+          {f.refSchema}.{f.refTable} ({f.refColumns.join(", ")})
+        </>
+      ),
+    },
+    {
+      header: "On update / delete",
+      className: () => "text-[11px] text-muted-foreground",
+      cell: (f) => (
+        <>
+          {f.onUpdate} / {f.onDelete}
+        </>
+      ),
+    },
+  ];
 
   return (
     <WorkspacePage
@@ -277,30 +407,13 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
                   className="px-3 py-2 shrink-0"
                 />
               ) : null}
-              <div className="rounded-lg border border-border/60 overflow-auto flex-1 min-h-0">
-                <table className="w-full text-xs font-mono">
-                  <thead className="bg-muted/40 sticky top-0">
-                    <tr>
-                      {data.fields.map((f, i) => (
-                        <th key={i} className="px-3 py-1.5 text-left font-semibold whitespace-nowrap">
-                          {f}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.rows.map((row, ri) => (
-                      <tr key={ri} className="border-t border-border/30 hover:bg-muted/30">
-                        {row.map((c, ci) => (
-                          <td key={ci} className="px-3 py-1 align-top max-w-[40ch] truncate">
-                            {fmtCell(c)}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <DataGrid
+                columns={gridColumns}
+                rows={data.rows}
+                density="compact"
+                empty="No rows."
+                className="flex-1 min-h-0"
+              />
               <DataPagination
                 offset={offset}
                 pageSize={pageSize}
@@ -331,52 +444,7 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
           ) : !detail ? (
             <Skeleton className="h-40 w-full" />
           ) : (
-            <div className="rounded-lg border border-border/60 overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Column</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Nullable</TableHead>
-                    <TableHead>Flags</TableHead>
-                    <TableHead>Default</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {detail.columns.map((c) => (
-                    <TableRow key={c.name}>
-                      <TableCell className="font-mono text-xs">
-                        <span className="inline-flex items-center gap-1.5">
-                          {c.name}
-                          {c.isPrimaryKey ? <Badge>PK</Badge> : null}
-                        </span>
-                      </TableCell>
-                      <TableCell className="font-mono text-xs text-muted-foreground">
-                        {c.dataType}
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        {c.nullable ? "NULL" : "NOT NULL"}
-                      </TableCell>
-                      <TableCell className="space-x-1">
-                        {c.isIdentity ? (
-                          <Badge variant="secondary">
-                            IDENTITY({c.identitySeed},{c.identityIncrement})
-                          </Badge>
-                        ) : null}
-                        {c.isComputed ? (
-                          <Badge variant="secondary">computed</Badge>
-                        ) : null}
-                      </TableCell>
-                      <TableCell className="font-mono text-[11px] text-muted-foreground">
-                        {c.isComputed
-                          ? c.computedDefinition
-                          : c.defaultDefinition ?? ""}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+            <StructurePanel columns={sqlColumns} />
           )}
         </TabsContent>
 
@@ -390,67 +458,14 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
             />
           ) : !detail ? (
             <Skeleton className="h-40 w-full" />
-          ) : detail.indexes.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No indexes.</p>
           ) : (
-            <div className="rounded-lg border border-border/60 overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Key columns</TableHead>
-                    <TableHead className="text-right">Size</TableHead>
-                    <TableHead className="text-right">Seeks/Scans</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {detail.indexes.map((i) => (
-                    <TableRow key={i.name} className={cn(i.unused && "bg-amber-500/5")}>
-                      <TableCell className="font-mono text-xs">
-                        <span className="inline-flex items-center gap-1.5">
-                          {i.name}
-                          {i.isPrimaryKey ? <Badge>PK</Badge> : null}
-                          {i.isUnique && !i.isPrimaryKey ? (
-                            <Badge variant="secondary">unique</Badge>
-                          ) : null}
-                          {i.unused ? (
-                            <span className="inline-flex items-center rounded border border-amber-500/30 bg-amber-500/10 px-1 py-px text-[9px] uppercase tracking-wider text-amber-600">
-                              unused
-                            </span>
-                          ) : null}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-[11px] font-mono text-muted-foreground">
-                        {i.typeDesc}
-                      </TableCell>
-                      <TableCell className="font-mono text-[11px]">
-                        {i.keyColumns.join(", ")}
-                        {i.includedColumns.length > 0 ? (
-                          <span className="text-muted-foreground/60">
-                            {" "}
-                            INCLUDE ({i.includedColumns.join(", ")})
-                          </span>
-                        ) : null}
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-[11px] tabular-nums text-muted-foreground">
-                        {fmtBytes(i.sizeBytes)}
-                      </TableCell>
-                      <TableCell
-                        className={cn(
-                          "text-right font-mono text-[11px] tabular-nums",
-                          i.userSeeks + i.userScans === 0
-                            ? "text-amber-600"
-                            : "text-muted-foreground",
-                        )}
-                      >
-                        {(i.userSeeks + i.userScans + i.userLookups).toLocaleString()}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+            <MetaTable
+              items={detail.indexes}
+              columns={indexColumns}
+              rowKey={(i) => i.name}
+              rowClassName={(i) => (i.unused ? "bg-amber-500/5" : undefined)}
+              empty="No indexes."
+            />
           )}
         </TabsContent>
 
@@ -464,31 +479,13 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
             />
           ) : !detail ? (
             <Skeleton className="h-40 w-full" />
-          ) : detail.constraints.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No check/default constraints.</p>
           ) : (
-            <div className="rounded-lg border border-border/60 overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Definition</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {detail.constraints.map((c) => (
-                    <TableRow key={c.name}>
-                      <TableCell className="font-mono text-xs">{c.name}</TableCell>
-                      <TableCell className="text-xs">{c.type}</TableCell>
-                      <TableCell className="font-mono text-[11px] text-muted-foreground break-all">
-                        {c.definition}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+            <MetaTable
+              items={detail.constraints}
+              columns={constraintColumns}
+              rowKey={(c) => c.name}
+              empty="No check/default constraints."
+            />
           )}
         </TabsContent>
 
@@ -502,37 +499,13 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
             />
           ) : !detail ? (
             <Skeleton className="h-40 w-full" />
-          ) : detail.foreignKeys.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No foreign keys.</p>
           ) : (
-            <div className="rounded-lg border border-border/60 overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Columns</TableHead>
-                    <TableHead>References</TableHead>
-                    <TableHead>On update / delete</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {detail.foreignKeys.map((f) => (
-                    <TableRow key={f.name}>
-                      <TableCell className="font-mono text-xs">{f.name}</TableCell>
-                      <TableCell className="font-mono text-[11px]">
-                        {f.columns.join(", ")}
-                      </TableCell>
-                      <TableCell className="font-mono text-[11px]">
-                        {f.refSchema}.{f.refTable} ({f.refColumns.join(", ")})
-                      </TableCell>
-                      <TableCell className="text-[11px] text-muted-foreground">
-                        {f.onUpdate} / {f.onDelete}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+            <MetaTable
+              items={detail.foreignKeys}
+              columns={foreignKeyColumns}
+              rowKey={(f) => f.name}
+              empty="No foreign keys."
+            />
           )}
         </TabsContent>
 
@@ -547,28 +520,7 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
           ) : !detail ? (
             <Skeleton className="h-40 w-full" />
           ) : (
-            <div className="relative">
-              <Button
-                size="xs"
-                variant="outline"
-                className="absolute top-2 right-2 gap-1"
-                onClick={async () => {
-                  try {
-                    await navigator.clipboard.writeText(ddl);
-                    setCopied(true);
-                    setTimeout(() => setCopied(false), 1500);
-                  } catch {
-                    toast.error("Could not copy");
-                  }
-                }}
-              >
-                {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
-                {copied ? "copied" : "copy"}
-              </Button>
-              <pre className="rounded-md border border-border/60 bg-zinc-950 text-zinc-100 p-4 text-xs font-mono whitespace-pre-wrap break-words overflow-auto max-h-[60vh]">
-                {ddl}
-              </pre>
-            </div>
+            <DdlPanel label="generated CREATE TABLE" ddl={ddl} />
           )}
         </TabsContent>
       </Tabs>
@@ -580,9 +532,14 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
             onOpenChange={setInsertOpen}
             mode="insert"
             base={base}
-            schema={schema}
-            table={table}
+            title="Insert row"
+            description={
+              <span className="font-mono text-foreground/80">
+                {schema}.{table}
+              </span>
+            }
             columns={rowColumns}
+            dialect={sqlserverRowDialect}
             onSuccess={() => {
               setOffset(0);
               void loadData(0);

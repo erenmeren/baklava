@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import {
   FileText,
   FileCode,
@@ -14,6 +14,7 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useTableTabs } from "@/components/workspace/use-table-tabs";
 
 type Tab =
   | { kind: "overview" }
@@ -33,31 +34,6 @@ interface Props {
   connectionId: string;
   /** Default database used as the target for the "+ Query" button. */
   defaultDatabase: string;
-}
-
-function storageKey(connectionId: string) {
-  return `baklava:pg-tabs:${connectionId}`;
-}
-
-function loadTabs(connectionId: string): Tab[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = window.localStorage.getItem(storageKey(connectionId));
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as Tab[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveTabs(connectionId: string, tabs: Tab[]) {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(storageKey(connectionId), JSON.stringify(tabs));
-  } catch {
-    // ignore
-  }
 }
 
 function tabKey(t: Tab): string {
@@ -177,9 +153,24 @@ export function PostgresTabs({ connectionId, defaultDatabase }: Props) {
   const pathname = usePathname() ?? "";
   const searchParams = useSearchParams();
   const searchString = searchParams ? searchParams.toString() : "";
-  const router = useRouter();
-  const [tabs, setTabs] = useState<Tab[]>([]);
-  const [hydrated, setHydrated] = useState(false);
+
+  const activeTab = useMemo(
+    () => tabFromPath(pathname, searchString, connectionId),
+    [pathname, searchString, connectionId],
+  );
+
+  const { tabs, setTabs, hydrated, activeKey, closeTab } = useTableTabs<Tab>({
+    storageKey: `baklava:pg-tabs:${connectionId}`,
+    activeTab,
+    key: tabKey,
+    href: (t) => tabHref(connectionId, t),
+    homeHref: `/postgres/${connectionId}`,
+    onAdd: (tab, existing) =>
+      tab.kind === "query"
+        ? { ...tab, title: `query ${existing.filter((t) => t.kind === "query").length + 1}` }
+        : tab,
+  });
+
   // Tab being renamed (by tabKey). Only query tabs are renamable.
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const commitRename = useCallback((key: string, next: string) => {
@@ -191,56 +182,7 @@ export function PostgresTabs({ connectionId, defaultDatabase }: Props) {
       }),
     );
     setEditingKey(null);
-  }, []);
-
-  // Hydrate from localStorage once.
-  useEffect(() => {
-    setTabs(loadTabs(connectionId));
-    setHydrated(true);
-  }, [connectionId]);
-
-  useEffect(() => {
-    if (hydrated) saveTabs(connectionId, tabs);
-  }, [tabs, hydrated, connectionId]);
-
-  const activeTab = useMemo(
-    () => tabFromPath(pathname, searchString, connectionId),
-    [pathname, searchString, connectionId],
-  );
-  const activeKey = activeTab ? tabKey(activeTab) : null;
-
-  // Auto-add the active tab if it's not already in the strip.
-  useEffect(() => {
-    if (!hydrated || !activeTab) return;
-    setTabs((prev) => {
-      const k = tabKey(activeTab);
-      if (prev.some((t) => tabKey(t) === k)) return prev;
-      if (activeTab.kind === "query") {
-        // Number this tab sequentially: count existing query tabs and add one.
-        const existing = prev.filter((t) => t.kind === "query").length;
-        return [...prev, { ...activeTab, title: `query ${existing + 1}` }];
-      }
-      return [...prev, activeTab];
-    });
-  }, [activeTab, hydrated]);
-
-  const closeTab = useCallback(
-    (key: string) => {
-      const idx = tabs.findIndex((t) => tabKey(t) === key);
-      if (idx < 0) return;
-      const next = tabs.filter((_, i) => i !== idx);
-      setTabs(next);
-      if (key === activeKey) {
-        const fallback = next[idx - 1] ?? next[idx] ?? null;
-        if (fallback) {
-          router.push(tabHref(connectionId, fallback));
-        } else {
-          router.push(`/postgres/${connectionId}`);
-        }
-      }
-    },
-    [tabs, activeKey, router, connectionId],
-  );
+  }, [setTabs]);
 
   if (!hydrated) {
     return (

@@ -127,6 +127,7 @@ export function ModePill({
   disabled,
   tone = "rose",
   tabIndex,
+  "aria-label": ariaLabel,
   children,
 }: {
   active: boolean;
@@ -134,6 +135,7 @@ export function ModePill({
   disabled?: boolean;
   tone?: DialogTone;
   tabIndex?: number;
+  "aria-label"?: string;
   children: ReactNode;
 }) {
   const activeRing = {
@@ -152,6 +154,7 @@ export function ModePill({
       onClick={onClick}
       disabled={disabled}
       tabIndex={tabIndex}
+      aria-label={ariaLabel}
       className={cn(
         "inline-flex items-center rounded-full px-2 py-px text-[10px] font-mono uppercase tracking-[0.12em] transition-colors",
         active

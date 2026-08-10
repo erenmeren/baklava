@@ -66,10 +66,14 @@ const OK = {
 
 let restore: () => void;
 
-// `window.localStorage` is undefined in this vitest+happy-dom setup (no
-// polyfill is configured). The component's own load/save helpers wrap every
-// localStorage access in try/catch and fall back to defaults on failure, so
-// this is silently a no-op here rather than a crash — nothing to clear.
+// `window.localStorage` is backed by a small in-memory polyfill installed
+// in `src/test/setup.ts` (Node's own global `localStorage` shadows
+// happy-dom's simulated one in this vitest version — see that file for why).
+// It genuinely reads and writes here, so `loadSql`/`saveSql`/`loadHistory`/
+// `saveHistory` are not no-ops. `setup.ts` also clears it in a global
+// `afterEach`, so nothing written by one `it()` below leaks into the next
+// one's initial render even though every test in this file reuses the same
+// connectionId/db/queryId (and thus the same storage keys).
 beforeEach(() => {
   restore = mockFetch({
     "/query": OK,

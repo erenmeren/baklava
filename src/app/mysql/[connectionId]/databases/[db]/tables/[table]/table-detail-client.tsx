@@ -5,16 +5,7 @@ import { useRouter } from "next/navigation";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -35,36 +26,35 @@ import { WorkspacePage } from "@/components/workspace/workspace-page";
 import { ErrorState } from "@/components/workspace/error-state";
 import { RefreshButton } from "@/components/workspace/auto-refresh";
 import { DataPagination } from "@/components/sql/pagination";
+import { StructurePanel } from "@/components/workspace/sql/structure-panel";
+import { DdlPanel } from "@/components/workspace/sql/ddl-panel";
+import { MetaTable, type MetaColumn } from "@/components/workspace/sql/meta-table";
+import type { SqlColumn } from "@/components/workspace/sql/types";
+import {
+  DataGrid,
+  GridToolbar,
+  filterRows,
+  type GridColumn,
+} from "@/components/workspace/sql/data-grid";
 import {
   Loader2,
   Pencil,
   Plus,
   Trash2,
-  Search,
-  Rows3,
-  Rows4,
   Trash,
-  Copy,
-  Check,
   Download,
-  ArrowUp,
-  ArrowDown,
   Eraser,
   SquareTerminal,
 } from "lucide-react";
 import { toast } from "sonner";
-import {
-  RowFormDialog,
-  type ColumnInfo,
-  type ColumnValue,
-} from "./row-form-dialog";
+import { RowFormDialog } from "@/components/workspace/sql/row-form-dialog";
+import { mysqlRowDialect } from "./row-dialect";
 import { CreateIndexDialog } from "./create-index-dialog";
 import {
   rowsToCSV,
   rowsToJSON,
   downloadText,
 } from "@/lib/sql/result-export";
-import { cn } from "@/lib/utils";
 
 interface IndexInfo {
   name: string;
@@ -73,6 +63,27 @@ interface IndexInfo {
   type: string;
   columns: string[];
 }
+
+// Was previously imported from the per-table row-form-dialog.tsx; Task 9
+// collapsed that file (and its Postgres/SQL Server siblings) into the
+// shared RowFormDialog, which consumes `SqlColumn` instead. This file still
+// needs the fuller MySQL-specific shape (`columnType`, `extra`, `comment`,
+// `ordinal`) for its own metadata display, so the types moved here rather
+// than disappearing.
+export interface ColumnInfo {
+  name: string;
+  dataType: string;
+  /** Full COLUMN_TYPE, e.g. `varchar(255)`, `int unsigned`. */
+  columnType: string;
+  nullable: boolean;
+  default: string | null;
+  isPrimaryKey: boolean;
+  extra: string;
+  comment: string;
+  ordinal: number;
+}
+
+export type ColumnValue = string | number | boolean | null;
 
 interface TableMeta {
   columns: ColumnInfo[];
@@ -102,7 +113,6 @@ export function TableDetailClient({ connectionId, db, table }: Props) {
   const [tab, setTab] = useState("data");
 
   const [meta, setMeta] = useState<TableMeta | null>(null);
-  const [ddlCopied, setDdlCopied] = useState(false);
 
   const [pageData, setPageData] = useState<TableData | null>(null);
   const [pageLimit, setPageLimit] = useState(100);
@@ -251,23 +261,35 @@ export function TableDetailClient({ connectionId, db, table }: Props) {
     });
   };
 
-  const filteredRows = useMemo(() => {
+  const gridColumns: GridColumn[] = (pageData?.columns ?? []).map((name) => {
+    const col = columns?.find((c) => c.name === name);
+    return {
+      name,
+      hint: `${col?.columnType ?? ""}${col && !col.nullable ? " · NOT NULL" : ""}`,
+      isPrimaryKey: !!col?.isPrimaryKey,
+    };
+  });
+
+  // Filter the row *objects* first, keeping them alongside the derived
+  // tuples DataGrid renders — rowActions (setEditTarget/setDeleteTarget)
+  // needs the original object, and indexing into the unfiltered array by
+  // position would point at the wrong row once filtering removes any.
+  const filteredObjects = useMemo(() => {
     if (!pageData) return [];
-    const q = filter.trim().toLowerCase();
-    if (!q) return pageData.rows;
-    return pageData.rows.filter((row) =>
-      pageData.columns.some((col) => {
-        const cell = row[col];
-        if (cell == null) return false;
-        const text =
-          typeof cell === "object" ? JSON.stringify(cell) : String(cell);
-        return text.toLowerCase().includes(q);
-      })
+    return pageData.rows.filter(
+      (r) =>
+        filterRows([pageData.columns.map((c) => r[c] ?? null)], filter)
+          .length > 0,
     );
   }, [pageData, filter]);
 
-  const cellPad = density === "compact" ? "px-3 py-1" : "px-3 py-2";
-  const headPad = density === "compact" ? "px-3 py-1.5" : "px-3 py-2.5";
+  const filteredGridRows: unknown[][] = useMemo(
+    () =>
+      filteredObjects.map((r) =>
+        (pageData?.columns ?? []).map((c) => r[c] ?? null),
+      ),
+    [filteredObjects, pageData],
+  );
 
   const canMutateRows = primaryKey.length > 0;
   const noPkReason = "no primary key — read only";
@@ -275,7 +297,7 @@ export function TableDetailClient({ connectionId, db, table }: Props) {
   const exportRows = (format: "csv" | "json") => {
     if (!pageData) return;
     const fields = pageData.columns;
-    const tuples = filteredRows.map((r) => fields.map((f) => r[f] ?? null));
+    const tuples = filteredGridRows;
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
     if (format === "csv") {
       downloadText(
@@ -375,6 +397,70 @@ export function TableDetailClient({ connectionId, db, table }: Props) {
     }
   };
 
+  const sqlColumns: SqlColumn[] = (columns ?? []).map((c) => ({
+    name: c.name,
+    position: c.ordinal,
+    dataType: c.columnType,
+    nullable: c.nullable,
+    default: c.default,
+    isPrimaryKey: c.isPrimaryKey,
+    comment: c.comment || null,
+    extra: c.extra || null,
+  }));
+
+  const indexColumns: MetaColumn<IndexInfo>[] = [
+    {
+      header: "Name",
+      className: () => "font-mono text-xs",
+      cell: (i) => i.name,
+    },
+    {
+      header: "Kind",
+      className: () => "space-x-1",
+      cell: (i) => (
+        <>
+          {i.primary ? <Badge>primary</Badge> : null}
+          {i.unique && !i.primary ? (
+            <Badge variant="secondary">unique</Badge>
+          ) : null}
+        </>
+      ),
+    },
+    {
+      header: "Type",
+      className: () => "font-mono text-[11px] text-muted-foreground",
+      cell: (i) => i.type,
+    },
+    {
+      header: "Columns",
+      className: () => "font-mono text-[11px] text-muted-foreground break-all",
+      cell: (i) => i.columns.join(", "),
+    },
+    {
+      header: null,
+      headClassName: "w-px",
+      className: () => "whitespace-nowrap",
+      cell: (i) => (
+        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <Button
+            size="icon"
+            variant="ghost"
+            className="size-7 text-destructive hover:text-destructive"
+            disabled={i.primary}
+            title={
+              i.primary
+                ? "Primary key index can't be dropped here"
+                : "Drop index"
+            }
+            onClick={() => setDropIdxTarget(i.name)}
+          >
+            <Trash2 className="size-3.5" />
+          </Button>
+        </div>
+      ),
+    },
+  ];
+
   return (
     <WorkspacePage
       title={<span className="font-mono">{table}</span>}
@@ -431,47 +517,13 @@ export function TableDetailClient({ connectionId, db, table }: Props) {
         </TabsList>
 
         <TabsContent value="data" className="pt-4 space-y-3">
-          <div className="flex flex-wrap items-center gap-2 justify-between sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/75 -mx-1 px-1 py-1 rounded-md">
-            <div className="flex items-center gap-2 min-w-0">
-              <div className="relative">
-                <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none" />
-                <Input
-                  value={filter}
-                  onChange={(e) => setFilter(e.target.value)}
-                  placeholder="Filter rows on this page…"
-                  className="h-8 w-[260px] pl-7 text-xs font-mono"
-                  spellCheck={false}
-                />
-              </div>
-              <div className="inline-flex rounded-md border border-border/60 overflow-hidden">
-                <button
-                  type="button"
-                  onClick={() => setDensity("compact")}
-                  title="Compact rows"
-                  className={cn(
-                    "size-8 grid place-items-center transition-colors",
-                    density === "compact"
-                      ? "bg-foreground/10 text-foreground"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  <Rows4 className="size-3.5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDensity("normal")}
-                  title="Normal rows"
-                  className={cn(
-                    "size-8 grid place-items-center transition-colors border-l border-border/60",
-                    density === "normal"
-                      ? "bg-foreground/10 text-foreground"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  <Rows3 className="size-3.5" />
-                </button>
-              </div>
-              <p className="text-[11px] text-muted-foreground font-mono whitespace-nowrap">
+          <GridToolbar
+            filter={filter}
+            onFilterChange={setFilter}
+            density={density}
+            onDensityChange={setDensity}
+            status={
+              <>
                 {pageData
                   ? `${pageData.totalRows.toLocaleString()} rows`
                   : "…"}
@@ -479,43 +531,42 @@ export function TableDetailClient({ connectionId, db, table }: Props) {
                   ? ` · ${pageOffset + 1}–${pageOffset + pageData.rows.length}`
                   : ""}
                 {filter.trim()
-                  ? ` · ${filteredRows.length} match${filteredRows.length === 1 ? "" : "es"}`
+                  ? ` · ${filteredGridRows.length} match${filteredGridRows.length === 1 ? "" : "es"}`
                   : ""}
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <DropdownMenu>
-                <DropdownMenuTrigger
-                  render={
-                    <Button size="sm" variant="outline" disabled={!pageData}>
-                      <Download className="size-3.5" />
-                      Export
-                    </Button>
-                  }
-                />
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => exportRows("csv")}>
-                    Export page as CSV
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => exportRows("json")}>
-                    Export page as JSON
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-              <Button
-                size="sm"
-                onClick={() => setInsertOpen(true)}
-                disabled={!columns}
-              >
-                <Plus className="size-3.5" />
-                Insert row
-              </Button>
-              <RefreshButton
-                onClick={() => loadData(pageOffset)}
-                loading={loadingData}
+              </>
+            }
+          >
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button size="sm" variant="outline" disabled={!pageData}>
+                    <Download className="size-3.5" />
+                    Export
+                  </Button>
+                }
               />
-            </div>
-          </div>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => exportRows("csv")}>
+                  Export page as CSV
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => exportRows("json")}>
+                  Export page as JSON
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Button
+              size="sm"
+              onClick={() => setInsertOpen(true)}
+              disabled={!columns}
+            >
+              <Plus className="size-3.5" />
+              Insert row
+            </Button>
+            <RefreshButton
+              onClick={() => loadData(pageOffset)}
+              loading={loadingData}
+            />
+          </GridToolbar>
           {errors.data ? (
             <ErrorState
               title="Could not load data"
@@ -535,125 +586,42 @@ export function TableDetailClient({ connectionId, db, table }: Props) {
                   className="px-3 py-2 mb-3"
                 />
               ) : null}
-              <div className="rounded-lg border border-border/60 overflow-auto">
-                <table className="w-full text-xs font-mono border-collapse">
-                  <thead className="bg-muted/60 sticky top-0 z-[1]">
-                    <tr>
-                      {pageData.columns.map((name) => {
-                        const col = columns?.find((c) => c.name === name);
-                        const isPk = !!col?.isPrimaryKey;
-                        const sorted = sort?.column === name ? sort.dir : null;
-                        return (
-                          <th
-                            key={name}
-                            className={cn(
-                              "text-left font-semibold border-b border-border/60 whitespace-nowrap cursor-pointer select-none hover:bg-foreground/[0.04]",
-                              headPad
-                            )}
-                            onClick={() => toggleSort(name)}
-                            title="Click to sort"
-                          >
-                            <div className="flex items-center gap-1.5">
-                              {isPk ? (
-                                <span
-                                  className="size-1.5 rounded-full bg-brand"
-                                  title="Primary key"
-                                  aria-hidden
-                                />
-                              ) : null}
-                              <span className="text-foreground">{name}</span>
-                              {sorted === "asc" ? (
-                                <ArrowUp className="size-3 text-brand" />
-                              ) : sorted === "desc" ? (
-                                <ArrowDown className="size-3 text-brand" />
-                              ) : null}
-                            </div>
-                            <div className="text-[10px] font-normal text-muted-foreground">
-                              {col?.columnType ?? ""}
-                              {col && !col.nullable ? " · NOT NULL" : ""}
-                            </div>
-                          </th>
-                        );
-                      })}
-                      <th className="w-px border-b border-border/60" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredRows.map((row, i) => (
-                      <tr
-                        key={i}
-                        className="group border-b border-border/30 hover:bg-foreground/[0.025]"
-                      >
-                        {pageData.columns.map((col) => {
-                          const cell = row[col];
-                          return (
-                            <td
-                              key={col}
-                              className={cn(
-                                "max-w-[40ch] truncate align-top",
-                                cellPad
-                              )}
-                              title={cell == null ? "null" : String(cell)}
-                            >
-                              {cell === null ? (
-                                <span className="text-muted-foreground/50 italic">
-                                  null
-                                </span>
-                              ) : typeof cell === "object" ? (
-                                <span className="text-brand">
-                                  {JSON.stringify(cell)}
-                                </span>
-                              ) : typeof cell === "boolean" ? (
-                                <span className="text-brand">
-                                  {cell ? "true" : "false"}
-                                </span>
-                              ) : (
-                                String(cell)
-                              )}
-                            </td>
-                          );
-                        })}
-                        <td className="px-2 py-1 align-top whitespace-nowrap">
-                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="size-6"
-                              disabled={!canMutateRows}
-                              title={canMutateRows ? "Edit row" : noPkReason}
-                              onClick={() => setEditTarget(row)}
-                            >
-                              <Pencil className="size-3" />
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="size-6 text-destructive hover:text-destructive"
-                              disabled={!canMutateRows}
-                              title={canMutateRows ? "Delete row" : noPkReason}
-                              onClick={() => setDeleteTarget(row)}
-                            >
-                              <Trash2 className="size-3" />
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                    {filteredRows.length === 0 ? (
-                      <tr>
-                        <td
-                          colSpan={(pageData.columns.length || 1) + 1}
-                          className="px-3 py-6 text-center text-muted-foreground"
-                        >
-                          {pageData.rows.length === 0
-                            ? "No rows."
-                            : `No rows match “${filter}”.`}
-                        </td>
-                      </tr>
-                    ) : null}
-                  </tbody>
-                </table>
-              </div>
+              <DataGrid
+                columns={gridColumns}
+                rows={filteredGridRows}
+                density={density}
+                sort={sort}
+                onToggleSort={toggleSort}
+                rowActions={(_row, i) => (
+                  <>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="size-6"
+                      disabled={!canMutateRows}
+                      title={canMutateRows ? "Edit row" : noPkReason}
+                      onClick={() => setEditTarget(filteredObjects[i])}
+                    >
+                      <Pencil className="size-3" />
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="size-6 text-destructive hover:text-destructive"
+                      disabled={!canMutateRows}
+                      title={canMutateRows ? "Delete row" : noPkReason}
+                      onClick={() => setDeleteTarget(filteredObjects[i])}
+                    >
+                      <Trash2 className="size-3" />
+                    </Button>
+                  </>
+                )}
+                empty={
+                  pageData.rows.length === 0
+                    ? "No rows."
+                    : `No rows match “${filter}”.`
+                }
+              />
             </>
           ) : (
             <div className="space-y-2">
@@ -692,7 +660,7 @@ export function TableDetailClient({ connectionId, db, table }: Props) {
               }}
             />
           ) : columns ? (
-            <StructurePanel columns={columns} />
+            <StructurePanel columns={sqlColumns} />
           ) : (
             <Skeleton className="h-32 w-full" />
           )}
@@ -725,62 +693,12 @@ export function TableDetailClient({ connectionId, db, table }: Props) {
               }}
             />
           ) : indexes ? (
-            indexes.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No indexes.</p>
-            ) : (
-              <div className="rounded-lg border border-border/60 overflow-hidden">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Kind</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Columns</TableHead>
-                      <TableHead className="w-px" />
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {indexes.map((i) => (
-                      <TableRow key={i.name} className="group">
-                        <TableCell className="font-mono text-xs">
-                          {i.name}
-                        </TableCell>
-                        <TableCell className="space-x-1">
-                          {i.primary ? <Badge>primary</Badge> : null}
-                          {i.unique && !i.primary ? (
-                            <Badge variant="secondary">unique</Badge>
-                          ) : null}
-                        </TableCell>
-                        <TableCell className="font-mono text-[11px] text-muted-foreground">
-                          {i.type}
-                        </TableCell>
-                        <TableCell className="font-mono text-[11px] text-muted-foreground break-all">
-                          {i.columns.join(", ")}
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap">
-                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="size-7 text-destructive hover:text-destructive"
-                              disabled={i.primary}
-                              title={
-                                i.primary
-                                  ? "Primary key index can't be dropped here"
-                                  : "Drop index"
-                              }
-                              onClick={() => setDropIdxTarget(i.name)}
-                            >
-                              <Trash2 className="size-3.5" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )
+            <MetaTable
+              items={indexes}
+              columns={indexColumns}
+              rowKey={(i) => i.name}
+              empty="No indexes."
+            />
           ) : (
             <Skeleton className="h-32 w-full" />
           )}
@@ -799,38 +717,7 @@ export function TableDetailClient({ connectionId, db, table }: Props) {
           ) : meta === null ? (
             <Skeleton className="h-40 w-full" />
           ) : (
-            <div className="rounded-lg border border-border/60 bg-muted/30 relative">
-              <div className="flex items-center justify-between border-b border-border/40 px-3 py-1.5">
-                <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
-                  SHOW CREATE TABLE
-                </span>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-7"
-                  onClick={async () => {
-                    if (!meta?.ddl) return;
-                    try {
-                      await navigator.clipboard.writeText(meta.ddl);
-                      setDdlCopied(true);
-                      setTimeout(() => setDdlCopied(false), 1500);
-                    } catch {
-                      toast.error("Could not copy");
-                    }
-                  }}
-                >
-                  {ddlCopied ? (
-                    <Check className="size-3.5" />
-                  ) : (
-                    <Copy className="size-3.5" />
-                  )}
-                  {ddlCopied ? "Copied" : "Copy"}
-                </Button>
-              </div>
-              <pre className="p-4 text-[12px] font-mono leading-[1.55] whitespace-pre overflow-x-auto max-h-[60vh] overflow-y-auto">
-                {meta.ddl}
-              </pre>
-            </div>
+            <DdlPanel label="SHOW CREATE TABLE" ddl={meta.ddl} />
           )}
         </TabsContent>
       </Tabs>
@@ -842,10 +729,14 @@ export function TableDetailClient({ connectionId, db, table }: Props) {
             onOpenChange={setInsertOpen}
             mode="insert"
             base={base}
-            db={db}
-            table={table}
-            columns={columns}
-            primaryKey={primaryKey}
+            title="Insert row"
+            description={
+              <span className="font-mono text-foreground/80">
+                {db}.{table}
+              </span>
+            }
+            columns={sqlColumns}
+            dialect={mysqlRowDialect}
             onSuccess={() => loadData(pageOffset)}
           />
           <RowFormDialog
@@ -855,11 +746,15 @@ export function TableDetailClient({ connectionId, db, table }: Props) {
             }}
             mode="edit"
             base={base}
-            db={db}
-            table={table}
-            columns={columns}
-            primaryKey={primaryKey}
+            title="Edit row"
+            description={
+              <span className="font-mono text-foreground/80">
+                {db}.{table}
+              </span>
+            }
+            columns={sqlColumns}
             initialRow={editTarget ?? undefined}
+            dialect={mysqlRowDialect}
             onSuccess={() => loadData(pageOffset)}
           />
         </>
@@ -1016,260 +911,5 @@ export function TableDetailClient({ connectionId, db, table }: Props) {
         </AlertDialogContent>
       </AlertDialog>
     </WorkspacePage>
-  );
-}
-
-function StructurePanel({ columns }: { columns: ColumnInfo[] }) {
-  const [filter, setFilter] = useState("");
-  const [density, setDensity] = useState<"compact" | "normal">("compact");
-
-  const q = filter.trim().toLowerCase();
-  const visible = q
-    ? columns.filter(
-        (c) =>
-          c.name.toLowerCase().includes(q) ||
-          c.columnType.toLowerCase().includes(q) ||
-          (c.comment ?? "").toLowerCase().includes(q)
-      )
-    : columns;
-
-  const cellPad = density === "compact" ? "px-3 py-1" : "px-3 py-2";
-  const headPad = density === "compact" ? "px-3 py-1.5" : "px-3 py-2.5";
-
-  const pkCount = columns.filter((c) => c.isPrimaryKey).length;
-  const notNullCount = columns.filter((c) => !c.nullable).length;
-  const withDefault = columns.filter((c) => c.default !== null).length;
-
-  return (
-    <>
-      <div className="flex flex-wrap items-center gap-2 justify-between">
-        <div className="flex items-center gap-2 min-w-0">
-          <div className="relative">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none" />
-            <Input
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              placeholder="Filter by name, type, comment…"
-              className="h-8 w-[260px] pl-7 text-xs font-mono"
-              spellCheck={false}
-            />
-          </div>
-          <div className="inline-flex rounded-md border border-border/60 overflow-hidden">
-            <button
-              type="button"
-              onClick={() => setDensity("compact")}
-              title="Compact rows"
-              className={cn(
-                "size-8 grid place-items-center transition-colors",
-                density === "compact"
-                  ? "bg-foreground/10 text-foreground"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              <Rows4 className="size-3.5" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setDensity("normal")}
-              title="Normal rows"
-              className={cn(
-                "size-8 grid place-items-center transition-colors border-l border-border/60",
-                density === "normal"
-                  ? "bg-foreground/10 text-foreground"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              <Rows3 className="size-3.5" />
-            </button>
-          </div>
-          <p className="text-[11px] text-muted-foreground font-mono whitespace-nowrap">
-            {columns.length} columns · {pkCount} pk · {notNullCount} not null ·{" "}
-            {withDefault} with default
-            {q
-              ? ` · ${visible.length} match${visible.length === 1 ? "" : "es"}`
-              : ""}
-          </p>
-        </div>
-      </div>
-
-      <div className="rounded-lg border border-border/60 overflow-auto">
-        <table className="w-full text-xs font-mono border-collapse">
-          <thead className="bg-muted/60 sticky top-0 z-[1]">
-            <tr>
-              <th
-                className={cn(
-                  "text-right font-semibold border-b border-border/60 whitespace-nowrap w-10 text-muted-foreground",
-                  headPad
-                )}
-              >
-                #
-              </th>
-              <th
-                className={cn(
-                  "text-left font-semibold border-b border-border/60 whitespace-nowrap",
-                  headPad
-                )}
-              >
-                Name
-              </th>
-              <th
-                className={cn(
-                  "text-left font-semibold border-b border-border/60 whitespace-nowrap",
-                  headPad
-                )}
-              >
-                Type
-              </th>
-              <th
-                className={cn(
-                  "text-left font-semibold border-b border-border/60 whitespace-nowrap",
-                  headPad
-                )}
-              >
-                Constraints
-              </th>
-              <th
-                className={cn(
-                  "text-left font-semibold border-b border-border/60 whitespace-nowrap",
-                  headPad
-                )}
-              >
-                Default
-              </th>
-              <th
-                className={cn(
-                  "text-left font-semibold border-b border-border/60 whitespace-nowrap",
-                  headPad
-                )}
-              >
-                Extra
-              </th>
-              <th
-                className={cn(
-                  "text-left font-semibold border-b border-border/60 whitespace-nowrap",
-                  headPad
-                )}
-              >
-                Comment
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {visible.map((c) => (
-              <tr
-                key={c.name}
-                className="border-b border-border/30 hover:bg-foreground/[0.025]"
-              >
-                <td
-                  className={cn(
-                    "text-right text-muted-foreground tabular-nums align-top",
-                    cellPad
-                  )}
-                >
-                  {c.ordinal}
-                </td>
-                <td className={cn("align-top", cellPad)}>
-                  <div className="flex items-center gap-1.5">
-                    {c.isPrimaryKey ? (
-                      <span
-                        className="size-1.5 rounded-full bg-brand shrink-0"
-                        aria-label="primary key"
-                        title="primary key"
-                      />
-                    ) : (
-                      <span className="size-1.5 shrink-0" aria-hidden />
-                    )}
-                    <span className="text-foreground">{c.name}</span>
-                  </div>
-                </td>
-                <td
-                  className={cn(
-                    "text-foreground/90 align-top whitespace-nowrap",
-                    cellPad
-                  )}
-                >
-                  {c.columnType}
-                </td>
-                <td className={cn("align-top", cellPad)}>
-                  <div className="flex flex-wrap items-center gap-1">
-                    {c.isPrimaryKey ? <Chip tone="brand">pri</Chip> : null}
-                    {!c.nullable ? <Chip tone="muted">not null</Chip> : null}
-                    {c.nullable && !c.isPrimaryKey ? (
-                      <span className="text-muted-foreground/50 italic">—</span>
-                    ) : null}
-                  </div>
-                </td>
-                <td
-                  className={cn(
-                    "text-muted-foreground align-top max-w-[28ch] truncate",
-                    cellPad
-                  )}
-                  title={c.default ?? undefined}
-                >
-                  {c.default ?? (
-                    <span className="text-muted-foreground/50 italic">—</span>
-                  )}
-                </td>
-                <td
-                  className={cn(
-                    "text-muted-foreground align-top whitespace-nowrap",
-                    cellPad
-                  )}
-                >
-                  {c.extra ? (
-                    c.extra
-                  ) : (
-                    <span className="text-muted-foreground/40 italic">—</span>
-                  )}
-                </td>
-                <td
-                  className={cn(
-                    "text-muted-foreground align-top max-w-[40ch] truncate",
-                    cellPad
-                  )}
-                  title={c.comment ?? undefined}
-                >
-                  {c.comment ? (
-                    c.comment
-                  ) : (
-                    <span className="text-muted-foreground/40 italic">—</span>
-                  )}
-                </td>
-              </tr>
-            ))}
-            {visible.length === 0 ? (
-              <tr>
-                <td
-                  colSpan={7}
-                  className="px-3 py-6 text-center text-muted-foreground"
-                >
-                  No columns match “{filter}”.
-                </td>
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
-      </div>
-    </>
-  );
-}
-
-function Chip({
-  children,
-  tone,
-}: {
-  children: React.ReactNode;
-  tone: "brand" | "muted";
-}) {
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center px-1.5 py-px rounded border text-[10px] uppercase tracking-wider whitespace-nowrap",
-        tone === "brand" && "bg-brand/15 text-brand border-brand/40",
-        tone === "muted" && "bg-foreground/5 text-foreground/80 border-border"
-      )}
-    >
-      {children}
-    </span>
   );
 }

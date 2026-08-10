@@ -16,7 +16,7 @@ Copied verbatim from `docs/superpowers/specs/2026-08-08-sql-workspace-refactor-d
 - **The Phase 1 safety net must keep passing unchanged through L1 and L2.** The six characterization suites are:
   `src/app/{postgres,mysql,sqlserver}/.../table-detail-client.dom.test.tsx` and
   `src/app/{postgres,mysql,sqlserver}/.../query-editor-client.dom.test.tsx`.
-  L1 and L2 may **not** edit assertions in those files. Three deliberate exceptions are spelled out, each in its own task: Task 3 (removing the MySQL `console.error` allowance once the defect it tolerates is fixed), Task 12 (adding SQL Server row-action tests for a capability that did not exist), and Task 13 (adding MySQL constraint/FK tab tests). No other task may touch them.
+  L1 and L2 may **not** edit assertions in those files. Four deliberate exceptions are spelled out, each in its own task: Task 3 (removing the MySQL `console.error` allowance once the defect it tolerates is fixed), **Task 6** (narrowing SQL Server's loose `/CREATE TABLE/` DDL matcher to its fixture's actual DDL text — authorised 2026-08-09; Postgres and MySQL already carry this exact narrowing, MySQL with a comment naming the collision, and the shared `DdlPanel`'s header label makes the loose form resolve to two elements; the assertion gets *stronger*, since it stops passing on a substring a header also satisfies), Task 12 (adding SQL Server row-action tests for a capability that did not exist), and Task 13 (adding MySQL constraint/FK tab tests). No other task may touch them.
 - **Client components import `@/techs/meta-registry`, never `@/techs/registry`** and never a `<tech>/index.ts` — that pulls Node-only drivers into the client bundle and breaks the build.
 - **base-ui, not Radix.** No `asChild`. Use `render={<Comp/>}` on the primitive. A `Button` whose `render` is not a native `<button>` **must** pass `nativeButton={false}` or base-ui logs a dev-mode `console.error`.
 - **Every new API route file starts with `export const runtime = "nodejs";`** and wraps thrown errors with `formatError(err)` from `src/lib/errors.ts`.
@@ -24,6 +24,18 @@ Copied verbatim from `docs/superpowers/specs/2026-08-08-sql-workspace-refactor-d
 - **New code imports the specific driver module** (`@/lib/connections/postgres/catalog`), not the barrel.
 - **Do not hand-edit `next.config.ts`** — `serverExternalPackages` is generated from each tech module's `serverPackages`.
 - **No new npm dependencies.** Every primitive in this plan is built from what is already in `package.json`.
+
+- **PK BADGE COPY — ruling of 2026-08-09.** Sharing `StructurePanel` (Task 6) changed
+  MySQL's Structure-tab primary-key badge from `pri` (MySQL's own `SHOW COLUMNS`
+  `Key` terminology) to `pk`, because the shared panel was lifted from Postgres and
+  the label is a literal in the component rather than a field on `SqlColumn`. No test
+  in the repo guards this text — MySQL's characterization suite passes either way, so
+  it shipped as a silent side effect of the extraction. **Ruled: standardise on `pk`
+  across all three SQL workspaces.** This is now a deliberate convergence decision,
+  not an accident: one label everywhere, and no per-caller label override widening a
+  primitive the L2 shell is about to build on. Recorded here because the branch's
+  binding constraints forbid silent user-visible copy changes — the change stands, but
+  it stands on a decision. Add a test so it cannot drift again unnoticed.
 
 - **RETRY WIRING — ruling of 2026-08-09, supersedes Steps 3(d)/3(e) as originally
   written in Tasks 2, 3 and 4.** The original instruction paired "add the whole
