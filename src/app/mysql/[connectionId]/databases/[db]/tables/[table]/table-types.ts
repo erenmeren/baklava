@@ -41,3 +41,26 @@ export interface RowsPage {
   totalRows: number;
   primaryKey: string[];
 }
+
+export interface MysqlConstraintRow {
+  name: string;
+  type: string;
+  definition: string;
+}
+
+export interface MysqlForeignKeyRow {
+  name: string;
+  columns: string[];
+  refSchema: string;
+  refTable: string;
+  refColumns: string[];
+  onUpdate: string;
+  onDelete: string;
+}
+
+/** The constraints endpoint's response — feeds both the Constraints and the
+ *  Foreign keys tab, which is why they share one source in the descriptor. */
+export interface ConstraintsPayload {
+  constraints: MysqlConstraintRow[];
+  foreignKeys: MysqlForeignKeyRow[];
+}

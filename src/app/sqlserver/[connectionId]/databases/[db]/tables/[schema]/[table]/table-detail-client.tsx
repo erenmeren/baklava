@@ -115,8 +115,17 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
       readOnlyReason: "This table has no primary key",
       paths: { base: (c) => c.base, rows: (c) => `${c.base}/rows` },
       load: {
-        strategy: "single",
-        fetchAll: (c, signal) => getJson(c.base, signal),
+        // One detail request feeds all five schema tabs — they share its
+        // payload, its error and its Retry.
+        sources: { detail: (c, signal) => getJson(c.base, signal) },
+        tabSource: {
+          structure: "detail",
+          indexes: "detail",
+          constraints: "detail",
+          foreign_keys: "detail",
+          ddl: "detail",
+        },
+        eager: ["detail"],
       },
       data: {
         schemaTab: "structure",

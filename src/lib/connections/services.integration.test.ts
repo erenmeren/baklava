@@ -161,3 +161,49 @@ describe("sqlserver", async () => {
     expect(result).toBeTruthy();
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MySQL — Task 13's constraint / foreign-key introspection against the
+// compose service and `seed/mysql.sh`'s schema. The seed creates
+// `order_items(order_id, product_id)` with a composite-ordered FK to
+// `orders(id)`, which is the only place the ordinal-sorting branch of
+// groupForeignKeyRows is exercised against a real server.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("mysql", async () => {
+  const up = await reachable("localhost", 3306);
+  beforeAll(() => {
+    if (!up) console.warn("[skip] mysql not reachable on localhost:3306");
+  });
+
+  const cfg = {
+    host: "localhost",
+    port: 3306,
+    database: "demo",
+    user: process.env.BAKLAVA_MYSQL_USER ?? "root",
+    password: process.env.BAKLAVA_MYSQL_PW ?? PW,
+    ssl: false,
+  };
+
+  it.skipIf(!up)("listForeignKeys returns the seeded key with its columns in order", async () => {
+    const { listForeignKeys } = await import("./mysql-constraints");
+    const fks = await listForeignKeys(cfg, "demo", "order_items");
+    const toOrders = fks.find((f) => f.refTable === "orders");
+    expect(toOrders).toBeTruthy();
+    expect(toOrders!.columns).toEqual(["order_id"]);
+    expect(toOrders!.refColumns).toEqual(["id"]);
+    expect(toOrders!.refSchema).toBe("demo");
+  });
+
+  it.skipIf(!up)("listConstraints includes the primary key", async () => {
+    const { listConstraints } = await import("./mysql-constraints");
+    const cs = await listConstraints(cfg, "demo", "orders");
+    expect(cs.some((c) => c.type === "PRIMARY KEY")).toBe(true);
+  });
+
+  it.skipIf(!up)("rejects a hostile database name before connecting", async () => {
+    const { listConstraints } = await import("./mysql-constraints");
+    await expect(
+      listConstraints(cfg, "demo`; DROP DATABASE demo; --", "orders"),
+    ).rejects.toThrow(/database name/i);
+  });
+});
