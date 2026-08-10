@@ -1,82 +1,21 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { WorkspacePage } from "@/components/workspace/workspace-page";
-import { ErrorState } from "@/components/workspace/error-state";
 import { StructurePanel } from "@/components/workspace/sql/structure-panel";
 import { DdlPanel } from "@/components/workspace/sql/ddl-panel";
-import { MetaTable, type MetaColumn } from "@/components/workspace/sql/meta-table";
 import type { SqlColumn } from "@/components/workspace/sql/types";
-import { DataGrid, type GridColumn } from "@/components/workspace/sql/data-grid";
-import { cn } from "@/lib/utils";
-import { Plus, Trash, Wand2 } from "lucide-react";
+import { SqlTableDetail } from "@/components/workspace/sql/sql-table-detail";
+import type { SqlTableDetailDescriptor } from "@/components/workspace/sql/descriptor";
+import { Trash, Wand2 } from "lucide-react";
 import { RowFormDialog } from "@/components/workspace/sql/row-form-dialog";
 import { sqlserverRowDialect } from "./row-dialect";
 import { ModifyTableDialog } from "../../../../../modify-table-dialog";
 import { DropConfirm } from "../../../../../drop-confirm";
-import { DataPagination } from "@/components/sql/pagination";
-
-interface Column {
-  name: string;
-  dataType: string;
-  nullable: boolean;
-  isIdentity: boolean;
-  identitySeed: string | null;
-  identityIncrement: string | null;
-  isComputed: boolean;
-  computedDefinition: string | null;
-  isPrimaryKey: boolean;
-  defaultDefinition: string | null;
-  maxLength: number | null;
-}
-interface Index {
-  name: string;
-  typeDesc: string;
-  isPrimaryKey: boolean;
-  isUnique: boolean;
-  keyColumns: string[];
-  includedColumns: string[];
-  sizeBytes: number;
-  userSeeks: number;
-  userScans: number;
-  userLookups: number;
-  userUpdates: number;
-  unused: boolean;
-}
-interface ConstraintRow {
-  name: string;
-  type: string;
-  definition: string;
-}
-interface ForeignKeyRow {
-  name: string;
-  columns: string[];
-  refSchema: string;
-  refTable: string;
-  refColumns: string[];
-  onUpdate: string;
-  onDelete: string;
-}
-interface Detail {
-  schema: string;
-  table: string;
-  isHeap: boolean;
-  rowCount: number;
-  columns: Column[];
-  indexes: Index[];
-  constraints: ConstraintRow[];
-  foreignKeys: ForeignKeyRow[];
-}
-interface TableData {
-  fields: string[];
-  rows: unknown[][];
-  total: number;
-}
+import { ConstraintsPanel, ForeignKeysPanel, IndexesPanel } from "./meta-columns";
+import { buildClientDdl, type Column, type Detail } from "./table-types";
 
 interface Props {
   connectionId: string;
@@ -85,23 +24,62 @@ interface Props {
   table: string;
 }
 
-function fmtBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+interface Ctx {
+  base: string;
+}
+
+const ROSE_INSERT =
+  "bg-rose-600 text-white hover:bg-rose-600/90 focus-visible:ring-rose-500/40";
+
+async function getJson(url: string, signal: AbortSignal): Promise<Record<string, unknown>> {
+  const res = await fetch(url, { cache: "no-store", signal });
+  const d = await res.json();
+  if (!res.ok) throw new Error((d.error as string) || `Request failed (${res.status})`);
+  return d;
+}
+
+/**
+ * The Structure tab's column model. `default` folds in computed-column
+ * definitions and `extra` carries the display "IDENTITY(seed,increment)" —
+ * both different from `rowColumns` below, which RowFormDialog reads.
+ */
+function toSqlColumns(columns: Column[]): SqlColumn[] {
+  // SqlServerColumn carries no ordinal field, so position comes from the array
+  // index: getSqlServerTableDetail returns columns in ordinal order, which is
+  // the only ordering the Structure tab ever showed.
+  return columns.map((c, i) => ({
+    name: c.name,
+    position: i + 1,
+    dataType: c.dataType,
+    nullable: c.nullable,
+    default: c.isComputed ? c.computedDefinition : c.defaultDefinition,
+    isPrimaryKey: c.isPrimaryKey,
+    extra: c.isIdentity
+      ? `IDENTITY(${c.identitySeed},${c.identityIncrement})`
+      : c.isComputed
+        ? "computed"
+        : null,
+  }));
+}
+
+/** RowFormDialog's column model — raw defaults, and the dialect's own
+ *  "identity" marker in `extra` (see row-dialect.tsx). */
+function toRowColumns(columns: Column[]): SqlColumn[] {
+  return columns.map((c, i) => ({
+    name: c.name,
+    position: i + 1,
+    dataType: c.dataType,
+    nullable: c.nullable,
+    default: c.defaultDefinition,
+    isPrimaryKey: c.isPrimaryKey,
+    extra: c.isIdentity ? "identity" : null,
+  }));
 }
 
 export function TableDetailClient({ connectionId, database, schema, table }: Props) {
   const base = `/api/sqlserver/${connectionId}/databases/${encodeURIComponent(database)}/tables/${encodeURIComponent(schema)}/${encodeURIComponent(table)}`;
-  const [tab, setTab] = useState("data");
-  const [detail, setDetail] = useState<Detail | null>(null);
-  const [data, setData] = useState<TableData | null>(null);
-  const [offset, setOffset] = useState(0);
-  const [pageSize, setPageSize] = useState(100);
-  const [loadingData, setLoadingData] = useState(false);
-  const [detailError, setDetailError] = useState<string | null>(null);
-  const [dataError, setDataError] = useState<string | null>(null);
+  const ctx = useMemo<Ctx>(() => ({ base }), [base]);
+
   const [insertOpen, setInsertOpen] = useState(false);
   const [modifyOpen, setModifyOpen] = useState(false);
   const [dropOpen, setDropOpen] = useState(false);
@@ -118,229 +96,102 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
     }
   }, [searchParams, router, pathname]);
 
-  // A SqlColumn[] built specifically for RowFormDialog — separate from
-  // `sqlColumns` below (used for StructurePanel), whose `default` folds in
-  // computed-column definitions and whose `extra` carries the
-  // "IDENTITY(seed,increment)" display string for a different purpose. This
-  // one's `extra` is the sqlserverRowDialect's own "identity" marker (see
-  // row-dialect.tsx) and its `default` is the raw column default only.
-  const rowColumns: SqlColumn[] = (detail?.columns ?? []).map((c, i) => ({
-    name: c.name,
-    position: i + 1,
-    dataType: c.dataType,
-    nullable: c.nullable,
-    default: c.defaultDefinition,
-    isPrimaryKey: c.isPrimaryKey,
-    extra: c.isIdentity ? "identity" : null,
-  }));
-
-  // SqlServerColumn carries no ordinal field, so position comes from the
-  // array index: getSqlServerTableDetail's catalog query returns columns in
-  // ordinal order, which is the only ordering the Structure tab ever showed.
-  const sqlColumns: SqlColumn[] = (detail?.columns ?? []).map((c, i) => ({
-    name: c.name,
-    position: i + 1,
-    dataType: c.dataType,
-    nullable: c.nullable,
-    default: c.isComputed ? c.computedDefinition : c.defaultDefinition,
-    isPrimaryKey: c.isPrimaryKey,
-    extra: c.isIdentity
-      ? `IDENTITY(${c.identitySeed},${c.identityIncrement})`
-      : c.isComputed
-        ? "computed"
-        : null,
-  }));
-
-  const gridColumns: GridColumn[] = (data?.fields ?? []).map((f) => {
-    const col = detail?.columns.find((c) => c.name === f);
+  const descriptor = useMemo<SqlTableDetailDescriptor<Ctx>>(() => {
+    const tableError = "Could not load table";
     return {
-      name: f,
-      hint: `${col?.dataType ?? ""}${col && !col.nullable ? " · NOT NULL" : ""}`,
-      isPrimaryKey: !!col?.isPrimaryKey,
-    };
-  });
-
-  const loadDetail = useCallback(async () => {
-    try {
-      const res = await fetch(base, { cache: "no-store" });
-      const d = await res.json();
-      if (!res.ok) throw new Error(d.error || `Request failed (${res.status})`);
-      setDetail(d as Detail);
-      setDetailError(null);
-    } catch (err) {
-      setDetailError(err instanceof Error ? err.message : String(err));
-      setDetail(null);
-    }
-  }, [base]);
-
-  const loadData = useCallback(
-    async (off: number, limit: number = pageSize) => {
-      setLoadingData(true);
-      try {
-        const res = await fetch(
-          `${base}/data?offset=${off}&limit=${limit}`,
-          { cache: "no-store" },
-        );
-        const d = await res.json();
-        if (!res.ok) throw new Error(d.error || `Request failed (${res.status})`);
-        setData(d as TableData);
-        setDataError(null);
-      } catch (err) {
-        setDataError(err instanceof Error ? err.message : String(err));
-        // Null the cached rows so Retry can re-satisfy the effect's guard.
-        // Without this, a failure that follows a success leaves `data`
-        // non-null, clearing the error alone never re-opens the guard, and
-        // Retry is a dead button. Postgres and MySQL both hit this.
-        setData(null);
-      } finally {
-        setLoadingData(false);
-      }
-    },
-    [base, pageSize],
-  );
-
-  // Both effects below are the SOLE callers of their loader on the retry
-  // path — onRetry only clears the error state, it never calls the loader
-  // itself. Clearing the error re-opens the guard (cache null + error
-  // null), and the effect fires again. An explicit call in onRetry would
-  // double-fire: clearing the error re-opens the guard *and* onRetry calls
-  // the loader, racing an uncancelled duplicate request.
-  useEffect(() => {
-    if (!detail && !detailError) void loadDetail();
-  }, [detail, detailError, loadDetail]);
-  useEffect(() => {
-    if (tab === "data" && !data && !dataError) void loadData(offset);
-  }, [tab, data, dataError, offset, loadData]);
-
-  const ddl = detail ? buildClientDdl(detail) : "";
-
-  const indexColumns: MetaColumn<Index>[] = [
-    {
-      header: "Name",
-      className: () => "font-mono text-xs",
-      cell: (i) => (
-        <span className="inline-flex items-center gap-1.5">
-          {i.name}
-          {i.isPrimaryKey ? <Badge>PK</Badge> : null}
-          {i.isUnique && !i.isPrimaryKey ? (
-            <Badge variant="secondary">unique</Badge>
-          ) : null}
-          {i.unused ? (
-            <span className="inline-flex items-center rounded border border-amber-500/30 bg-amber-500/10 px-1 py-px text-[9px] uppercase tracking-wider text-amber-600">
-              unused
-            </span>
-          ) : null}
-        </span>
-      ),
-    },
-    {
-      header: "Type",
-      className: () => "text-[11px] font-mono text-muted-foreground",
-      cell: (i) => i.typeDesc,
-    },
-    {
-      header: "Key columns",
-      className: () => "font-mono text-[11px]",
-      cell: (i) => (
-        <>
-          {i.keyColumns.join(", ")}
-          {i.includedColumns.length > 0 ? (
-            <span className="text-muted-foreground/60">
-              {" "}
-              INCLUDE ({i.includedColumns.join(", ")})
-            </span>
-          ) : null}
-        </>
-      ),
-    },
-    {
-      header: "Size",
-      align: "right",
-      className: () => "font-mono text-[11px] tabular-nums text-muted-foreground",
-      cell: (i) => fmtBytes(i.sizeBytes),
-    },
-    {
-      header: "Seeks/Scans",
-      align: "right",
-      className: (i) =>
-        cn(
-          "font-mono text-[11px] tabular-nums",
-          i.userSeeks + i.userScans === 0
-            ? "text-amber-600"
-            : "text-muted-foreground",
+      tech: "sqlserver",
+      tabs: ["data", "structure", "indexes", "constraints", "foreign_keys", "ddl"],
+      // Row edit and delete land in Task 12 — the driver and route exist.
+      capabilities: { insertRow: true, editRow: false, deleteRow: false },
+      paths: { base: (c) => c.base, rows: (c) => `${c.base}/rows` },
+      load: {
+        strategy: "single",
+        fetchAll: (c, signal) => getJson(c.base, signal),
+      },
+      data: {
+        schemaTab: "structure",
+        insertClassName: ROSE_INSERT,
+        gridClassName: "flex-1 min-h-0",
+        async fetch(c, { offset, limit }, signal) {
+          const d = (await getJson(
+            `${c.base}/data?offset=${offset}&limit=${limit}`,
+            signal,
+          )) as unknown as { fields: string[]; rows: unknown[][]; total: number };
+          return {
+            fields: d.fields.map((name) => ({ name })),
+            rows: d.rows,
+            total: d.total,
+          };
+        },
+        columns(page, all) {
+          const detail = all.structure as Detail | undefined;
+          return page.fields.map((f) => {
+            const col = detail?.columns.find((c) => c.name === f.name);
+            return {
+              name: f.name,
+              hint: `${col?.dataType ?? ""}${col && !col.nullable ? " · NOT NULL" : ""}`,
+              isPrimaryKey: !!col?.isPrimaryKey,
+            };
+          });
+        },
+      },
+      errorTitles: {
+        structure: tableError,
+        indexes: tableError,
+        constraints: tableError,
+        foreign_keys: tableError,
+        ddl: tableError,
+      },
+      contentClassName: { data: "flex-1 min-h-0 flex flex-col gap-2" },
+      // One tall block on every tab, as the hand-written version had.
+      skeleton: {
+        data: <Skeleton className="h-40 w-full" />,
+        structure: <Skeleton className="h-40 w-full" />,
+        indexes: <Skeleton className="h-40 w-full" />,
+        constraints: <Skeleton className="h-40 w-full" />,
+        foreign_keys: <Skeleton className="h-40 w-full" />,
+        ddl: <Skeleton className="h-40 w-full" />,
+      },
+      render: {
+        structure: ({ data }) => (
+          <StructurePanel columns={toSqlColumns((data as Detail).columns)} />
         ),
-      cell: (i) => (i.userSeeks + i.userScans + i.userLookups).toLocaleString(),
-    },
-  ];
-
-  const constraintColumns: MetaColumn<ConstraintRow>[] = [
-    {
-      header: "Name",
-      className: () => "font-mono text-xs",
-      cell: (c) => c.name,
-    },
-    {
-      header: "Type",
-      className: () => "text-xs",
-      cell: (c) => c.type,
-    },
-    {
-      header: "Definition",
-      className: () => "font-mono text-[11px] text-muted-foreground break-all",
-      cell: (c) => c.definition,
-    },
-  ];
-
-  const foreignKeyColumns: MetaColumn<ForeignKeyRow>[] = [
-    {
-      header: "Name",
-      className: () => "font-mono text-xs",
-      cell: (f) => f.name,
-    },
-    {
-      header: "Columns",
-      className: () => "font-mono text-[11px]",
-      cell: (f) => f.columns.join(", "),
-    },
-    {
-      header: "References",
-      className: () => "font-mono text-[11px]",
-      cell: (f) => (
-        <>
-          {f.refSchema}.{f.refTable} ({f.refColumns.join(", ")})
-        </>
-      ),
-    },
-    {
-      header: "On update / delete",
-      className: () => "text-[11px] text-muted-foreground",
-      cell: (f) => (
-        <>
-          {f.onUpdate} / {f.onDelete}
-        </>
-      ),
-    },
-  ];
+        indexes: ({ data }) => <IndexesPanel indexes={(data as Detail).indexes} />,
+        constraints: ({ data }) => (
+          <ConstraintsPanel constraints={(data as Detail).constraints} />
+        ),
+        foreign_keys: ({ data }) => (
+          <ForeignKeysPanel foreignKeys={(data as Detail).foreignKeys} />
+        ),
+        ddl: ({ data }) => (
+          <DdlPanel label="generated CREATE TABLE" ddl={buildClientDdl(data as Detail)} />
+        ),
+      },
+    };
+  }, []);
 
   return (
-    <WorkspacePage
+    <SqlTableDetail
+      descriptor={descriptor}
+      ctx={ctx}
       title={
         <span className="font-mono">
           {schema}.{table}
         </span>
       }
-      description={
-        detail
+      description={(ctl) => {
+        const detail = ctl.all.structure as Detail | undefined;
+        return detail
           ? `${detail.rowCount.toLocaleString()} rows · ${detail.columns.length} columns${detail.isHeap ? " · HEAP (no clustered index)" : ""}`
-          : `database ${database}`
-      }
-      actions={
+          : `database ${database}`;
+      }}
+      actions={(ctl) => (
         <>
           <Button
             size="sm"
             variant="outline"
             onClick={() => setModifyOpen(true)}
-            disabled={!detail}
+            disabled={ctl.all.structure === undefined}
             title="Add / drop / rename columns"
           >
             <Wand2 className="size-3.5" />
@@ -357,276 +208,63 @@ export function TableDetailClient({ connectionId, database, schema, table }: Pro
             Drop
           </Button>
         </>
-      }
+      )}
+      onInsertRow={() => setInsertOpen(true)}
     >
-      <Tabs value={tab} onValueChange={setTab} className="h-full flex flex-col">
-        <TabsList>
-          <TabsTrigger value="data">Data</TabsTrigger>
-          <TabsTrigger value="structure">Structure</TabsTrigger>
-          <TabsTrigger value="indexes">Indexes</TabsTrigger>
-          <TabsTrigger value="constraints">Constraints</TabsTrigger>
-          <TabsTrigger value="foreign_keys">Foreign keys</TabsTrigger>
-          <TabsTrigger value="ddl">DDL</TabsTrigger>
-        </TabsList>
-
-        {/* DATA */}
-        <TabsContent value="data" className="pt-4 flex-1 min-h-0 flex flex-col gap-2">
-          <div className="flex items-center justify-between">
-            <p className="text-xs text-muted-foreground">
-              {data
-                ? `${data.total.toLocaleString()} row${data.total === 1 ? "" : "s"}`
-                : "Loading…"}
-            </p>
-            <Button
-              size="sm"
-              onClick={() => setInsertOpen(true)}
-              disabled={!detail}
-              className={cn(
-                "bg-rose-600 text-white hover:bg-rose-600/90 focus-visible:ring-rose-500/40",
-              )}
-            >
-              <Plus className="size-3.5" />
-              Insert row
-            </Button>
-          </div>
-          {dataError ? (
-            <ErrorState
-              title="Could not load data"
-              message={dataError}
-              onRetry={() => setDataError(null)}
+      {(ctl) => {
+        const detail = ctl.all.structure as Detail | undefined;
+        if (!detail) return null;
+        return (
+          <>
+            <RowFormDialog
+              open={insertOpen}
+              onOpenChange={setInsertOpen}
+              mode="insert"
+              base={base}
+              title="Insert row"
+              description={
+                <span className="font-mono text-foreground/80">
+                  {schema}.{table}
+                </span>
+              }
+              columns={toRowColumns(detail.columns)}
+              dialect={sqlserverRowDialect}
+              onSuccess={() => {
+                // A fresh row lands on page 1 under the table's default
+                // ordering, so jump back there rather than reloading the
+                // page the user happened to be on.
+                ctl.reloadData(0);
+                ctl.refresh("structure");
+              }}
             />
-          ) : !data ? (
-            <Skeleton className="h-40 w-full" />
-          ) : (
-            <>
-              {detailError ? (
-                <ErrorState
-                  title="Could not load column metadata"
-                  message={detailError}
-                  onRetry={() => setDetailError(null)}
-                  className="px-3 py-2 shrink-0"
-                />
-              ) : null}
-              <DataGrid
-                columns={gridColumns}
-                rows={data.rows}
-                density="compact"
-                empty="No rows."
-                className="flex-1 min-h-0"
-              />
-              <DataPagination
-                offset={offset}
-                pageSize={pageSize}
-                total={data.total}
-                loading={loadingData}
-                onOffsetChange={(next) => {
-                  setOffset(next);
-                  void loadData(next);
-                }}
-                onPageSizeChange={(size) => {
-                  setPageSize(size);
-                  setOffset(0);
-                  void loadData(0, size);
-                }}
-              />
-            </>
-          )}
-        </TabsContent>
-
-        {/* STRUCTURE */}
-        <TabsContent value="structure" className="pt-4">
-          {detailError ? (
-            <ErrorState
-              title="Could not load table"
-              message={detailError}
-              onRetry={() => setDetailError(null)}
+            <ModifyTableDialog
+              open={modifyOpen}
+              onOpenChange={setModifyOpen}
+              connectionId={connectionId}
+              db={database}
+              schema={schema}
+              table={table}
+              columns={detail.columns}
+              onApplied={() => ctl.refresh("data", "structure")}
             />
-          ) : !detail ? (
-            <Skeleton className="h-40 w-full" />
-          ) : (
-            <StructurePanel columns={sqlColumns} />
-          )}
-        </TabsContent>
-
-        {/* INDEXES */}
-        <TabsContent value="indexes" className="pt-4">
-          {detailError ? (
-            <ErrorState
-              title="Could not load table"
-              message={detailError}
-              onRetry={() => setDetailError(null)}
+            <DropConfirm
+              open={dropOpen}
+              onOpenChange={setDropOpen}
+              connectionId={connectionId}
+              target={
+                dropOpen
+                  ? { kind: "object", database, schema, name: table, objectKind: "table" }
+                  : null
+              }
+              onDropped={() => {
+                router.push(
+                  `/sqlserver/${connectionId}/databases/${encodeURIComponent(database)}`,
+                );
+              }}
             />
-          ) : !detail ? (
-            <Skeleton className="h-40 w-full" />
-          ) : (
-            <MetaTable
-              items={detail.indexes}
-              columns={indexColumns}
-              rowKey={(i) => i.name}
-              rowClassName={(i) => (i.unused ? "bg-amber-500/5" : undefined)}
-              empty="No indexes."
-            />
-          )}
-        </TabsContent>
-
-        {/* CONSTRAINTS */}
-        <TabsContent value="constraints" className="pt-4">
-          {detailError ? (
-            <ErrorState
-              title="Could not load table"
-              message={detailError}
-              onRetry={() => setDetailError(null)}
-            />
-          ) : !detail ? (
-            <Skeleton className="h-40 w-full" />
-          ) : (
-            <MetaTable
-              items={detail.constraints}
-              columns={constraintColumns}
-              rowKey={(c) => c.name}
-              empty="No check/default constraints."
-            />
-          )}
-        </TabsContent>
-
-        {/* FOREIGN KEYS */}
-        <TabsContent value="foreign_keys" className="pt-4">
-          {detailError ? (
-            <ErrorState
-              title="Could not load table"
-              message={detailError}
-              onRetry={() => setDetailError(null)}
-            />
-          ) : !detail ? (
-            <Skeleton className="h-40 w-full" />
-          ) : (
-            <MetaTable
-              items={detail.foreignKeys}
-              columns={foreignKeyColumns}
-              rowKey={(f) => f.name}
-              empty="No foreign keys."
-            />
-          )}
-        </TabsContent>
-
-        {/* DDL */}
-        <TabsContent value="ddl" className="pt-4">
-          {detailError ? (
-            <ErrorState
-              title="Could not load table"
-              message={detailError}
-              onRetry={() => setDetailError(null)}
-            />
-          ) : !detail ? (
-            <Skeleton className="h-40 w-full" />
-          ) : (
-            <DdlPanel label="generated CREATE TABLE" ddl={ddl} />
-          )}
-        </TabsContent>
-      </Tabs>
-
-      {detail ? (
-        <>
-          <RowFormDialog
-            open={insertOpen}
-            onOpenChange={setInsertOpen}
-            mode="insert"
-            base={base}
-            title="Insert row"
-            description={
-              <span className="font-mono text-foreground/80">
-                {schema}.{table}
-              </span>
-            }
-            columns={rowColumns}
-            dialect={sqlserverRowDialect}
-            onSuccess={() => {
-              setOffset(0);
-              void loadData(0);
-              void loadDetail();
-            }}
-          />
-          <ModifyTableDialog
-            open={modifyOpen}
-            onOpenChange={setModifyOpen}
-            connectionId={connectionId}
-            db={database}
-            schema={schema}
-            table={table}
-            columns={detail.columns}
-            onApplied={() => {
-              setData(null);
-              void loadDetail();
-              void loadData(offset);
-            }}
-          />
-          <DropConfirm
-            open={dropOpen}
-            onOpenChange={setDropOpen}
-            connectionId={connectionId}
-            target={
-              dropOpen
-                ? {
-                    kind: "object",
-                    database,
-                    schema,
-                    name: table,
-                    objectKind: "table",
-                  }
-                : null
-            }
-            onDropped={() => {
-              router.push(
-                `/sqlserver/${connectionId}/databases/${encodeURIComponent(database)}`,
-              );
-            }}
-          />
-        </>
-      ) : null}
-    </WorkspacePage>
+          </>
+        );
+      }}
+    </SqlTableDetail>
   );
-}
-
-// Mirror of buildSqlServerTableDDL on the client so we don't round-trip for DDL.
-function buildClientDdl(d: Detail): string {
-  const colLines = d.columns.map((c) => {
-    const parts = [`  [${c.name}]`];
-    if (c.isComputed && c.computedDefinition) {
-      parts.push(`AS ${c.computedDefinition}`);
-    } else {
-      parts.push(c.dataType);
-      if (c.isIdentity) parts.push(`IDENTITY(${c.identitySeed ?? 1},${c.identityIncrement ?? 1})`);
-      parts.push(c.nullable ? "NULL" : "NOT NULL");
-      if (c.defaultDefinition) parts.push(`DEFAULT ${c.defaultDefinition}`);
-    }
-    return parts.join(" ");
-  });
-  const pk = d.columns.filter((c) => c.isPrimaryKey).map((c) => `[${c.name}]`);
-  const lines = [...colLines];
-  if (pk.length) lines.push(`  PRIMARY KEY (${pk.join(", ")})`);
-  const create = `CREATE TABLE [${d.schema}].[${d.table}] (\n${lines.join(",\n")}\n);`;
-  const idx = d.indexes
-    .filter((i) => !i.isPrimaryKey && i.name !== "(heap)" && i.keyColumns.length > 0)
-    .map((i) => {
-      const unique = i.isUnique ? "UNIQUE " : "";
-      const clustered =
-        i.typeDesc.includes("CLUSTERED") && !i.typeDesc.includes("NONCLUSTERED")
-          ? "CLUSTERED "
-          : "NONCLUSTERED ";
-      const incl = i.includedColumns.length
-        ? ` INCLUDE (${i.includedColumns.map((c) => `[${c}]`).join(", ")})`
-        : "";
-      return `CREATE ${unique}${clustered}INDEX [${i.name}] ON [${d.schema}].[${d.table}] (${i.keyColumns
-        .map((c) => `[${c}]`)
-        .join(", ")})${incl};`;
-    });
-  const fk = d.foreignKeys.map(
-    (f) =>
-      `ALTER TABLE [${d.schema}].[${d.table}] ADD CONSTRAINT [${f.name}] FOREIGN KEY (${f.columns
-        .map((c) => `[${c}]`)
-        .join(", ")}) REFERENCES [${f.refSchema}].[${f.refTable}] (${f.refColumns
-        .map((c) => `[${c}]`)
-        .join(", ")});`,
-  );
-  return [create, ...idx, ...fk].join("\n\n");
 }
