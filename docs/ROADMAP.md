@@ -55,7 +55,7 @@ Goal: one ops console covering twelve technologies — Docker, PostgreSQL, MySQL
 ## Stretch — other techs
 - Kafka: schema registry, ACLs, message search/filter, consumer-group offset reset.
 - New techs to add (one driver each, same workspace pattern): MQTT. Redis and MongoDB shipped — both are registered tech modules under `src/techs/` with full workspaces.
-- Command palette coverage is 10 of 12: `src/techs/kubernetes/meta.ts` and `src/techs/redis/meta.ts` declare no `commandObjects`, so their objects aren't reachable from ⌘K (verify with `grep -L commandObjects src/techs/*/meta.ts`).
+- Command palette coverage is 11 of 12: `src/techs/redis/meta.ts` declares no `commandObjects`, so Redis keys aren't reachable from ⌘K (verify with `grep -L commandObjects src/techs/*/meta.ts`). Kubernetes objects are reachable — its tables have no per-object route, but they honour `?ns=` + `?select=`, which is what its provider links to.
 
 ## SQL workspace refactor
 

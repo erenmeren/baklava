@@ -34,6 +34,8 @@ const SECTIONS: { title: string; rows: { k: string; desc: string }[] }[] = [
       { k: "y", desc: "view YAML" },
       { k: "e", desc: "edit in place" },
       { k: "D", desc: "delete selected (capital)" },
+      { k: "S", desc: "scale deployment (capital)" },
+      { k: "R", desc: "rollout restart deployment (capital)" },
     ],
   },
   {
