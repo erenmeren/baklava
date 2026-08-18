@@ -7,6 +7,8 @@ import type {
   KubeConfig,
   CoreV1Api,
   AppsV1Api,
+  BatchV1Api,
+  NetworkingV1Api,
   VersionApi,
   KubernetesObjectApi,
   V1Pod,
@@ -23,7 +25,24 @@ import type { KubernetesConfig } from "./types";
 import { DriverNotInstalledError } from "@/techs/contract";
 import { withReplicas, withRestartedAt } from "@/lib/kubernetes/deployment-ops";
 import { mapEvent, mapNode } from "@/lib/kubernetes/mappers";
-import type { EventRow, NodeRow } from "@/lib/kubernetes/row-types";
+import {
+  mapCronJob,
+  mapDaemonSet,
+  mapIngress,
+  mapJob,
+  mapPvc,
+  mapStatefulSet,
+} from "@/lib/kubernetes/workload-mappers";
+import type {
+  CronJobRow,
+  DaemonSetRow,
+  EventRow,
+  IngressRow,
+  JobRow,
+  NodeRow,
+  PvcRow,
+  StatefulSetRow,
+} from "@/lib/kubernetes/row-types";
 
 let _k8sMod: typeof import("@kubernetes/client-node") | null = null;
 async function getK8s(): Promise<typeof import("@kubernetes/client-node")> {
@@ -48,6 +67,8 @@ interface ClientBundle {
   kc: KubeConfig;
   core: CoreV1Api;
   apps: AppsV1Api;
+  batch: BatchV1Api;
+  networking: NetworkingV1Api;
   version: VersionApi;
   objects: KubernetesObjectApi;
 }
@@ -100,13 +121,16 @@ async function bundleFor(connectionId: string, cfg: KubernetesConfig): Promise<C
   const cached = cache.get(connectionId);
   if (cached && cached.hash === hash) return cached;
 
-  const { CoreV1Api, AppsV1Api, VersionApi, KubernetesObjectApi } = await getK8s();
+  const { CoreV1Api, AppsV1Api, BatchV1Api, NetworkingV1Api, VersionApi, KubernetesObjectApi } =
+    await getK8s();
   const kc = await buildKubeConfig(cfg);
   const bundle: ClientBundle = {
     hash,
     kc,
     core: kc.makeApiClient(CoreV1Api),
     apps: kc.makeApiClient(AppsV1Api),
+    batch: kc.makeApiClient(BatchV1Api),
+    networking: kc.makeApiClient(NetworkingV1Api),
     version: kc.makeApiClient(VersionApi),
     objects: KubernetesObjectApi.makeApiClient(kc),
   };
@@ -498,6 +522,90 @@ export async function listNamespaces(
   return nsList.items.map((n) => mapNamespace(n, counts));
 }
 
+export async function listStatefulSets(
+  connectionId: string,
+  cfg: KubernetesConfig,
+  namespace?: string,
+): Promise<StatefulSetRow[]> {
+  const b = await bundleFor(connectionId, cfg);
+  const list =
+    namespace && namespace !== "*"
+      ? await b.apps.listNamespacedStatefulSet({ namespace })
+      : await b.apps.listStatefulSetForAllNamespaces();
+  const now = new Date();
+  return list.items.map((o) => mapStatefulSet(o, now));
+}
+
+export async function listDaemonSets(
+  connectionId: string,
+  cfg: KubernetesConfig,
+  namespace?: string,
+): Promise<DaemonSetRow[]> {
+  const b = await bundleFor(connectionId, cfg);
+  const list =
+    namespace && namespace !== "*"
+      ? await b.apps.listNamespacedDaemonSet({ namespace })
+      : await b.apps.listDaemonSetForAllNamespaces();
+  const now = new Date();
+  return list.items.map((o) => mapDaemonSet(o, now));
+}
+
+export async function listJobs(
+  connectionId: string,
+  cfg: KubernetesConfig,
+  namespace?: string,
+): Promise<JobRow[]> {
+  const b = await bundleFor(connectionId, cfg);
+  const list =
+    namespace && namespace !== "*"
+      ? await b.batch.listNamespacedJob({ namespace })
+      : await b.batch.listJobForAllNamespaces();
+  const now = new Date();
+  return list.items.map((o) => mapJob(o, now));
+}
+
+export async function listCronJobs(
+  connectionId: string,
+  cfg: KubernetesConfig,
+  namespace?: string,
+): Promise<CronJobRow[]> {
+  const b = await bundleFor(connectionId, cfg);
+  const list =
+    namespace && namespace !== "*"
+      ? await b.batch.listNamespacedCronJob({ namespace })
+      : await b.batch.listCronJobForAllNamespaces();
+  const now = new Date();
+  return list.items.map((o) => mapCronJob(o, now));
+}
+
+export async function listIngresses(
+  connectionId: string,
+  cfg: KubernetesConfig,
+  namespace?: string,
+): Promise<IngressRow[]> {
+  const b = await bundleFor(connectionId, cfg);
+  const list =
+    namespace && namespace !== "*"
+      ? await b.networking.listNamespacedIngress({ namespace })
+      : await b.networking.listIngressForAllNamespaces();
+  const now = new Date();
+  return list.items.map((o) => mapIngress(o, now));
+}
+
+export async function listPvcs(
+  connectionId: string,
+  cfg: KubernetesConfig,
+  namespace?: string,
+): Promise<PvcRow[]> {
+  const b = await bundleFor(connectionId, cfg);
+  const list =
+    namespace && namespace !== "*"
+      ? await b.core.listNamespacedPersistentVolumeClaim({ namespace })
+      : await b.core.listPersistentVolumeClaimForAllNamespaces();
+  const now = new Date();
+  return list.items.map((o) => mapPvc(o, now));
+}
+
 export async function listNodes(
   connectionId: string,
   cfg: KubernetesConfig,
@@ -832,6 +940,16 @@ const KIND_MAP: Record<
   secret: { apiVersion: "v1", kind: "Secret", namespaced: true },
   namespace: { apiVersion: "v1", kind: "Namespace", namespaced: false },
   node: { apiVersion: "v1", kind: "Node", namespaced: false },
+  statefulset: { apiVersion: "apps/v1", kind: "StatefulSet", namespaced: true },
+  daemonset: { apiVersion: "apps/v1", kind: "DaemonSet", namespaced: true },
+  job: { apiVersion: "batch/v1", kind: "Job", namespaced: true },
+  cronjob: { apiVersion: "batch/v1", kind: "CronJob", namespaced: true },
+  ingress: { apiVersion: "networking.k8s.io/v1", kind: "Ingress", namespaced: true },
+  persistentvolumeclaim: {
+    apiVersion: "v1",
+    kind: "PersistentVolumeClaim",
+    namespaced: true,
+  },
   event: { apiVersion: "v1", kind: "Event", namespaced: true },
 };
 

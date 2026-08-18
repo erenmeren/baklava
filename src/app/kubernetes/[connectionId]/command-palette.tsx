@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
+import { K8S_RESOURCES } from "@/lib/kubernetes/commands";
 
 interface Props {
   namespaces: string[];
@@ -15,16 +16,11 @@ interface Suggestion {
   group: "resource" | "namespace" | "verb";
 }
 
-const RESOURCE_SUGGESTIONS: Suggestion[] = [
-  { cmd: "pods", hint: "list pods (po)", group: "resource" },
-  { cmd: "deployments", hint: "list deployments (deploy)", group: "resource" },
-  { cmd: "services", hint: "list services (svc)", group: "resource" },
-  { cmd: "configmaps", hint: "list configmaps (cm)", group: "resource" },
-  { cmd: "secrets", hint: "list secrets (sec)", group: "resource" },
-  { cmd: "namespaces", hint: "list namespaces (ns)", group: "resource" },
-  { cmd: "nodes", hint: "list nodes (no)", group: "resource" },
-  { cmd: "events", hint: "list events (ev)", group: "resource" },
-];
+const RESOURCE_SUGGESTIONS: Suggestion[] = K8S_RESOURCES.map((r) => ({
+  cmd: r.path,
+  hint: r.aliases.length ? `list ${r.label.toLowerCase()} (${r.aliases[0]})` : `list ${r.label.toLowerCase()}`,
+  group: "resource" as const,
+}));
 
 /**
  * `:`-triggered command palette in the k9s spirit. Accepts resource names
@@ -58,8 +54,8 @@ export function CommandPalette({ namespaces, onRun, onClose }: Props) {
       }));
     }
     if (!lower) return RESOURCE_SUGGESTIONS;
-    return RESOURCE_SUGGESTIONS.filter((s) =>
-      s.cmd.toLowerCase().includes(lower),
+    return RESOURCE_SUGGESTIONS.filter(
+      (s) => s.cmd.toLowerCase().includes(lower) || s.hint.toLowerCase().includes(lower),
     );
   })();
 

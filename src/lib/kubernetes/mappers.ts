@@ -4,6 +4,7 @@
  * Node's conditions become one status string, what "last seen" means for an
  * Event — is testable without a cluster.
  */
+import { humanQuantity, secondsSince } from "./quantity";
 import type { EventRow, NodeRow } from "./row-types";
 
 interface NodeLike {
@@ -38,41 +39,6 @@ interface EventLike {
 
 const DASH = "—";
 
-function ageSeconds(ts: string | Date | undefined, now: Date): number {
-  if (!ts) return 0;
-  const then = ts instanceof Date ? ts.getTime() : Date.parse(ts);
-  if (!Number.isFinite(then)) return 0;
-  return Math.max(0, Math.floor((now.getTime() - then) / 1000));
-}
-
-/** Kubernetes quantities are Ki/Mi/Gi suffixed; render the largest sane unit. */
-function humanQuantity(raw: string | undefined): string {
-  if (!raw) return DASH;
-  const m = raw.match(/^(\d+(?:\.\d+)?)(Ki|Mi|Gi|Ti)?$/);
-  if (!m) return raw;
-  const value = Number(m[1]);
-  const unit = m[2];
-  const bytes =
-    unit === "Ki"
-      ? value * 1024
-      : unit === "Mi"
-        ? value * 1024 ** 2
-        : unit === "Gi"
-          ? value * 1024 ** 3
-          : unit === "Ti"
-            ? value * 1024 ** 4
-            : null;
-  if (bytes === null) return raw;
-  const units = ["B", "KiB", "MiB", "GiB", "TiB"];
-  let n = bytes;
-  let i = 0;
-  while (n >= 1024 && i < units.length - 1) {
-    n /= 1024;
-    i += 1;
-  }
-  return `${n.toFixed(1)} ${units[i]}`;
-}
-
 export function mapNode(node: NodeLike, now: Date = new Date()): NodeRow {
   const ready = node.status?.conditions?.find((c) => c.type === "Ready");
   const base =
@@ -105,7 +71,7 @@ export function mapNode(node: NodeLike, now: Date = new Date()): NodeRow {
     cpu: capacity.cpu ?? DASH,
     memory: humanQuantity(capacity.memory),
     podCapacity: Number(capacity.pods ?? 0) || 0,
-    ageSeconds: ageSeconds(node.metadata?.creationTimestamp, now),
+    ageSeconds: secondsSince(node.metadata?.creationTimestamp, now),
   };
 }
 
@@ -125,6 +91,6 @@ export function mapEvent(event: EventLike, now: Date = new Date()): EventRow {
     object,
     message: event.message || DASH,
     count: event.count ?? 1,
-    ageSeconds: ageSeconds(seenAt, now),
+    ageSeconds: secondsSince(seenAt, now),
   };
 }

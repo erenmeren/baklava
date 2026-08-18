@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { K8S_RESOURCES, RESOURCE_GROUPS } from "@/lib/kubernetes/commands";
 
 interface Props {
   connectionId: string;
@@ -10,13 +11,6 @@ interface Props {
   serverVersion: string;
   nodes: number;
   namespaceCount: number;
-}
-
-interface NavItem {
-  href: string;
-  short: string; // colon-command key (k9s style)
-  key: string; // sidebar hotkey hint character
-  label: string;
 }
 
 export function K8sSidebar({
@@ -29,62 +23,51 @@ export function K8sSidebar({
   const pathname = usePathname();
   const base = `/kubernetes/${connectionId}`;
 
-  const items: NavItem[] = [
-    { href: `${base}/pods`,        short: "po",  key: "1", label: "Pods" },
-    { href: `${base}/deployments`, short: "dep", key: "2", label: "Deployments" },
-    { href: `${base}/services`,    short: "svc", key: "3", label: "Services" },
-    { href: `${base}/configmaps`,  short: "cm",  key: "4", label: "ConfigMaps" },
-    { href: `${base}/secrets`,     short: "sec", key: "5", label: "Secrets" },
-    { href: `${base}/namespaces`,  short: "ns",  key: "6", label: "Namespaces" },
-    { href: `${base}/nodes`,       short: "no",  key: "7", label: "Nodes" },
-    { href: `${base}/events`,      short: "ev",  key: "8", label: "Events" },
-  ];
-
   return (
     <div className="flex flex-col gap-3 font-mono text-[12px]">
-      <div>
-        <div className="px-1 pb-1.5 text-[9px] uppercase tracking-[0.22em] text-muted-foreground/80">
-          Resources
-        </div>
-        <div className="space-y-px">
-          {items.map((item) => {
-            const active =
-              pathname === item.href || pathname.startsWith(`${item.href}/`);
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  "group flex items-center gap-2 rounded-sm px-2 py-1.5 transition-colors",
-                  active
-                    ? "bg-cyan-500/12 text-foreground"
-                    : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground",
-                )}
-              >
-                <span
+      {RESOURCE_GROUPS.map((group) => (
+        <div key={group}>
+          <div className="px-1 pb-1.5 text-[9px] uppercase tracking-[0.22em] text-muted-foreground/80">
+            {group}
+          </div>
+          <div className="space-y-px">
+            {K8S_RESOURCES.filter((r) => r.group === group).map((item) => {
+              const href = `${base}/${item.path}`;
+              const active = pathname === href || pathname.startsWith(`${href}/`);
+              return (
+                <Link
+                  key={item.path}
+                  href={href}
                   className={cn(
-                    "inline-flex w-4 justify-center text-[10px] tabular-nums",
+                    "group flex items-center gap-2 rounded-sm px-2 py-1.5 transition-colors",
                     active
-                      ? "text-cyan-500 dark:text-cyan-400"
-                      : "text-muted-foreground/60",
+                      ? "bg-cyan-500/12 text-foreground"
+                      : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground",
                   )}
                 >
-                  {item.key}
-                </span>
-                <span className="flex-1 truncate">{item.label}</span>
-                <span
-                  className={cn(
-                    "tabular-nums text-[9.5px] uppercase tracking-[0.22em] opacity-60",
-                    active && "text-cyan-600 dark:text-cyan-400 opacity-100",
-                  )}
-                >
-                  {item.short}
-                </span>
-              </Link>
-            );
-          })}
+                  <span
+                    className={cn(
+                      "inline-flex w-4 justify-center text-[10px] tabular-nums",
+                      active ? "text-cyan-500 dark:text-cyan-400" : "text-muted-foreground/60",
+                    )}
+                  >
+                    {item.hotkey ?? ""}
+                  </span>
+                  <span className="flex-1 truncate">{item.label}</span>
+                  <span
+                    className={cn(
+                      "tabular-nums text-[9.5px] uppercase tracking-[0.22em] opacity-60",
+                      active && "text-cyan-600 dark:text-cyan-400 opacity-100",
+                    )}
+                  >
+                    {item.aliases[0] ?? item.path.slice(0, 3)}
+                  </span>
+                </Link>
+              );
+            })}
+          </div>
         </div>
-      </div>
+      ))}
 
       <div className="mx-1 border-t border-border/60" />
 

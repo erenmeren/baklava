@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { ALL_NAMESPACES, resolveNamespace } from "@/lib/kubernetes/namespace";
+import { HOTKEYS, resolveCommand } from "@/lib/kubernetes/commands";
 import { K8sContextProvider } from "./k8s-context";
 import { CommandPalette } from "./command-palette";
 import { HelpOverlay } from "./help-overlay";
@@ -115,17 +116,8 @@ export function K8sShell({
         return;
       }
 
-      // 1..8 — resource shortcuts to mirror the sidebar
-      const numMap: Record<string, string> = {
-        "1": "pods",
-        "2": "deployments",
-        "3": "services",
-        "4": "configmaps",
-        "5": "secrets",
-        "6": "namespaces",
-        "7": "nodes",
-        "8": "events",
-      };
+      // Digit shortcuts mirror the sidebar (see K8S_RESOURCES).
+      const numMap = HOTKEYS;
       if (numMap[e.key]) {
         e.preventDefault();
         router.push(`/kubernetes/${connectionId}/${numMap[e.key]}`);
@@ -170,44 +162,14 @@ export function K8sShell({
   // any of it.
   const runCommand = useCallback(
     (cmd: string) => {
-      const trimmed = cmd.trim();
-      if (!trimmed) return;
-      const [head, ...rest] = trimmed.split(/\s+/);
-      const arg = rest.join(" ");
-      const ALIASES: Record<string, string> = {
-        po: "pods",
-        pod: "pods",
-        pods: "pods",
-        deploy: "deployments",
-        deployments: "deployments",
-        dep: "deployments",
-        svc: "services",
-        service: "services",
-        services: "services",
-        cm: "configmaps",
-        configmap: "configmaps",
-        configmaps: "configmaps",
-        sec: "secrets",
-        secret: "secrets",
-        secrets: "secrets",
-        ns: arg ? "__ns_switch" : "namespaces",
-        namespace: arg ? "__ns_switch" : "namespaces",
-        namespaces: "namespaces",
-        no: "nodes",
-        node: "nodes",
-        nodes: "nodes",
-        ev: "events",
-        event: "events",
-        events: "events",
-      };
-      const target = ALIASES[head.toLowerCase()];
+      const resolved = resolveCommand(cmd);
       setCommandOpen(false);
-      if (!target) return;
-      if (target === "__ns_switch") {
-        setNamespace(arg === "*" || arg === "all" ? "*" : arg);
+      if (!resolved) return;
+      if (resolved.kind === "namespace") {
+        setNamespace(resolved.namespace);
         return;
       }
-      router.push(`/kubernetes/${connectionId}/${target}`);
+      router.push(`/kubernetes/${connectionId}/${resolved.target}`);
     },
     [connectionId, router, setNamespace],
   );
