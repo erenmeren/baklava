@@ -28,6 +28,7 @@ import { formatError } from "@/lib/errors";
 import { withReplicas, withRestartedAt } from "@/lib/kubernetes/deployment-ops";
 import { describeObject } from "@/lib/kubernetes/describe";
 import { involvedObjectSelector } from "@/lib/kubernetes/field-selector";
+import { proxyTarget } from "@/lib/kubernetes/proxy-target";
 import {
   formatCpu,
   formatMemory as formatMemUsage,
@@ -1306,6 +1307,63 @@ export async function drainNode(
     }
   }
   return { cordoned: true, evicted, failures };
+}
+
+export interface PodProxyResult {
+  status: number;
+  body: string;
+  truncated: boolean;
+}
+
+/** Response bodies are shown in an overlay, not streamed — keep them bounded. */
+const PROXY_BODY_LIMIT = 256 * 1024;
+
+/**
+ * Issue an HTTP GET to a pod's port *through the API server's proxy
+ * subresource* — the same thing `kubectl proxy` reaches, and the right shape
+ * for a web console: it needs no local listener, travels on the connection's
+ * own credentials, and works when Baklava runs on a server rather than on the
+ * viewer's machine.
+ *
+ * This is deliberately not `kubectl port-forward`. Port-forward tunnels
+ * arbitrary TCP to a socket on the machine running the forwarder — for a
+ * hosted Baklava that socket is on the *server*, which is useless to the
+ * person in the browser and an unauthenticated hole on the host. Postgres or
+ * Redis inside the cluster are therefore out of reach here by design; HTTP
+ * endpoints (health, metrics, admin UIs) are what this serves.
+ */
+export async function proxyPodHttp(
+  connectionId: string,
+  cfg: KubernetesConfig,
+  namespace: string,
+  pod: string,
+  port: number | string,
+  path: string,
+): Promise<PodProxyResult> {
+  const b = await bundleFor(connectionId, cfg);
+  const target = proxyTarget(pod, port, path);
+  try {
+    const body = await b.core.connectGetNamespacedPodProxyWithPath({
+      namespace,
+      name: target.name,
+      path: target.path,
+    });
+    const text = typeof body === "string" ? body : JSON.stringify(body);
+    return {
+      status: 200,
+      body: text.slice(0, PROXY_BODY_LIMIT),
+      truncated: text.length > PROXY_BODY_LIMIT,
+    };
+  } catch (err) {
+    // The API server surfaces the pod's own status code; a 404 from the pod is
+    // a real answer about the pod, not a Baklava failure, so it comes back as
+    // a result rather than an exception.
+    const code = (err as { code?: number }).code;
+    if (typeof code === "number" && code >= 400 && code < 600) {
+      return { status: code, body: formatError(err), truncated: false };
+    }
+    throw err;
+  }
 }
 
 export async function deleteResource(

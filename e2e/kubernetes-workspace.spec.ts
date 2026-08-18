@@ -152,6 +152,23 @@ test.describe("kubernetes workspace", () => {
     await expect(page.getByText(/^\d+%$/).first()).toBeVisible({ timeout: 15_000 });
   });
 
+  test("reaches a pod's HTTP port through the apiserver proxy", async ({ page }) => {
+    await openWorkspace(page);
+    const base = new URL(page.url()).pathname.replace(/\/pods$/, "");
+    await page.goto(`${base}/pods?ns=demo`);
+
+    // The seed's storefront pods run nginx on port 80.
+    const row = page.getByRole("row", { name: /storefront-/ }).first();
+    await expect(row).toBeVisible({ timeout: 15_000 });
+    await row.click();
+    await page.keyboard.press("F");
+
+    await expect(page.getByRole("button", { name: "GET" })).toBeVisible({ timeout: 10_000 });
+    await page.getByRole("button", { name: "GET" }).click();
+    await expect(page.getByText(/Welcome to nginx/)).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText("200", { exact: true })).toBeVisible();
+  });
+
   test("a truncated list is never presented as complete", async ({ page }) => {
     await openWorkspace(page);
     const base = new URL(page.url()).pathname.replace(/\/pods$/, "");
