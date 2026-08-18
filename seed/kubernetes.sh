@@ -14,25 +14,42 @@ set -euo pipefail
 
 export KUBECONFIG="${KUBECONFIG:-$(cd "$(dirname "$0")/.." && pwd)/.kube/kubeconfig.yaml}"
 
-if ! command -v kubectl >/dev/null 2>&1; then
-  echo "kubectl not found. Install it, or run kubectl through the k3s container:" >&2
-  echo "  docker compose exec k3s kubectl apply -f -" >&2
+# k3s ships kubectl inside the container, so a host without it still works:
+# fall back to running kubectl in the compose service.
+if command -v kubectl >/dev/null 2>&1; then
+  kube() { kubectl "$@"; }
+elif docker compose ps k3s >/dev/null 2>&1; then
+  echo "kubectl not found on PATH — using the one inside the k3s container."
+  kube() { docker compose exec -T k3s kubectl "$@"; }
+else
+  echo "Neither kubectl nor a running k3s compose service found." >&2
+  echo "Start the cluster first:  docker compose up -d k3s" >&2
   exit 1
 fi
 
 echo "waiting for the cluster to accept connections…"
-for _ in $(seq 1 60); do
-  kubectl get --raw /readyz >/dev/null 2>&1 && break
+for _ in $(seq 1 90); do
+  kube get --raw /readyz >/dev/null 2>&1 && break
   sleep 2
 done
 
-kubectl apply -f - <<'MANIFEST'
+# The namespace goes first and we wait for its `default` ServiceAccount:
+# controllers retry, but a bare Pod applied in the same breath is rejected
+# outright with "serviceaccount default not found".
+kube apply -f - <<'NS'
 apiVersion: v1
 kind: Namespace
 metadata:
   name: demo
   labels: { app.kubernetes.io/part-of: baklava-demo }
----
+NS
+
+for _ in $(seq 1 60); do
+  kube -n demo get serviceaccount default >/dev/null 2>&1 && break
+  sleep 1
+done
+
+kube apply -f - <<'MANIFEST'
 apiVersion: v1
 kind: ConfigMap
 metadata: { name: storefront-config, namespace: demo }
@@ -163,8 +180,8 @@ spec:
 MANIFEST
 
 echo "waiting for the storefront deployment to come up…"
-kubectl -n demo rollout status deployment/storefront --timeout=120s || true
+kube -n demo rollout status deployment/storefront --timeout=120s || true
 
 echo
 echo "seeded namespace 'demo':"
-kubectl -n demo get all
+kube -n demo get all
