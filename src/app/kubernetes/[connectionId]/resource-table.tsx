@@ -107,6 +107,35 @@ export function ResourceTable<T extends { name: string; namespace?: string }>({
   >(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  // `null` while the cluster describe is in flight; the local fallback is
+  // rendered until it lands (or instead of it, if the request fails).
+  const [describeText, setDescribeText] = useState<string | null>(null);
+
+  // `kubectl describe` for the selected row. What makes describe worth opening
+  // — container state, conditions, events — isn't in the row, so it has to come
+  // from the cluster; the row-derived dump stays as the offline fallback.
+  useEffect(() => {
+    if (overlay?.kind !== "describe" || !kind) return;
+    const ac = new AbortController();
+    setDescribeText(null);
+    const qs = overlay.row.namespace
+      ? `?namespace=${encodeURIComponent(overlay.row.namespace)}`
+      : "";
+    fetch(
+      `/api/kubernetes/${k8s.connectionId}/describe/${encodeURIComponent(
+        kind,
+      )}/${encodeURIComponent(overlay.row.name)}${qs}`,
+      { signal: ac.signal },
+    )
+      .then(async (res) => {
+        const data = (await res.json().catch(() => ({}))) as { text?: string };
+        if (res.ok && data.text) setDescribeText(data.text);
+      })
+      .catch(() => {
+        // Aborted or unreachable — the fallback already covers this.
+      });
+    return () => ac.abort();
+  }, [overlay, kind, k8s.connectionId]);
 
   const closeDelete = useCallback(() => {
     setOverlay(null);
@@ -497,9 +526,10 @@ export function ResourceTable<T extends { name: string; namespace?: string }>({
           mode={overlay.kind}
           title={`${overlay.kind === "yaml" ? "YAML" : "Describe"}: ${overlay.row.namespace ? `${overlay.row.namespace}/` : ""}${overlay.row.name}`}
           content={
-            describeYaml
+            (overlay.kind === "describe" ? describeText : null) ??
+            (describeYaml
               ? describeYaml(overlay.row)
-              : defaultDescribe(overlay.row, columns)
+              : defaultDescribe(overlay.row, columns))
           }
           onClose={() => setOverlay(null)}
         />

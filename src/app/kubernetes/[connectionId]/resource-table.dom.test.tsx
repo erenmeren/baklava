@@ -245,3 +245,31 @@ describe("ResourceTable deep link", () => {
     );
   });
 });
+
+describe("ResourceTable describe", () => {
+  let restore: () => void;
+  afterEach(() => restore());
+
+  it("fetches the live describe for the selected row", async () => {
+    restore = mockFetch({ "/describe/": { text: "Name:         api-0\nEvents:       <none>" } });
+    renderTable();
+    fireEvent.keyDown(window, { key: "Enter" });
+
+    await waitFor(() => expect(globalThis.fetch).toHaveBeenCalled());
+    const [url] = (globalThis.fetch as unknown as { mock: { calls: [string][] } }).mock.calls[0];
+    expect(url).toBe("/api/kubernetes/conn-1/describe/pod/api-0?namespace=payments");
+    expect(await screen.findByText(/Events:/)).toBeTruthy();
+  });
+
+  it("falls back to the row's own fields when the cluster describe fails", async () => {
+    restore = mockFetch({
+      "/describe/": () => new Response(JSON.stringify({ error: "forbidden" }), { status: 502 }),
+    });
+    renderTable();
+    fireEvent.keyDown(window, { key: "Enter" });
+
+    // Never worse than the old local dump: the overlay still describes the row
+    // in its "key           : value" shape, which the table itself never renders.
+    expect(await screen.findByText(/name\s+: api-0/)).toBeTruthy();
+  });
+});

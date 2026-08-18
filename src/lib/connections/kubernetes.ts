@@ -24,6 +24,7 @@ import type WebSocket from "isomorphic-ws";
 import type { KubernetesConfig } from "./types";
 import { DriverNotInstalledError } from "@/techs/contract";
 import { withReplicas, withRestartedAt } from "@/lib/kubernetes/deployment-ops";
+import { describeObject } from "@/lib/kubernetes/describe";
 import { mapEvent, mapNode } from "@/lib/kubernetes/mappers";
 import {
   mapCronJob,
@@ -1020,6 +1021,41 @@ export async function readResourceYaml(
     }
   }
   return dumpYaml(clean);
+}
+
+/**
+ * `kubectl describe`-style text for one object: the live manifest plus the
+ * events that name it. Events are best-effort — a kubeconfig may be allowed
+ * to read the object but not the namespace's events, and losing the event
+ * tail is no reason to fail the whole describe.
+ */
+export async function describeResource(
+  connectionId: string,
+  cfg: KubernetesConfig,
+  kind: string,
+  namespace: string | undefined,
+  name: string,
+): Promise<string> {
+  const b = await bundleFor(connectionId, cfg);
+  const k = resolveKind(kind);
+  const obj = await b.objects.read({
+    apiVersion: k.apiVersion,
+    kind: k.kind,
+    metadata: { name, namespace: k.namespaced ? namespace : undefined },
+  });
+  // fieldSelector keeps this to the object's own events rather than the whole
+  // namespace's — kubectl describe does the same.
+  const fieldSelector = `involvedObject.name=${name},involvedObject.kind=${k.kind}`;
+  const events = await (k.namespaced && namespace
+    ? b.core.listNamespacedEvent({ namespace, fieldSelector })
+    : b.core.listEventForAllNamespaces({ fieldSelector })
+  ).catch(() => ({ items: [] }));
+  const now = new Date();
+  return describeObject(
+    obj,
+    events.items.map((e) => mapEvent(e, now)),
+    now,
+  );
 }
 
 export async function replaceResourceYaml(
