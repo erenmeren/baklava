@@ -13,9 +13,10 @@ interface Body {
 }
 
 export async function POST(req: NextRequest, ctx: RouteContext) {
-  const { sid } = await ctx.params;
+  const { id, cid, sid } = await ctx.params;
   const session = getSession(sid);
-  if (!session) {
+  // Scoped to the connection + container in the path — see the DELETE handler.
+  if (!session || session.connectionId !== id || session.containerId !== cid) {
     return NextResponse.json({ error: "Session not found" }, { status: 404 });
   }
   const body = (await req.json().catch(() => ({}))) as Body;

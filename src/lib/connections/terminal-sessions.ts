@@ -1,4 +1,5 @@
 import "server-only";
+import { randomUUID } from "node:crypto";
 import type { Duplex } from "node:stream";
 
 interface ExecLike {
@@ -30,8 +31,11 @@ function getStore(): Map<string, TerminalSession> {
   return g[globalKey];
 }
 
+// The session id is the only thing between a caller and someone else's live
+// terminal, so it must be unguessable — `Math.random()` is not a CSPRNG and a
+// `Date.now()` suffix is outright predictable.
 function genId() {
-  return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+  return randomUUID();
 }
 
 export function registerSession(

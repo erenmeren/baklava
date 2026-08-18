@@ -1,4 +1,5 @@
 import "server-only";
+import { randomUUID } from "node:crypto";
 import type { Duplex, PassThrough } from "node:stream";
 import type WebSocket from "isomorphic-ws";
 
@@ -27,8 +28,11 @@ function getStore(): Map<string, K8sExecSession> {
   return g[globalKey];
 }
 
+// The session id is the only thing standing between a caller and someone
+// else's live shell, so it must be unguessable — `Math.random()` is not a
+// CSPRNG and a `Date.now()` suffix is outright predictable.
 function genId() {
-  return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+  return randomUUID();
 }
 
 interface RegisterArgs {

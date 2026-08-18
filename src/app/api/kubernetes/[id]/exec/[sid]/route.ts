@@ -11,8 +11,12 @@ interface RouteContext {
 }
 
 export async function DELETE(_req: NextRequest, ctx: RouteContext) {
-  const { sid } = await ctx.params;
-  if (!getExecSession(sid)) {
+  const { id, sid } = await ctx.params;
+  const session = getExecSession(sid);
+  // The proxy only gates the connection id in the *path*; a session id that
+  // belongs to a different connection must read as "not found" here, or any
+  // user with access to one cluster could reach every other cluster's shells.
+  if (!session || session.connectionId !== id) {
     return NextResponse.json({ error: "Session not found" }, { status: 404 });
   }
   dropExecSession(sid);
