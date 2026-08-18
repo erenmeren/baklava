@@ -38,7 +38,45 @@ export function connectionIdFromPath(
   return null;
 }
 
-const WRITE_METHODS = new Set(["PUT", "PATCH", "DELETE"]);
+const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+/**
+ * Connection-scoped POSTs that only *read* — they are POSTs because the query
+ * travels in the body, not because they change anything. Everything not listed
+ * here needs `write`, so the failure mode of forgetting an entry is a member
+ * losing a read, never a member gaining a write.
+ *
+ * Each entry was checked against its handler. Deliberately absent, despite
+ * looking the part: `/query` and `redis/<id>/command` run free-form statements;
+ * `kafka/.../messages` produces; `postgres/.../explain` defaults to EXPLAIN
+ * ANALYZE, which executes the statement; `mongo/.../aggregate` accepts a
+ * pipeline that may end in `$out`/`$merge`.
+ */
+const READ_SHAPED_POSTS: RegExp[] = [
+  /^\/api\/kafka\/[^/]+\/topics\/[^/]+\/search$/,
+  /^\/api\/qdrant\/[^/]+\/collections\/[^/]+\/search$/,
+  /^\/api\/mongo\/[^/]+\/databases\/[^/]+\/collections\/[^/]+\/(?:distinct|explain)$/,
+  /^\/api\/docker\/[^/]+\/containers\/[^/]+\/fs\/(?:list|cat)$/,
+];
+
+/**
+ * The mongo documents route multiplexes find / insert / replace / delete over
+ * one POST, dispatching on `?action=` — which is in the URL, so the gate can
+ * read it. Absent means find, matching the handler's default.
+ */
+const MONGO_DOCUMENTS = /^\/api\/mongo\/[^/]+\/databases\/[^/]+\/collections\/[^/]+\/documents$/;
+
+/** True when the request mutates the connection or its resources. */
+function isMutating(method: string, url: URL): boolean {
+  if (!WRITE_METHODS.has(method)) return false;
+  if (method !== "POST") return true;
+  const { pathname } = url;
+  if (READ_SHAPED_POSTS.some((re) => re.test(pathname))) return false;
+  if (MONGO_DOCUMENTS.test(pathname)) {
+    return (url.searchParams.get("action") ?? "find") !== "find";
+  }
+  return true;
+}
 
 // Next 16 renamed `middleware` → `proxy`. It defaults to the Node.js runtime,
 // so it can verify the HMAC-signed session cookie against the on-disk secret
@@ -111,14 +149,10 @@ export function proxy(req: NextRequest): NextResponse {
         ? NextResponse.json({ error: "Forbidden" }, { status: 403 })
         : NextResponse.redirect(new URL("/", req.url));
       if (access === "none") return forbidden;
-      // Write floor: mutating the connection itself (PUT/PATCH/DELETE on the
-      // exact /api/connections/<id> resource) requires write/owner/admin.
-      const isConnResource = /^\/api\/connections\/[^/]+$/.test(pathname);
-      if (
-        isConnResource &&
-        WRITE_METHODS.has(req.method) &&
-        access !== "write"
-      ) {
+      // Write floor: anything that mutates the connection or the resources
+      // behind it (its rows, containers, manifests…) needs write/owner/admin.
+      // A `read` grant must mean read.
+      if (access !== "write" && isMutating(req.method, req.nextUrl)) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       }
     }
