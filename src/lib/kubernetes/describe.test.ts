@@ -219,3 +219,34 @@ describe("describeObject secret hygiene", () => {
     expect(describeObject(secret, [], NOW)).not.toContain("c3VwZXJzZWNyZXQ=");
   });
 });
+
+describe("describeObject secret data", () => {
+  it("never prints a Secret's data or stringData keys' values", () => {
+    const secret = {
+      apiVersion: "v1",
+      kind: "Secret",
+      metadata: { name: "db", namespace: "payments" },
+      type: "Opaque",
+      data: { password: "c3VwZXJzZWNyZXQ=", username: "YWRtaW4=" },
+      stringData: { token: "plaintext-token" },
+    };
+    const out = describeObject(secret, [], NOW);
+    expect(out).not.toContain("c3VwZXJzZWNyZXQ=");
+    expect(out).not.toContain("YWRtaW4=");
+    expect(out).not.toContain("plaintext-token");
+  });
+
+  it("still says which keys a Secret holds — that is the useful part", () => {
+    const secret = {
+      apiVersion: "v1",
+      kind: "Secret",
+      metadata: { name: "db" },
+      type: "Opaque",
+      data: { password: "c3VwZXJzZWNyZXQ=", username: "YWRtaW4=" },
+    };
+    const out = describeObject(secret, [], NOW);
+    expect(out).toContain("password");
+    expect(out).toContain("username");
+    expect(out).toContain("Opaque");
+  });
+});

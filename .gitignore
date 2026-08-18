@@ -52,3 +52,6 @@ next-env.d.ts
 # Playwright auth state
 /e2e/.auth/
 .superpowers/
+
+# Local k3s kubeconfig written by `docker compose up -d k3s` (compose.yaml).
+.kube/

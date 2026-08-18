@@ -2,11 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
+import { ContainerPicker } from "./container-picker";
 
 interface Props {
   connectionId: string;
   namespace: string;
   pod: string;
+  /** Container names on the pod; a picker appears when there's more than one. */
+  containers?: string[];
   onClose: () => void;
 }
 
@@ -35,7 +38,14 @@ const MAX_LINES = 1000;
  * final `end` event when the stream closes. Follow / pause / grep / clear /
  * download all mirror `kubectl logs -f` ergonomics.
  */
-export function LogOverlay({ connectionId, namespace, pod, onClose }: Props) {
+export function LogOverlay({
+  connectionId,
+  namespace,
+  pod,
+  containers = [],
+  onClose,
+}: Props) {
+  const [container, setContainer] = useState<string | null>(null);
   const [lines, setLines] = useState<Line[]>([]);
   const [follow, setFollow] = useState(true);
   const [grep, setGrep] = useState("");
@@ -61,9 +71,12 @@ export function LogOverlay({ connectionId, namespace, pod, onClose }: Props) {
   }, [onClose]);
 
   useEffect(() => {
+    // Switching container re-subscribes: the previous EventSource is closed by
+    // this effect's own cleanup before the new one opens.
+    const ctr = container ? `&container=${encodeURIComponent(container)}` : "";
     const url = `/api/kubernetes/${connectionId}/pods/${encodeURIComponent(
       namespace,
-    )}/${encodeURIComponent(pod)}/logs?tailLines=200`;
+    )}/${encodeURIComponent(pod)}/logs?tailLines=200${ctr}`;
     const es = new EventSource(url);
     sourceRef.current = es;
     es.addEventListener("line", (e) => {
@@ -100,7 +113,7 @@ export function LogOverlay({ connectionId, namespace, pod, onClose }: Props) {
       es.close();
       sourceRef.current = null;
     };
-  }, [connectionId, namespace, pod]);
+  }, [connectionId, namespace, pod, container]);
 
   useEffect(() => {
     if (!followRef.current) return;
@@ -169,6 +182,14 @@ export function LogOverlay({ connectionId, namespace, pod, onClose }: Props) {
             </span>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            <ContainerPicker
+              containers={containers}
+              value={container}
+              onChange={(c) => {
+                setContainer(c);
+                setLines([]);
+              }}
+            />
             <div className="hidden md:flex items-center gap-1.5 rounded border border-border/60 px-2 py-1 bg-background/60">
               <span className="text-muted-foreground text-[10px]">grep</span>
               <input

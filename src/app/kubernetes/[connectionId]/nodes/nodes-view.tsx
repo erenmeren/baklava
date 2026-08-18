@@ -1,7 +1,9 @@
 "use client";
 
 import type { K8sList } from "@/lib/kubernetes/list";
-import { ResourceTable, type Column } from "../resource-table";
+import { ResourceTable, type Column, type RowAction } from "../resource-table";
+import { useK8s } from "../k8s-context";
+import { CordonDialog, DrainDialog } from "./node-actions";
 import { formatAge, type NodeRow } from "@/lib/kubernetes/row-types";
 import { cn } from "@/lib/utils";
 
@@ -49,17 +51,81 @@ const COLUMNS: Column<NodeRow>[] = [
   },
   {
     label: "cpu",
+    width: "w-20",
+    align: "right",
+    cell: (r) => (
+      <span className="text-cyan-600 dark:text-cyan-400 tabular-nums">
+        {r.cpuUsage ?? "—"}
+      </span>
+    ),
+    value: (r) => r.cpuUsage ?? "",
+  },
+  {
+    label: "%cpu",
     width: "w-16",
     align: "right",
-    cell: (r) => <span className="tabular-nums">{r.cpu}</span>,
-    value: (r) => r.cpu,
+    cell: (r) => (
+      <span
+        className={cn(
+          "tabular-nums",
+          r.cpuPercent === null
+            ? "text-muted-foreground"
+            : r.cpuPercent >= 85
+              ? "text-red-600 dark:text-red-400"
+              : r.cpuPercent >= 60
+                ? "text-amber-600 dark:text-amber-400"
+                : "text-muted-foreground",
+        )}
+      >
+        {r.cpuPercent === null ? "—" : `${r.cpuPercent}%`}
+      </span>
+    ),
+    value: (r) => r.cpuPercent ?? -1,
   },
   {
     label: "memory",
     width: "w-24",
     align: "right",
-    cell: (r) => <span className="tabular-nums">{r.memory}</span>,
-    value: (r) => r.memory,
+    cell: (r) => (
+      <span className="text-cyan-600 dark:text-cyan-400 tabular-nums">
+        {r.memUsage ?? "—"}
+      </span>
+    ),
+    value: (r) => r.memUsage ?? "",
+  },
+  {
+    label: "%mem",
+    width: "w-16",
+    align: "right",
+    cell: (r) => (
+      <span
+        className={cn(
+          "tabular-nums",
+          r.memPercent === null
+            ? "text-muted-foreground"
+            : r.memPercent >= 85
+              ? "text-red-600 dark:text-red-400"
+              : r.memPercent >= 60
+                ? "text-amber-600 dark:text-amber-400"
+                : "text-muted-foreground",
+        )}
+      >
+        {r.memPercent === null ? "—" : `${r.memPercent}%`}
+      </span>
+    ),
+    value: (r) => r.memPercent ?? -1,
+  },
+  {
+    // Capacity, so the percentages have something to read against.
+    label: "cap",
+    width: "w-28",
+    align: "right",
+    cell: (r) => (
+      <span className="text-muted-foreground tabular-nums">
+        {r.cpu} / {r.memory}
+      </span>
+    ),
+    value: (r) => r.cpu,
   },
   {
     label: "pods",
@@ -88,6 +154,24 @@ const COLUMNS: Column<NodeRow>[] = [
 type Row = NodeRow & { namespace?: string };
 
 export function NodesView({ list }: { list: K8sList<NodeRow> }) {
+  const { connectionId } = useK8s();
+  const rowActions: RowAction<Row>[] = [
+    {
+      key: "C",
+      label: "cordon",
+      render: ({ row, close, refresh }) => (
+        <CordonDialog connectionId={connectionId} row={row} close={close} refresh={refresh} />
+      ),
+    },
+    {
+      key: "R",
+      label: "drain",
+      danger: true,
+      render: ({ row, close, refresh }) => (
+        <DrainDialog connectionId={connectionId} row={row} close={close} refresh={refresh} />
+      ),
+    },
+  ];
   return (
     <ResourceTable
       resource="Nodes"
@@ -98,6 +182,7 @@ export function NodesView({ list }: { list: K8sList<NodeRow> }) {
       remaining={list.remaining}
       columns={COLUMNS as Column<Row>[]}
       actions={{ edit: true }}
+      rowActions={rowActions}
     />
   );
 }

@@ -87,14 +87,34 @@ const COLUMNS: Column<PodRow>[] = [
     label: "cpu",
     width: "w-16",
     align: "right",
-    cell: (r) => <span className="text-cyan-600 dark:text-cyan-400">{r.cpu}</span>,
-    value: (r) => r.cpu,
+    cell: (r) => (
+      <span className="text-cyan-600 dark:text-cyan-400">{r.cpuUsage ?? "—"}</span>
+    ),
+    value: (r) => r.cpuUsage ?? "",
   },
   {
     label: "mem",
     width: "w-20",
     align: "right",
-    cell: (r) => <span className="text-cyan-600 dark:text-cyan-400">{r.mem}</span>,
+    cell: (r) => (
+      <span className="text-cyan-600 dark:text-cyan-400">{r.memUsage ?? "—"}</span>
+    ),
+    value: (r) => r.memUsage ?? "",
+  },
+  {
+    // Requests, not usage — kept alongside so you can see what a pod asked for
+    // next to what it actually uses.
+    label: "cpu/r",
+    width: "w-16",
+    align: "right",
+    cell: (r) => <span className="text-muted-foreground">{r.cpu}</span>,
+    value: (r) => r.cpu,
+  },
+  {
+    label: "mem/r",
+    width: "w-20",
+    align: "right",
+    cell: (r) => <span className="text-muted-foreground">{r.mem}</span>,
     value: (r) => r.mem,
   },
   {

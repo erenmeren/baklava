@@ -31,6 +31,11 @@ export interface PodRow {
   cpu: string; // "12m"
   mem: string; // "84Mi"
   qos: "Guaranteed" | "Burstable" | "BestEffort";
+  /** Container names, so logs and exec can target one of them. */
+  containers: string[];
+  /** Live usage from metrics-server; null when it isn't installed. */
+  cpuUsage: string | null;
+  memUsage: string | null;
 }
 
 export interface DeploymentRow {
@@ -96,6 +101,11 @@ export interface NodeRow {
   memory: string;
   podCapacity: number;
   ageSeconds: number;
+  /** Live usage from metrics-server; null when it isn't installed. */
+  cpuUsage: string | null;
+  memUsage: string | null;
+  cpuPercent: number | null;
+  memPercent: number | null;
 }
 
 export interface EventRow {

@@ -31,6 +31,10 @@ interface DescribableObject {
     }>;
     [key: string]: unknown;
   };
+  /** Secret/ConfigMap payload — only ever rendered as key names. */
+  data?: Record<string, unknown>;
+  stringData?: Record<string, unknown>;
+  type?: string;
   status?: {
     phase?: string;
     podIP?: string;
@@ -126,6 +130,28 @@ function podSections(obj: DescribableObject): string[] {
   return out;
 }
 
+/**
+ * Key names and sizes, never values. `kubectl describe secret` does the same —
+ * the useful part is which keys exist, and printing the values would make
+ * describe a way around the redacted manifest view.
+ */
+function dataSection(obj: DescribableObject): string[] {
+  const keys = [
+    ...Object.keys(obj.data ?? {}),
+    ...Object.keys(obj.stringData ?? {}),
+  ];
+  const out: string[] = [];
+  if (obj.type) out.push(field("Type", obj.type));
+  if (keys.length === 0) return out;
+  out.push("", "Data:");
+  for (const k of keys) {
+    const raw = obj.data?.[k] ?? obj.stringData?.[k];
+    const size = typeof raw === "string" ? `${raw.length} bytes` : "";
+    out.push(`  ${k}:  ${size}`.trimEnd());
+  }
+  return out;
+}
+
 function conditionSection(obj: DescribableObject): string[] {
   const conditions = obj.status?.conditions ?? [];
   if (conditions.length === 0) return [];
@@ -172,6 +198,7 @@ export function describeObject(
   lines.push(...pairs(meta.annotations, "Annotations", HIDDEN_ANNOTATIONS));
 
   if (obj.kind === "Pod") lines.push(...podSections(obj));
+  if (obj.kind === "Secret" || obj.kind === "ConfigMap") lines.push(...dataSection(obj));
   lines.push(...conditionSection(obj));
   lines.push(...eventSection(events));
 

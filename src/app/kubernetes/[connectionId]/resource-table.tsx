@@ -113,29 +113,35 @@ export function ResourceTable<T extends { name: string; namespace?: string }>({
   >(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  // `null` while the cluster describe is in flight; the local fallback is
-  // rendered until it lands (or instead of it, if the request fails).
-  const [describeText, setDescribeText] = useState<string | null>(null);
+  // `null` while the cluster read is in flight; the local row dump is rendered
+  // until it lands (or instead of it, if the request fails).
+  const [detailText, setDetailText] = useState<string | null>(null);
 
-  // `kubectl describe` for the selected row. What makes describe worth opening
-  // — container state, conditions, events — isn't in the row, so it has to come
-  // from the cluster; the row-derived dump stays as the offline fallback.
+  // Both detail overlays read from the cluster: describe for the container
+  // state / conditions / events the row can't carry, yaml for the actual
+  // manifest. The row-derived dump stays as the offline fallback.
   useEffect(() => {
-    if (overlay?.kind !== "describe" || !kind) return;
+    if (!overlay || !kind) return;
+    if (overlay.kind !== "describe" && overlay.kind !== "yaml") return;
     const ac = new AbortController();
-    setDescribeText(null);
+    setDetailText(null);
     const qs = overlay.row.namespace
       ? `?namespace=${encodeURIComponent(overlay.row.namespace)}`
       : "";
+    const path = overlay.kind === "describe" ? "describe" : "yaml";
     fetch(
-      `/api/kubernetes/${k8s.connectionId}/describe/${encodeURIComponent(
+      `/api/kubernetes/${k8s.connectionId}/${path}/${encodeURIComponent(
         kind,
       )}/${encodeURIComponent(overlay.row.name)}${qs}`,
       { signal: ac.signal },
     )
       .then(async (res) => {
-        const data = (await res.json().catch(() => ({}))) as { text?: string };
-        if (res.ok && data.text) setDescribeText(data.text);
+        const data = (await res.json().catch(() => ({}))) as {
+          text?: string;
+          yaml?: string;
+        };
+        const body = overlay.kind === "describe" ? data.text : data.yaml;
+        if (res.ok && body) setDetailText(body);
       })
       .catch(() => {
         // Aborted or unreachable — the fallback already covers this.
@@ -540,7 +546,7 @@ export function ResourceTable<T extends { name: string; namespace?: string }>({
           mode={overlay.kind}
           title={`${overlay.kind === "yaml" ? "YAML" : "Describe"}: ${overlay.row.namespace ? `${overlay.row.namespace}/` : ""}${overlay.row.name}`}
           content={
-            (overlay.kind === "describe" ? describeText : null) ??
+            detailText ??
             (describeYaml
               ? describeYaml(overlay.row)
               : defaultDescribe(overlay.row, columns))
@@ -553,6 +559,7 @@ export function ResourceTable<T extends { name: string; namespace?: string }>({
           connectionId={k8s.connectionId}
           namespace={overlay.row.namespace ?? "default"}
           pod={overlay.row.name}
+          containers={containersOf(overlay.row)}
           onClose={() => setOverlay(null)}
         />
       ) : null}
@@ -561,6 +568,7 @@ export function ResourceTable<T extends { name: string; namespace?: string }>({
           connectionId={k8s.connectionId}
           namespace={overlay.row.namespace ?? "default"}
           pod={overlay.row.name}
+          containers={containersOf(overlay.row)}
           onClose={() => setOverlay(null)}
         />
       ) : null}
@@ -606,6 +614,16 @@ export function ResourceTable<T extends { name: string; namespace?: string }>({
       ) : null}
     </div>
   );
+}
+
+/**
+ * Container names, when the row carries them (pods do). The table is generic
+ * over its row type, so this reads the field defensively rather than widening
+ * the type parameter for one resource.
+ */
+function containersOf(row: unknown): string[] {
+  const value = (row as { containers?: unknown }).containers;
+  return Array.isArray(value) ? value.filter((c): c is string => typeof c === "string") : [];
 }
 
 function defaultDescribe<T>(row: T, columns: Column<T>[]): string {
