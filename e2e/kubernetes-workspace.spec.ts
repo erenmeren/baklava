@@ -157,15 +157,22 @@ test.describe("kubernetes workspace", () => {
     const base = new URL(page.url()).pathname.replace(/\/pods$/, "");
     await page.goto(`${base}/pods?ns=demo`);
 
-    // The seed's storefront pods run nginx on port 80.
-    const row = page.getByRole("row", { name: /storefront-/ }).first();
-    await expect(row).toBeVisible({ timeout: 15_000 });
+    // A *Running* storefront pod: the seed's nginx listens on 80, but a pod
+    // still terminating from a rollout makes the apiserver proxy answer 502,
+    // which is real behaviour and not what this test is about.
+    const row = page.getByRole("row", { name: /storefront-.*Running/ }).first();
+    await expect(row).toBeVisible({ timeout: 20_000 });
     await row.click();
     await page.keyboard.press("F");
 
-    await expect(page.getByRole("button", { name: "GET" })).toBeVisible({ timeout: 10_000 });
-    await page.getByRole("button", { name: "GET" }).click();
-    await expect(page.getByText(/Welcome to nginx/)).toBeVisible({ timeout: 20_000 });
+    const send = page.getByRole("button", { name: "GET" });
+    await expect(send).toBeVisible({ timeout: 10_000 });
+    // Retry the request itself: a pod can go Ready a moment before its
+    // container is actually serving.
+    await expect(async () => {
+      await send.click();
+      await expect(page.getByText(/Welcome to nginx/)).toBeVisible({ timeout: 5_000 });
+    }).toPass({ timeout: 45_000 });
     await expect(page.getByText("200", { exact: true })).toBeVisible();
   });
 
