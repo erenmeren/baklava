@@ -127,6 +127,9 @@ shadcn wrappers in `src/components/ui/` re-export `@base-ui/react/*` primitives.
 - **Mapping lives in pure functions** (`mappers.ts`, `workload-mappers.ts`, `describe.ts`, `quantity.ts`), not in the driver, so the interesting logic is unit-tested without a cluster. The driver fetches and maps; it does not interpret.
 - **Namespace travels in the URL** (`?ns=`), resolved by `resolveNamespace(param, cfg.namespace)`. Server components scope their list call with it — a namespace-restricted kubeconfig 403s on the cluster-wide list endpoints, so filtering rows in the browser is not a substitute.
 - **Lists are bounded** (`LIST_LIMIT`, `toList` → `K8sList<T>`) and truncation is *visible*: `ResourceTable` renders the "showing the first N" banner from `truncated`/`remaining`. Never let a capped list look complete.
+- **Mutations patch, never read-modify-replace.** Scale, restart and cordon send a strategic-merge PATCH. A Deployment's or Node's `status` is rewritten continuously by its controller, so a read-then-replace loses the race with a 409 exactly when the object is busy — which is when you are acting on it. `kubectl` patches for the same reason.
+- **Secret values need `write`.** `GET /yaml/secret/<name>` redacts for a `read` grant, matching the AI gate's `allowK8sSecretValues` stance; `describe` prints a Secret's *keys* and never its values, and strips `kubectl.kubernetes.io/last-applied-configuration` on every kind (that annotation mirrors the whole manifest, base64 `data` included).
+- **Verified against a real cluster.** `docker compose up -d k3s && bash seed/kubernetes.sh`, then `npm run test:integration` (driver) and `npx playwright test e2e/kubernetes-workspace.spec.ts` (workspace). k3s bundles metrics-server, so the usage columns have real data. Both suites skip loudly when the cluster is down.
 - **`ResourceTable` stays generic.** Resource-specific actions arrive as `rowActions` (key, label, render) from the view — the table owns the key binding and overlay state. No `kind === "…"` conditionals inside it.
 
 ### Shared SQL workspace layer (`src/components/workspace/sql/`)
@@ -200,4 +203,4 @@ npm run test:integration          # vitest suites gated on TCP reachability
 npx playwright test               # e2e
 ```
 
-`compose.yaml` carries a `mysql` service (mysql:8.4, port 3306, root / `Baklava123!`); `seed/mysql.sh` creates the `demo` storefront the MySQL workspace and its e2e block target. For services outside compose, see the `docker run` snippets in `README.md`.
+`compose.yaml` also carries a `k3s` service (single-node Kubernetes, kubeconfig written to `.kube/kubeconfig.yaml`); `seed/kubernetes.sh` fills its `demo` namespace. `compose.yaml` carries a `mysql` service (mysql:8.4, port 3306, root / `Baklava123!`); `seed/mysql.sh` creates the `demo` storefront the MySQL workspace and its e2e block target. For services outside compose, see the `docker run` snippets in `README.md`.

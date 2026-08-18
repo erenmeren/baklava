@@ -11,6 +11,7 @@ import type {
   NetworkingV1Api,
   VersionApi,
   KubernetesObjectApi,
+  Metrics,
   V1Pod,
   V1Deployment,
   V1Service,
@@ -23,8 +24,17 @@ import type {
 import type WebSocket from "isomorphic-ws";
 import type { KubernetesConfig } from "./types";
 import { DriverNotInstalledError } from "@/techs/contract";
+import { formatError } from "@/lib/errors";
 import { withReplicas, withRestartedAt } from "@/lib/kubernetes/deployment-ops";
 import { describeObject } from "@/lib/kubernetes/describe";
+import { involvedObjectSelector } from "@/lib/kubernetes/field-selector";
+import {
+  formatCpu,
+  formatMemory as formatMemUsage,
+  parseCpu,
+  parseMemoryBytes,
+} from "@/lib/kubernetes/usage";
+import { evictablePods, withUnschedulable } from "@/lib/kubernetes/node-ops";
 import { LIST_LIMIT, toList, type K8sList } from "@/lib/kubernetes/list";
 import { mapEvent, mapNode } from "@/lib/kubernetes/mappers";
 import {
@@ -73,6 +83,7 @@ interface ClientBundle {
   networking: NetworkingV1Api;
   version: VersionApi;
   objects: KubernetesObjectApi;
+  metrics: Metrics;
 }
 
 const globalKey = Symbol.for("baklava.kubernetesClients");
@@ -123,8 +134,15 @@ async function bundleFor(connectionId: string, cfg: KubernetesConfig): Promise<C
   const cached = cache.get(connectionId);
   if (cached && cached.hash === hash) return cached;
 
-  const { CoreV1Api, AppsV1Api, BatchV1Api, NetworkingV1Api, VersionApi, KubernetesObjectApi } =
-    await getK8s();
+  const {
+    CoreV1Api,
+    AppsV1Api,
+    BatchV1Api,
+    NetworkingV1Api,
+    VersionApi,
+    KubernetesObjectApi,
+    Metrics,
+  } = await getK8s();
   const kc = await buildKubeConfig(cfg);
   const bundle: ClientBundle = {
     hash,
@@ -135,6 +153,7 @@ async function bundleFor(connectionId: string, cfg: KubernetesConfig): Promise<C
     networking: kc.makeApiClient(NetworkingV1Api),
     version: kc.makeApiClient(VersionApi),
     objects: KubernetesObjectApi.makeApiClient(kc),
+    metrics: new Metrics(kc),
   };
   cache.set(connectionId, bundle);
   return bundle;
@@ -180,6 +199,11 @@ export interface PodRow {
   cpu: string;
   mem: string;
   qos: "Guaranteed" | "Burstable" | "BestEffort";
+  /** Container names, so logs and exec can target one of them. */
+  containers: string[];
+  /** Live usage from metrics-server; null when it isn't installed. */
+  cpuUsage: string | null;
+  memUsage: string | null;
 }
 
 export interface DeploymentRow {
@@ -376,7 +400,7 @@ function formatMemory(bytes: number): string {
   return `${Math.round(bytes / 1024)}Ki`;
 }
 
-function mapPod(p: V1Pod): PodRow {
+function mapPod(p: V1Pod, usage?: { cpu: string; mem: string }): PodRow {
   const restarts = podRestarts(p);
   return {
     namespace: p.metadata?.namespace ?? "default",
@@ -391,6 +415,13 @@ function mapPod(p: V1Pod): PodRow {
     cpu: sumRequests(p, "cpu"),
     mem: sumRequests(p, "memory"),
     qos: podQos(p),
+    // Init containers included — `kubectl logs -c` accepts them too.
+    containers: [
+      ...(p.spec?.initContainers ?? []).map((c) => c.name),
+      ...(p.spec?.containers ?? []).map((c) => c.name),
+    ].filter(Boolean),
+    cpuUsage: usage?.cpu ?? null,
+    memUsage: usage?.mem ?? null,
   };
 }
 
@@ -611,14 +642,44 @@ export async function listPvcs(
   return toList(list, (o) => mapPvc(o, now));
 }
 
+/**
+ * Live usage per object, keyed by "namespace/name" (pods) or name (nodes).
+ * metrics-server is an add-on: when it isn't installed the call 404s, and the
+ * tables simply show no usage rather than the page failing.
+ */
+async function podUsage(
+  b: ClientBundle,
+): Promise<Map<string, { cpu: string; mem: string }>> {
+  const out = new Map<string, { cpu: string; mem: string }>();
+  const metrics = await b.metrics.getPodMetrics().catch(() => null);
+  for (const p of metrics?.items ?? []) {
+    // A pod's usage is the sum over its containers, like `kubectl top pod`.
+    let cpu = 0;
+    let mem = 0;
+    for (const c of p.containers ?? []) {
+      cpu += parseCpu(c.usage?.cpu) ?? 0;
+      mem += parseMemoryBytes(c.usage?.memory) ?? 0;
+    }
+    out.set(`${p.metadata?.namespace ?? "default"}/${p.metadata?.name ?? ""}`, {
+      cpu: formatCpu(cpu),
+      mem: formatMemUsage(mem),
+    });
+  }
+  return out;
+}
+
 export async function listNodes(
   connectionId: string,
   cfg: KubernetesConfig,
 ): Promise<K8sList<NodeRow>> {
   const b = await bundleFor(connectionId, cfg);
   const list = await b.core.listNode({ limit: LIST_LIMIT });
+  const metrics = await b.metrics.getNodeMetrics().catch(() => null);
+  const usage = new Map(
+    (metrics?.items ?? []).map((m) => [m.metadata?.name ?? "", m.usage]),
+  );
   const now = new Date();
-  return toList(list, (n) => mapNode(n, now));
+  return toList(list, (n) => mapNode(n, now, usage.get(n.metadata?.name ?? "")));
 }
 
 export async function listEvents(
@@ -648,7 +709,10 @@ export async function listPods(
     namespace && namespace !== "*"
       ? await b.core.listNamespacedPod({ namespace, limit: LIST_LIMIT })
       : await b.core.listPodForAllNamespaces({ limit: LIST_LIMIT });
-  return toList(list, (o) => mapPod(o));
+  const usage = await podUsage(b);
+  return toList(list, (o) =>
+    mapPod(o, usage.get(`${o.metadata?.namespace ?? "default"}/${o.metadata?.name ?? ""}`)),
+  );
 }
 
 export async function listDeployments(
@@ -1048,8 +1112,9 @@ export async function describeResource(
     metadata: { name, namespace: k.namespaced ? namespace : undefined },
   });
   // fieldSelector keeps this to the object's own events rather than the whole
-  // namespace's — kubectl describe does the same.
-  const fieldSelector = `involvedObject.name=${name},involvedObject.kind=${k.kind}`;
+  // namespace's — kubectl describe does the same. The builder validates the
+  // name so it can't append selector terms of its own.
+  const fieldSelector = involvedObjectSelector(k.kind, name);
   const events = await (k.namespaced && namespace
     ? b.core.listNamespacedEvent({ namespace, fieldSelector })
     : b.core.listEventForAllNamespaces({ fieldSelector })
@@ -1110,9 +1175,12 @@ export async function replaceResourceYaml(
 }
 
 /**
- * Set a Deployment's replica count. Read-modify-replace through
- * KubernetesObjectApi rather than the scale subresource so it goes down the
- * same proven path as the YAML editor.
+ * Set a Deployment's replica count.
+ *
+ * A strategic-merge PATCH, not read-modify-replace: a Deployment's `status` is
+ * rewritten continuously by its controller, so a replace races with it and
+ * loses with a 409 whenever the deployment is actively reconciling — which is
+ * exactly when you are scaling it. `kubectl scale` patches for the same reason.
  */
 export async function scaleDeployment(
   connectionId: string,
@@ -1121,19 +1189,27 @@ export async function scaleDeployment(
   name: string,
   replicas: number,
 ): Promise<void> {
+  const { PatchStrategy } = await getK8s();
   const b = await bundleFor(connectionId, cfg);
-  const spec = {
-    apiVersion: "apps/v1",
-    kind: "Deployment",
-    metadata: { name, namespace },
-  };
-  const current = await b.objects.read(spec);
-  await b.objects.replace(withReplicas(current, replicas) as KubernetesObject);
+  await b.objects.patch(
+    {
+      apiVersion: "apps/v1",
+      kind: "Deployment",
+      metadata: { name, namespace },
+      ...withReplicas({}, replicas),
+    } as KubernetesObject,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    PatchStrategy.StrategicMergePatch,
+  );
 }
 
 /**
  * Roll a Deployment's pods the way `kubectl rollout restart` does — by
- * stamping the restart annotation on the pod template.
+ * stamping the restart annotation on the pod template. Patched, not replaced,
+ * for the same reason as scaling.
  */
 export async function restartDeployment(
   connectionId: string,
@@ -1141,16 +1217,95 @@ export async function restartDeployment(
   namespace: string,
   name: string,
 ): Promise<void> {
+  const { PatchStrategy } = await getK8s();
   const b = await bundleFor(connectionId, cfg);
-  const spec = {
-    apiVersion: "apps/v1",
-    kind: "Deployment",
-    metadata: { name, namespace },
-  };
-  const current = await b.objects.read(spec);
-  await b.objects.replace(
-    withRestartedAt(current, new Date().toISOString()) as KubernetesObject,
+  await b.objects.patch(
+    {
+      apiVersion: "apps/v1",
+      kind: "Deployment",
+      metadata: { name, namespace },
+      ...withRestartedAt({}, new Date().toISOString()),
+    } as KubernetesObject,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    PatchStrategy.StrategicMergePatch,
   );
+}
+
+/**
+ * Cordon or uncordon a node — `kubectl cordon` / `kubectl uncordon`. Patched
+ * rather than replaced: the kubelet rewrites a node's status constantly, so a
+ * replace would lose the race.
+ */
+export async function setNodeSchedulable(
+  connectionId: string,
+  cfg: KubernetesConfig,
+  name: string,
+  schedulable: boolean,
+): Promise<void> {
+  const { PatchStrategy } = await getK8s();
+  const b = await bundleFor(connectionId, cfg);
+  await b.objects.patch(
+    {
+      apiVersion: "v1",
+      kind: "Node",
+      metadata: { name },
+      ...withUnschedulable({}, !schedulable),
+    } as KubernetesObject,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    PatchStrategy.StrategicMergePatch,
+  );
+}
+
+export interface DrainResult {
+  cordoned: boolean;
+  evicted: number;
+  /** Pods eviction refused, usually because of a PodDisruptionBudget. */
+  failures: Array<{ pod: string; error: string }>;
+}
+
+/**
+ * `kubectl drain`: cordon first so nothing new lands, then evict the pods that
+ * can be evicted. Eviction (not delete) is what respects PodDisruptionBudgets,
+ * so a refusal is a real answer — it's reported, not swallowed.
+ */
+export async function drainNode(
+  connectionId: string,
+  cfg: KubernetesConfig,
+  name: string,
+): Promise<DrainResult> {
+  const b = await bundleFor(connectionId, cfg);
+  await setNodeSchedulable(connectionId, cfg, name, false);
+
+  const pods = await b.core.listPodForAllNamespaces({
+    fieldSelector: `spec.nodeName=${name}`,
+    limit: LIST_LIMIT,
+  });
+  const targets = evictablePods(pods.items, name);
+  const failures: DrainResult["failures"] = [];
+  let evicted = 0;
+  for (const t of targets) {
+    try {
+      await b.core.createNamespacedPodEviction({
+        namespace: t.namespace,
+        name: t.name,
+        body: {
+          apiVersion: "policy/v1",
+          kind: "Eviction",
+          metadata: { name: t.name, namespace: t.namespace },
+        },
+      });
+      evicted += 1;
+    } catch (err) {
+      failures.push({ pod: `${t.namespace}/${t.name}`, error: formatError(err) });
+    }
+  }
+  return { cordoned: true, evicted, failures };
 }
 
 export async function deleteResource(

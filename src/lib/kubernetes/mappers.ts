@@ -5,6 +5,7 @@
  * Event — is testable without a cluster.
  */
 import { humanQuantity, secondsSince } from "./quantity";
+import { formatCpu, formatMemory, parseCpu, parseMemoryBytes, percentOf } from "./usage";
 import type { EventRow, NodeRow } from "./row-types";
 
 interface NodeLike {
@@ -39,7 +40,17 @@ interface EventLike {
 
 const DASH = "—";
 
-export function mapNode(node: NodeLike, now: Date = new Date()): NodeRow {
+/** Raw usage for one node, straight off metrics-server. */
+export interface NodeUsage {
+  cpu?: string;
+  memory?: string;
+}
+
+export function mapNode(
+  node: NodeLike,
+  now: Date = new Date(),
+  usage?: NodeUsage,
+): NodeRow {
   const ready = node.status?.conditions?.find((c) => c.type === "Ready");
   const base =
     ready?.status === "True" ? "Ready" : ready?.status === "False" ? "NotReady" : "Unknown";
@@ -72,6 +83,11 @@ export function mapNode(node: NodeLike, now: Date = new Date()): NodeRow {
     memory: humanQuantity(capacity.memory),
     podCapacity: Number(capacity.pods ?? 0) || 0,
     ageSeconds: secondsSince(node.metadata?.creationTimestamp, now),
+    // metrics-server is optional; absent usage renders as a dash, not a zero.
+    cpuUsage: usage ? formatCpu(parseCpu(usage.cpu)) : null,
+    memUsage: usage ? formatMemory(parseMemoryBytes(usage.memory)) : null,
+    cpuPercent: percentOf(parseCpu(usage?.cpu), parseCpu(capacity.cpu)),
+    memPercent: percentOf(parseMemoryBytes(usage?.memory), parseMemoryBytes(capacity.memory)),
   };
 }
 

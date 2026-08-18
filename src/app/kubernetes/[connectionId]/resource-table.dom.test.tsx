@@ -316,3 +316,28 @@ describe("ResourceTable truncation notice", () => {
     expect(screen.getByText(/filter/i)).toBeTruthy();
   });
 });
+
+describe("ResourceTable yaml view", () => {
+  let restore: () => void;
+  afterEach(() => restore());
+
+  it("fetches the real manifest instead of re-printing the row", async () => {
+    restore = mockFetch({ "/yaml/": { yaml: "apiVersion: v1\nkind: Pod\n" } });
+    renderTable();
+    fireEvent.keyDown(window, { key: "y" });
+
+    expect(await screen.findByText(/apiVersion: v1/)).toBeTruthy();
+    const [url] = (globalThis.fetch as unknown as { mock: { calls: [string][] } }).mock.calls[0];
+    expect(url).toBe("/api/kubernetes/conn-1/yaml/pod/api-0?namespace=payments");
+  });
+
+  it("falls back to the row dump when the manifest can't be read", async () => {
+    restore = mockFetch({
+      "/yaml/": () => new Response(JSON.stringify({ error: "forbidden" }), { status: 502 }),
+    });
+    renderTable();
+    fireEvent.keyDown(window, { key: "y" });
+
+    expect(await screen.findByText(/name\s+: api-0/)).toBeTruthy();
+  });
+});

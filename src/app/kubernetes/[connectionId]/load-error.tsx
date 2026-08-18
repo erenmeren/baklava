@@ -10,7 +10,10 @@ interface Props {
  */
 export function LoadError({ resource, error }: Props) {
   return (
-    <div className="flex h-full min-h-0 flex-col font-mono text-[12.5px]">
+    // role="alert" so this is findable as *the* error surface — page text
+    // can't be sniffed for words like "failed", which is exactly what a
+    // healthy Events screen is full of.
+    <div role="alert" className="flex h-full min-h-0 flex-col font-mono text-[12.5px]">
       <div className="px-4 py-2 flex items-center gap-3 border-b border-border/60 bg-background/40">
         <span className="text-foreground font-semibold tracking-tight text-sm">
           {resource}

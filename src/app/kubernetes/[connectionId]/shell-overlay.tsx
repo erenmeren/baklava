@@ -2,11 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
+import { ContainerPicker } from "./container-picker";
 
 interface Props {
   connectionId: string;
   namespace: string;
   pod: string;
+  /** Container names on the pod; a picker appears when there's more than one. */
+  containers?: string[];
   onClose: () => void;
 }
 
@@ -48,7 +51,14 @@ function encode(text: string): string {
  * Most apps' /bin/sh works fine; programs that need raw mode (vim, top) will
  * misbehave, which matches the warning we surface in the header.
  */
-export function ShellOverlay({ connectionId, namespace, pod, onClose }: Props) {
+export function ShellOverlay({
+  connectionId,
+  namespace,
+  pod,
+  containers = [],
+  onClose,
+}: Props) {
+  const [container, setContainer] = useState<string | null>(null);
   const [lines, setLines] = useState<Line[]>([
     { id: 0, text: `connecting to ${namespace}/${pod}…`, kind: "system" },
   ]);
@@ -119,7 +129,10 @@ export function ShellOverlay({ connectionId, namespace, pod, onClose }: Props) {
           {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ shell: "/bin/sh" }),
+            body: JSON.stringify({
+              shell: "/bin/sh",
+              ...(container ? { container } : {}),
+            }),
           },
         );
         const data = (await res.json()) as { sessionId?: string; error?: string };
@@ -175,8 +188,10 @@ export function ShellOverlay({ connectionId, namespace, pod, onClose }: Props) {
         sessionRef.current = null;
       }
     };
+    // Switching container tears the session down (cleanup above) and execs
+    // into the new one.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connectionId, namespace, pod]);
+  }, [connectionId, namespace, pod, container]);
 
   async function send(text: string) {
     const sid = sessionRef.current;
@@ -280,6 +295,16 @@ export function ShellOverlay({ connectionId, namespace, pod, onClose }: Props) {
             </span>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            <ContainerPicker
+              containers={containers}
+              value={container}
+              onChange={(c) => {
+                setContainer(c);
+                setLines([
+                  { id: 0, text: `connecting to ${namespace}/${pod} [${c}]…`, kind: "system" },
+                ]);
+              }}
+            />
             <button
               onClick={() => setLines([])}
               className="rounded border border-border/60 px-2 py-1 text-xs hover:bg-foreground/5"

@@ -160,3 +160,21 @@ the corresponding create dialog.
 The overview dashboard surfaces the demo database in the **Databases**
 panel and the seed-induced traffic (the `INSERT … SELECT` runs) often
 shows up in the **Top queries** panel.
+
+## `kubernetes.sh`
+
+Seeds the local k3s cluster (`docker compose up -d k3s`) with a `demo`
+namespace holding one of nearly every kind the workspace lists: a two-container
+Deployment, a Service, ConfigMap, Secret, StatefulSet, DaemonSet, Job, CronJob,
+Ingress and PVC — plus a deliberately-broken pod (`broken-image`) so the Events
+screen and `describe` have a real failure to show.
+
+```bash
+docker compose up -d k3s
+bash seed/kubernetes.sh
+```
+
+Needs `kubectl` on PATH; `KUBECONFIG` defaults to `.kube/kubeconfig.yaml`,
+which the compose service writes. Both the driver integration tests
+(`npm run test:integration`) and `e2e/kubernetes-workspace.spec.ts` expect this
+seed.
