@@ -6,9 +6,10 @@ import type { ObjectProvider, PaletteObject } from "./object-providers";
  * surfaces objects that have a real detail route to land on — listing an object
  * the palette can't navigate to would be a dead end.
  *
- * Redis keys and Kubernetes workloads are deliberately absent: their workspaces
- * render list pages with no per-object route and no deep-link search param, so
- * there is nothing to point an href at yet.
+ * Redis keys are deliberately absent: that workspace renders list pages with no
+ * per-object route and no deep-link search param, so there is nothing to point
+ * an href at yet. The Kubernetes tables have no per-object route either, but
+ * they do honour `?ns=` + `?select=`, which is enough to land on a row.
  */
 
 /**
@@ -187,3 +188,42 @@ export function blobProvider(tech: "s3" | "r2" | "minio"): ObjectProvider {
       }));
   };
 }
+
+// ─── Kubernetes ──────────────────────────────────────────────────────────────
+// No per-object route exists, so each hit points at the object's list page with
+// `?ns=` (server-side namespace scoping) and `?select=` (which row the table
+// lands on). Limited to the three workload kinds people actually hunt for —
+// every extra kind is another cluster call per keystroke.
+const K8S_KINDS = [
+  { path: "pods", icon: "Box", noun: "pod" },
+  { path: "deployments", icon: "Layers", noun: "deployment" },
+  { path: "services", icon: "Network", noun: "service" },
+] as const;
+
+export const kubernetesProvider: ObjectProvider = async (id, query, { signal }) => {
+  if (query.trim().length < 1) return [];
+  const hit = matcher(query);
+  const lists = await Promise.all(
+    K8S_KINDS.map((k) =>
+      getJson<{ rows?: Array<{ name: string; namespace?: string }> }>(
+        `/api/kubernetes/${id}/${k.path}`,
+        signal,
+      ),
+    ),
+  );
+  const out: PaletteObject[] = [];
+  lists.forEach((data, i) => {
+    const kind = K8S_KINDS[i];
+    for (const row of data?.rows ?? []) {
+      if (!hit(row.name, row.namespace)) continue;
+      const ns = row.namespace ? `ns=${encodeURIComponent(row.namespace)}&` : "";
+      out.push({
+        label: row.name,
+        sublabel: row.namespace ? `${kind.noun} · ${row.namespace}` : kind.noun,
+        href: `/kubernetes/${id}/${kind.path}?${ns}select=${encodeURIComponent(row.name)}`,
+        icon: kind.icon,
+      });
+    }
+  });
+  return out.slice(0, LIMIT);
+};

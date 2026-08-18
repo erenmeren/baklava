@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useK8s } from "./k8s-context";
 import { DetailOverlay } from "./detail-overlay";
@@ -25,6 +25,25 @@ export interface Column<T> {
   className?: string;
 }
 
+/**
+ * A resource-specific action (scale, restart, cordon…) contributed by a view.
+ * The table owns the key binding and the open/close state so the action can't
+ * fight with the built-in overlays; the view owns whatever it renders.
+ */
+export interface RowAction<T> {
+  /** Key that opens it. Capitals are deliberately harder to hit. */
+  key: string;
+  /** Label shown in the hotkey hints. */
+  label: string;
+  danger?: boolean;
+  render: (args: {
+    row: T;
+    close: () => void;
+    /** Re-run the server components behind the table after a mutation. */
+    refresh: () => void;
+  }) => React.ReactNode;
+}
+
 export interface ResourceTableProps<T extends { name: string; namespace?: string }> {
   /** Short resource label, e.g. "Pods" — shown in the footer counter. */
   resource: string;
@@ -44,6 +63,8 @@ export interface ResourceTableProps<T extends { name: string; namespace?: string
     edit?: boolean;
     delete?: boolean;
   };
+  /** Resource-specific actions contributed by the view (scale, restart, …). */
+  rowActions?: RowAction<T>[];
   /** Render the right-hand "describe" YAML for the selected row. */
   describeYaml?: (row: T) => string;
 }
@@ -65,10 +86,14 @@ export function ResourceTable<T extends { name: string; namespace?: string }>({
   rows,
   columns,
   actions = {},
+  rowActions,
   describeYaml,
 }: ResourceTableProps<T>) {
   const k8s = useK8s();
   const router = useRouter();
+  // `?select=<name>` lets the command palette (and any other deep link) land
+  // on a specific row — the workspace has no per-object route to point at.
+  const selectName = useSearchParams().get("select");
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const rowRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const [selected, setSelected] = useState(0);
@@ -78,6 +103,7 @@ export function ResourceTable<T extends { name: string; namespace?: string }>({
     | { kind: "shell"; row: T }
     | { kind: "edit"; row: T }
     | { kind: "delete"; row: T }
+    | { kind: "action"; row: T; action: RowAction<T> }
   >(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -139,6 +165,14 @@ export function ResourceTable<T extends { name: string; namespace?: string }>({
       );
     });
   }, [rows, columns, k8s.namespace, k8s.filter]);
+
+  // Honour ?select= once the rows are in: the palette navigates here with a
+  // name, not an index.
+  useEffect(() => {
+    if (!selectName) return;
+    const i = visibleRows.findIndex((r) => r.name === selectName);
+    if (i >= 0) setSelected(i);
+  }, [selectName, visibleRows]);
 
   // Clamp selection when the filtered list shrinks.
   useEffect(() => {
@@ -215,6 +249,12 @@ export function ResourceTable<T extends { name: string; namespace?: string }>({
         setOverlay({ kind: "edit", row });
         return;
       }
+      const custom = rowActions?.find((a) => a.key === e.key);
+      if (custom) {
+        e.preventDefault();
+        setOverlay({ kind: "action", row, action: custom });
+        return;
+      }
       if (e.key === "D" && actions.delete) {
         e.preventDefault();
         setOverlay({ kind: "delete", row });
@@ -223,7 +263,7 @@ export function ResourceTable<T extends { name: string; namespace?: string }>({
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [overlay, visibleRows, selected, actions.logs, actions.shell, actions.edit, actions.delete]);
+  }, [overlay, visibleRows, selected, actions.logs, actions.shell, actions.edit, actions.delete, rowActions]);
 
   useEffect(() => {
     scrollToSelection();
@@ -342,6 +382,8 @@ export function ResourceTable<T extends { name: string; namespace?: string }>({
               <button
                 key={`${row.namespace ?? ""}/${row.name}`}
                 ref={(el) => { rowRefs.current[i] = el; }}
+                role="row"
+                aria-selected={isSel}
                 onClick={() => setSelected(i)}
                 onDoubleClick={() => setOverlay({ kind: "describe", row })}
                 className={cn(
@@ -414,6 +456,24 @@ export function ResourceTable<T extends { name: string; namespace?: string }>({
               edit
             </span>
           ) : null}
+          {rowActions?.map((a) => (
+            <span
+              key={a.key}
+              className={a.danger ? "text-red-600 dark:text-red-400" : undefined}
+            >
+              <kbd
+                className={cn(
+                  "px-1 py-0 rounded mr-1 border",
+                  a.danger
+                    ? "border-red-500/40 bg-red-500/10"
+                    : "border-border/60",
+                )}
+              >
+                {a.key}
+              </kbd>
+              {a.label}
+            </span>
+          ))}
           {actions.delete ? (
             <span className="text-red-600 dark:text-red-400">
               <kbd className="px-1 py-0 border border-red-500/40 bg-red-500/10 rounded mr-1">
@@ -469,6 +529,13 @@ export function ResourceTable<T extends { name: string; namespace?: string }>({
           onClose={() => setOverlay(null)}
         />
       ) : null}
+      {overlay?.kind === "action"
+        ? overlay.action.render({
+            row: overlay.row,
+            close: () => setOverlay(null),
+            refresh: () => router.refresh(),
+          })
+        : null}
       {overlay?.kind === "delete" ? (
         <ConfirmOverlay
           title={`Delete ${resource.toLowerCase().replace(/s$/, "")}?`}

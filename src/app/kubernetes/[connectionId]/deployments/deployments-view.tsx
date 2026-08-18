@@ -1,7 +1,9 @@
 "use client";
 
-import { ResourceTable, type Column } from "../resource-table";
+import { ResourceTable, type Column, type RowAction } from "../resource-table";
 import { formatAge, type DeploymentRow } from "@/lib/kubernetes/row-types";
+import { useK8s } from "../k8s-context";
+import { RestartDialog, ScaleDialog } from "./deployment-actions";
 
 const COLUMNS: Column<DeploymentRow>[] = [
   {
@@ -93,6 +95,35 @@ const COLUMNS: Column<DeploymentRow>[] = [
 ];
 
 export function DeploymentsView({ rows }: { rows: DeploymentRow[] }) {
+  const { connectionId } = useK8s();
+  // Capitals so they can't be hit by accident while navigating with j/k.
+  const rowActions: RowAction<DeploymentRow>[] = [
+    {
+      key: "S",
+      label: "scale",
+      render: ({ row, close, refresh }) => (
+        <ScaleDialog
+          connectionId={connectionId}
+          row={row}
+          close={close}
+          refresh={refresh}
+        />
+      ),
+    },
+    {
+      key: "R",
+      label: "restart",
+      danger: true,
+      render: ({ row, close, refresh }) => (
+        <RestartDialog
+          connectionId={connectionId}
+          row={row}
+          close={close}
+          refresh={refresh}
+        />
+      ),
+    },
+  ];
   return (
     <ResourceTable
       resource="Deployments"
@@ -101,6 +132,7 @@ export function DeploymentsView({ rows }: { rows: DeploymentRow[] }) {
       rows={rows}
       columns={COLUMNS}
       actions={{ edit: true, delete: true }}
+      rowActions={rowActions}
     />
   );
 }

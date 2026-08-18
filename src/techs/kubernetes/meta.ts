@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { TechModuleMeta } from "@/techs/contract";
+import { kubernetesProvider } from "@/lib/command-palette/infra-providers";
 import type { KubernetesConfig, ConnectionRecord } from "@/lib/connections/types";
 
 const schema = z.object({
@@ -36,5 +37,6 @@ export const kubernetesMeta: TechModuleMeta<KubernetesConfig> = {
   firstPage: "pods",
   optionalDeps: ["@kubernetes/client-node"],
   serverPackages: ["@kubernetes/client-node"],
+  commandObjects: kubernetesProvider,
   capabilities: { browse: true, health: true },
 };

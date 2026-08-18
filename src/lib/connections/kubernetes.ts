@@ -21,6 +21,7 @@ import type {
 import type WebSocket from "isomorphic-ws";
 import type { KubernetesConfig } from "./types";
 import { DriverNotInstalledError } from "@/techs/contract";
+import { withReplicas, withRestartedAt } from "@/lib/kubernetes/deployment-ops";
 
 let _k8sMod: typeof import("@kubernetes/client-node") | null = null;
 async function getK8s(): Promise<typeof import("@kubernetes/client-node")> {
@@ -917,6 +918,50 @@ export async function replaceResourceYaml(
     },
   };
   await b.objects.replace(merged);
+}
+
+/**
+ * Set a Deployment's replica count. Read-modify-replace through
+ * KubernetesObjectApi rather than the scale subresource so it goes down the
+ * same proven path as the YAML editor.
+ */
+export async function scaleDeployment(
+  connectionId: string,
+  cfg: KubernetesConfig,
+  namespace: string,
+  name: string,
+  replicas: number,
+): Promise<void> {
+  const b = await bundleFor(connectionId, cfg);
+  const spec = {
+    apiVersion: "apps/v1",
+    kind: "Deployment",
+    metadata: { name, namespace },
+  };
+  const current = await b.objects.read(spec);
+  await b.objects.replace(withReplicas(current, replicas) as KubernetesObject);
+}
+
+/**
+ * Roll a Deployment's pods the way `kubectl rollout restart` does — by
+ * stamping the restart annotation on the pod template.
+ */
+export async function restartDeployment(
+  connectionId: string,
+  cfg: KubernetesConfig,
+  namespace: string,
+  name: string,
+): Promise<void> {
+  const b = await bundleFor(connectionId, cfg);
+  const spec = {
+    apiVersion: "apps/v1",
+    kind: "Deployment",
+    metadata: { name, namespace },
+  };
+  const current = await b.objects.read(spec);
+  await b.objects.replace(
+    withRestartedAt(current, new Date().toISOString()) as KubernetesObject,
+  );
 }
 
 export async function deleteResource(
