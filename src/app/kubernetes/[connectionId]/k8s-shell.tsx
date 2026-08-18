@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { ALL_NAMESPACES, resolveNamespace } from "@/lib/kubernetes/namespace";
 import { K8sContextProvider } from "./k8s-context";
 import { CommandPalette } from "./command-palette";
 import { HelpOverlay } from "./help-overlay";
@@ -10,7 +11,8 @@ import { HelpOverlay } from "./help-overlay";
 interface Props {
   connectionId: string;
   namespaces: string[];
-  initialNamespace: string;
+  /** The connection's configured namespace; used when the URL has no `?ns=`. */
+  defaultNamespace: string;
   context: string;
   serverVersion: string;
   children: React.ReactNode;
@@ -18,7 +20,7 @@ interface Props {
 
 /**
  * The k9s-inspired chrome that wraps every workspace page. Owns:
- *   - the active namespace (with persistence across navigations)
+ *   - the active namespace (URL-backed, so the *server* scopes its listing)
  *   - the resource-table filter (single search box on `/`)
  *   - the command palette on `:`
  *   - the help overlay on `?`
@@ -27,16 +29,36 @@ interface Props {
  * We also publish the namespace + filter through K8sContextProvider so the
  * resource tables can read them without prop-drilling.
  */
+/** How often the workspace re-runs its server components. */
+const REFRESH_INTERVAL_MS = 5_000;
+
 export function K8sShell({
   connectionId,
   namespaces,
-  initialNamespace,
+  defaultNamespace,
   context,
   serverVersion,
   children,
 }: Props) {
   const router = useRouter();
-  const [namespace, setNamespace] = useState(initialNamespace);
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  // The namespace lives in the URL, not in component state: a namespace-scoped
+  // kubeconfig can't call the cluster-wide list endpoints, so the *page* has to
+  // know the namespace before it queries. Switching is a navigation.
+  const namespace = resolveNamespace(
+    searchParams.get("ns") ?? undefined,
+    defaultNamespace,
+  );
+  const setNamespace = useCallback(
+    (ns: string) => {
+      const next = new URLSearchParams(searchParams.toString());
+      next.set("ns", ns || ALL_NAMESPACES);
+      router.push(`${pathname}?${next.toString()}`);
+    },
+    [pathname, router, searchParams],
+  );
+  const [autoRefresh, setAutoRefresh] = useState(true);
   const [filter, setFilter] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
@@ -112,6 +134,18 @@ export function K8sShell({
     return () => window.removeEventListener("keydown", onKey);
   }, [connectionId, router, commandOpen, helpOpen, filterOpen]);
 
+  // k9s keeps the table live; ours is server-rendered, so a periodic
+  // router.refresh() is the equivalent. Skipped while the tab is hidden —
+  // a backgrounded workspace shouldn't keep polling the cluster.
+  useEffect(() => {
+    if (!autoRefresh) return;
+    const timer = setInterval(() => {
+      if (document.hidden) return;
+      router.refresh();
+    }, REFRESH_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [autoRefresh, router]);
+
   const ctxValue = useMemo(
     () => ({
       connectionId,
@@ -126,7 +160,7 @@ export function K8sShell({
       context,
       serverVersion,
     }),
-    [connectionId, namespace, namespaces, filter, context, serverVersion],
+    [connectionId, namespace, setNamespace, namespaces, filter, context, serverVersion],
   );
 
   // The command palette runs commands — we translate them here so it can
@@ -167,7 +201,7 @@ export function K8sShell({
       }
       router.push(`/kubernetes/${connectionId}/${target}`);
     },
-    [connectionId, router],
+    [connectionId, router, setNamespace],
   );
 
   return (
@@ -190,6 +224,8 @@ export function K8sShell({
           }}
           onCommand={() => setCommandOpen(true)}
           onHelp={() => setHelpOpen(true)}
+          autoRefresh={autoRefresh}
+          onAutoRefreshToggle={() => setAutoRefresh((a) => !a)}
         />
 
         {/* Content */}
@@ -225,6 +261,8 @@ function ContextStrip(props: {
   onFilterClose: () => void;
   onCommand: () => void;
   onHelp: () => void;
+  autoRefresh: boolean;
+  onAutoRefreshToggle: () => void;
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   // Focus the filter input every time it opens — works for both `/` keypress
@@ -280,6 +318,26 @@ function ContextStrip(props: {
         >
           <kbd className="text-[10px]">?</kbd>
           <span>help</span>
+        </button>
+        <button
+          onClick={props.onAutoRefreshToggle}
+          aria-pressed={props.autoRefresh}
+          title={
+            props.autoRefresh
+              ? "Auto-refresh on — pause it while you read"
+              : "Auto-refresh paused"
+          }
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded border px-2 py-1 transition-colors",
+            props.autoRefresh
+              ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+              : "border-border/60 text-muted-foreground hover:text-foreground hover:border-border",
+          )}
+        >
+          <span className={cn("text-[10px]", props.autoRefresh && "status-pulse")}>
+            ⟳
+          </span>
+          <span>auto-refresh</span>
         </button>
       </div>
 

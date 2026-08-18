@@ -38,7 +38,6 @@ export default async function KubernetesWorkspaceLayout({
   const nodeCount = probeResult?.nodeCount ?? 0;
   const subtitle = `${context} · ${serverVersion}`;
   const namespaceNames = nsRows.map((n) => n.name);
-  const initialNamespace = cfg.namespace || namespaceNames[0] || "default";
 
   return (
     <WorkspaceShell
@@ -59,7 +58,7 @@ export default async function KubernetesWorkspaceLayout({
       <K8sShell
         connectionId={connectionId}
         namespaces={namespaceNames}
-        initialNamespace={initialNamespace}
+        defaultNamespace={cfg.namespace ?? ""}
         context={context}
         serverVersion={serverVersion}
       >
