@@ -53,13 +53,25 @@ interface DescribableObject {
 const LABEL_WIDTH = 14;
 const NONE = "<none>";
 
+/**
+ * `kubectl apply` mirrors the whole manifest into this annotation — including
+ * a Secret's base64 `data`. Printing it would hand out the very values the
+ * redacted YAML view strips, so it never reaches the output. It is also pure
+ * noise on every other kind.
+ */
+const HIDDEN_ANNOTATIONS = new Set(["kubectl.kubernetes.io/last-applied-configuration"]);
+
 function field(label: string, value: string): string {
   return `${`${label}:`.padEnd(LABEL_WIDTH)}${value}`;
 }
 
 /** Key=value pairs, first on the field's own line and the rest aligned under it. */
-function pairs(map: Record<string, string> | undefined, label: string): string[] {
-  const entries = Object.entries(map ?? {});
+function pairs(
+  map: Record<string, string> | undefined,
+  label: string,
+  hidden: Set<string> = new Set(),
+): string[] {
+  const entries = Object.entries(map ?? {}).filter(([k]) => !hidden.has(k));
   if (entries.length === 0) return [field(label, NONE)];
   const [first, ...rest] = entries.map(([k, v]) => `${k}=${v}`);
   return [field(label, first), ...rest.map((line) => `${" ".repeat(LABEL_WIDTH)}${line}`)];
@@ -157,7 +169,7 @@ export function describeObject(
     lines.push(field("Age", formatAge(secondsSince(meta.creationTimestamp, now))));
   }
   lines.push(...pairs(meta.labels, "Labels"));
-  lines.push(...pairs(meta.annotations, "Annotations"));
+  lines.push(...pairs(meta.annotations, "Annotations", HIDDEN_ANNOTATIONS));
 
   if (obj.kind === "Pod") lines.push(...podSections(obj));
   lines.push(...conditionSection(obj));

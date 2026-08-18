@@ -173,3 +173,49 @@ describe("describeObject", () => {
     expect(describeObject(node, [], NOW)).not.toContain("Namespace:");
   });
 });
+
+// `kubectl apply` mirrors the entire manifest — including a Secret's base64
+// `data` — into the last-applied-configuration annotation. Printing
+// annotations verbatim therefore hands out secret values to anyone who can
+// describe the object. The YAML reader strips this annotation for exactly
+// this reason; describe must not undo that.
+describe("describeObject secret hygiene", () => {
+  const LAST_APPLIED = "kubectl.kubernetes.io/last-applied-configuration";
+  const secret = {
+    apiVersion: "v1",
+    kind: "Secret",
+    metadata: {
+      name: "db-credentials",
+      namespace: "payments",
+      annotations: {
+        [LAST_APPLIED]:
+          '{"apiVersion":"v1","kind":"Secret","data":{"password":"c3VwZXJzZWNyZXQ="}}',
+        "app.kubernetes.io/managed-by": "helm",
+      },
+    },
+    data: { password: "c3VwZXJzZWNyZXQ=" },
+  };
+
+  it("never prints the last-applied-configuration annotation", () => {
+    const out = describeObject(secret, [], NOW);
+    expect(out).not.toContain("c3VwZXJzZWNyZXQ=");
+    expect(out).not.toContain(LAST_APPLIED);
+  });
+
+  it("strips it on every kind, not just Secrets — the annotation is noise anyway", () => {
+    const cm = {
+      apiVersion: "v1",
+      kind: "ConfigMap",
+      metadata: { name: "settings", annotations: { [LAST_APPLIED]: "{}" } },
+    };
+    expect(describeObject(cm, [], NOW)).not.toContain(LAST_APPLIED);
+  });
+
+  it("keeps the other annotations", () => {
+    expect(describeObject(secret, [], NOW)).toContain("app.kubernetes.io/managed-by=helm");
+  });
+
+  it("never prints a Secret's data, whatever else it prints", () => {
+    expect(describeObject(secret, [], NOW)).not.toContain("c3VwZXJzZWNyZXQ=");
+  });
+});
