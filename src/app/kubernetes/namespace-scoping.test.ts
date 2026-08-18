@@ -7,11 +7,13 @@ import type { KubernetesConfig } from "@/lib/connections/types";
  * cluster-wide list endpoints at all. Filtering rows in the browser (what the
  * table also does) is not a substitute.
  */
-const listPods = vi.fn(async () => []);
-const listDeployments = vi.fn(async () => []);
-const listServices = vi.fn(async () => []);
-const listConfigMaps = vi.fn(async () => []);
-const listSecrets = vi.fn(async () => []);
+// The list functions return a bounded K8sList, not a bare array.
+const empty = () => ({ rows: [], truncated: false, remaining: null });
+const listPods = vi.fn(async () => empty());
+const listDeployments = vi.fn(async () => empty());
+const listServices = vi.fn(async () => empty());
+const listConfigMaps = vi.fn(async () => empty());
+const listSecrets = vi.fn(async () => empty());
 
 vi.mock("@/lib/connections/kubernetes", () => ({
   listPods: (...a: unknown[]) => listPods(...(a as [])),
@@ -19,7 +21,7 @@ vi.mock("@/lib/connections/kubernetes", () => ({
   listServices: (...a: unknown[]) => listServices(...(a as [])),
   listConfigMaps: (...a: unknown[]) => listConfigMaps(...(a as [])),
   listSecrets: (...a: unknown[]) => listSecrets(...(a as [])),
-  listNamespaces: vi.fn(async () => []),
+  listNamespaces: vi.fn(async () => empty()),
 }));
 
 let config: KubernetesConfig = { source: "path" };

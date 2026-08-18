@@ -121,6 +121,14 @@ shadcn wrappers in `src/components/ui/` re-export `@base-ui/react/*` primitives.
 - **Dialogs use imperative open state** — keep a `[open, setOpen]` and bind it to the `<Dialog open onOpenChange>` props. Don't reach for the (nonexistent) `DialogClose asChild` pattern.
 - Add new shadcn components via `npx shadcn@latest add <component> --yes`. They drop into `src/components/ui/` and need no further wiring.
 
+### Kubernetes workspace
+
+- **One catalogue** (`src/lib/kubernetes/commands.ts`) drives the sidebar groups, the `:` command vocabulary, the palette suggestions and the digit hotkeys. Adding a resource means adding a `K8S_RESOURCES` entry (+ driver list, page, view) — not editing four lists.
+- **Mapping lives in pure functions** (`mappers.ts`, `workload-mappers.ts`, `describe.ts`, `quantity.ts`), not in the driver, so the interesting logic is unit-tested without a cluster. The driver fetches and maps; it does not interpret.
+- **Namespace travels in the URL** (`?ns=`), resolved by `resolveNamespace(param, cfg.namespace)`. Server components scope their list call with it — a namespace-restricted kubeconfig 403s on the cluster-wide list endpoints, so filtering rows in the browser is not a substitute.
+- **Lists are bounded** (`LIST_LIMIT`, `toList` → `K8sList<T>`) and truncation is *visible*: `ResourceTable` renders the "showing the first N" banner from `truncated`/`remaining`. Never let a capped list look complete.
+- **`ResourceTable` stays generic.** Resource-specific actions arrive as `rowActions` (key, label, render) from the view — the table owns the key binding and overlay state. No `kind === "…"` conditionals inside it.
+
 ### Shared SQL workspace layer (`src/components/workspace/sql/`)
 
 The three SQL table-detail workspaces (postgres / mysql / sqlserver) are **not** hand-rolled. Each `table-detail-client.tsx` is a descriptor plus its own dialogs, composed onto one shell:

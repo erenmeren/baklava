@@ -21,11 +21,11 @@ export default async function ConfigMapsPage({ params, searchParams }: Props) {
     record.config,
     resolveNamespace(search.ns, record.config.namespace),
   ).then(
-    (rows) => ({ ok: true as const, rows }),
+    (list) => ({ ok: true as const, list }),
     (err: unknown) => ({ ok: false as const, error: formatError(err) }),
   );
   return result.ok ? (
-    <ConfigMapsView rows={result.rows} />
+    <ConfigMapsView list={result.list} />
   ) : (
     <LoadError resource="configmaps" error={result.error} />
   );

@@ -1,5 +1,6 @@
 "use client";
 
+import type { K8sList } from "@/lib/kubernetes/list";
 import { ResourceTable, type Column, type RowAction } from "../resource-table";
 import { formatAge, type DeploymentRow } from "@/lib/kubernetes/row-types";
 import { useK8s } from "../k8s-context";
@@ -94,7 +95,7 @@ const COLUMNS: Column<DeploymentRow>[] = [
   },
 ];
 
-export function DeploymentsView({ rows }: { rows: DeploymentRow[] }) {
+export function DeploymentsView({ list }: { list: K8sList<DeploymentRow> }) {
   const { connectionId } = useK8s();
   // Capitals so they can't be hit by accident while navigating with j/k.
   const rowActions: RowAction<DeploymentRow>[] = [
@@ -129,7 +130,9 @@ export function DeploymentsView({ rows }: { rows: DeploymentRow[] }) {
       resource="Deployments"
       shortName="deploy"
       kind="deployment"
-      rows={rows}
+      rows={list.rows}
+      truncated={list.truncated}
+      remaining={list.remaining}
       columns={COLUMNS}
       actions={{ edit: true, delete: true }}
       rowActions={rowActions}

@@ -245,3 +245,74 @@ describe("ResourceTable deep link", () => {
     );
   });
 });
+
+describe("ResourceTable describe", () => {
+  let restore: () => void;
+  afterEach(() => restore());
+
+  it("fetches the live describe for the selected row", async () => {
+    restore = mockFetch({ "/describe/": { text: "Name:         api-0\nEvents:       <none>" } });
+    renderTable();
+    fireEvent.keyDown(window, { key: "Enter" });
+
+    await waitFor(() => expect(globalThis.fetch).toHaveBeenCalled());
+    const [url] = (globalThis.fetch as unknown as { mock: { calls: [string][] } }).mock.calls[0];
+    expect(url).toBe("/api/kubernetes/conn-1/describe/pod/api-0?namespace=payments");
+    expect(await screen.findByText(/Events:/)).toBeTruthy();
+  });
+
+  it("falls back to the row's own fields when the cluster describe fails", async () => {
+    restore = mockFetch({
+      "/describe/": () => new Response(JSON.stringify({ error: "forbidden" }), { status: 502 }),
+    });
+    renderTable();
+    fireEvent.keyDown(window, { key: "Enter" });
+
+    // Never worse than the old local dump: the overlay still describes the row
+    // in its "key           : value" shape, which the table itself never renders.
+    expect(await screen.findByText(/name\s+: api-0/)).toBeTruthy();
+  });
+});
+
+describe("ResourceTable truncation notice", () => {
+  let restore: () => void;
+  beforeEach(() => {
+    restore = mockFetch({ "/yaml/": { ok: true } });
+  });
+  afterEach(() => restore());
+
+  function renderTruncated(props: { truncated: boolean; remaining: number | null }) {
+    render(
+      <K8sContextProvider value={CTX}>
+        <ResourceTable
+          resource="Pods"
+          kind="pod"
+          rows={ROWS}
+          columns={COLUMNS}
+          truncated={props.truncated}
+          remaining={props.remaining}
+        />
+      </K8sContextProvider>,
+    );
+  }
+
+  it("says so when the cluster had more than one page", () => {
+    renderTruncated({ truncated: true, remaining: null });
+    expect(screen.getByText(/showing the first/i)).toBeTruthy();
+  });
+
+  it("says how many more when the server estimated it", () => {
+    renderTruncated({ truncated: true, remaining: 4200 });
+    expect(screen.getByText(/4200 more/i)).toBeTruthy();
+  });
+
+  it("stays quiet when the list was complete", () => {
+    renderTruncated({ truncated: false, remaining: null });
+    expect(screen.queryByText(/showing the first/i)).toBeNull();
+  });
+
+  it("warns that the filter only searched what was fetched", () => {
+    renderTruncated({ truncated: true, remaining: null });
+    expect(screen.getByText(/filter/i)).toBeTruthy();
+  });
+});

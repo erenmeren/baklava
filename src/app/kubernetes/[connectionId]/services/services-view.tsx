@@ -1,5 +1,6 @@
 "use client";
 
+import type { K8sList } from "@/lib/kubernetes/list";
 import { ResourceTable, type Column } from "../resource-table";
 import { formatAge, type ServiceRow } from "@/lib/kubernetes/row-types";
 import { cn } from "@/lib/utils";
@@ -88,13 +89,15 @@ const COLUMNS: Column<ServiceRow>[] = [
   },
 ];
 
-export function ServicesView({ rows }: { rows: ServiceRow[] }) {
+export function ServicesView({ list }: { list: K8sList<ServiceRow> }) {
   return (
     <ResourceTable
       resource="Services"
       shortName="svc"
       kind="service"
-      rows={rows}
+      rows={list.rows}
+      truncated={list.truncated}
+      remaining={list.remaining}
       columns={COLUMNS}
       actions={{ edit: true, delete: true }}
     />

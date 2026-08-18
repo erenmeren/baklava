@@ -1,5 +1,6 @@
 "use client";
 
+import type { K8sList } from "@/lib/kubernetes/list";
 import { ResourceTable, type Column } from "../resource-table";
 import { formatAge, type SecretRow } from "@/lib/kubernetes/row-types";
 import { cn } from "@/lib/utils";
@@ -61,13 +62,15 @@ const COLUMNS: Column<SecretRow>[] = [
   },
 ];
 
-export function SecretsView({ rows }: { rows: SecretRow[] }) {
+export function SecretsView({ list }: { list: K8sList<SecretRow> }) {
   return (
     <ResourceTable
       resource="Secrets"
       shortName="sec"
       kind="secret"
-      rows={rows}
+      rows={list.rows}
+      truncated={list.truncated}
+      remaining={list.remaining}
       columns={COLUMNS}
       actions={{ edit: true, delete: true }}
     />

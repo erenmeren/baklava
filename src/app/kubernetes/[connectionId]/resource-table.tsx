@@ -63,6 +63,10 @@ export interface ResourceTableProps<T extends { name: string; namespace?: string
     edit?: boolean;
     delete?: boolean;
   };
+  /** The cluster had more rows than one page — say so, never look complete. */
+  truncated?: boolean;
+  /** The server's estimate of how many more, when it offers one. */
+  remaining?: number | null;
   /** Resource-specific actions contributed by the view (scale, restart, …). */
   rowActions?: RowAction<T>[];
   /** Render the right-hand "describe" YAML for the selected row. */
@@ -86,6 +90,8 @@ export function ResourceTable<T extends { name: string; namespace?: string }>({
   rows,
   columns,
   actions = {},
+  truncated = false,
+  remaining = null,
   rowActions,
   describeYaml,
 }: ResourceTableProps<T>) {
@@ -107,6 +113,35 @@ export function ResourceTable<T extends { name: string; namespace?: string }>({
   >(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  // `null` while the cluster describe is in flight; the local fallback is
+  // rendered until it lands (or instead of it, if the request fails).
+  const [describeText, setDescribeText] = useState<string | null>(null);
+
+  // `kubectl describe` for the selected row. What makes describe worth opening
+  // — container state, conditions, events — isn't in the row, so it has to come
+  // from the cluster; the row-derived dump stays as the offline fallback.
+  useEffect(() => {
+    if (overlay?.kind !== "describe" || !kind) return;
+    const ac = new AbortController();
+    setDescribeText(null);
+    const qs = overlay.row.namespace
+      ? `?namespace=${encodeURIComponent(overlay.row.namespace)}`
+      : "";
+    fetch(
+      `/api/kubernetes/${k8s.connectionId}/describe/${encodeURIComponent(
+        kind,
+      )}/${encodeURIComponent(overlay.row.name)}${qs}`,
+      { signal: ac.signal },
+    )
+      .then(async (res) => {
+        const data = (await res.json().catch(() => ({}))) as { text?: string };
+        if (res.ok && data.text) setDescribeText(data.text);
+      })
+      .catch(() => {
+        // Aborted or unreachable — the fallback already covers this.
+      });
+    return () => ac.abort();
+  }, [overlay, kind, k8s.connectionId]);
 
   const closeDelete = useCallback(() => {
     setOverlay(null);
@@ -491,15 +526,24 @@ export function ResourceTable<T extends { name: string; namespace?: string }>({
         </span>
       </div>
 
+      {truncated ? (
+        <div className="shrink-0 border-t border-amber-500/30 bg-amber-500/10 px-4 py-1.5 font-mono text-[10.5px] text-amber-700 dark:text-amber-300">
+          Showing the first {rows.length}
+          {remaining !== null ? ` — ${remaining} more in the cluster` : " — the cluster has more"}
+          . The filter only searches what was fetched.
+        </div>
+      ) : null}
+
       {/* Overlays */}
       {overlay?.kind === "describe" || overlay?.kind === "yaml" ? (
         <DetailOverlay
           mode={overlay.kind}
           title={`${overlay.kind === "yaml" ? "YAML" : "Describe"}: ${overlay.row.namespace ? `${overlay.row.namespace}/` : ""}${overlay.row.name}`}
           content={
-            describeYaml
+            (overlay.kind === "describe" ? describeText : null) ??
+            (describeYaml
               ? describeYaml(overlay.row)
-              : defaultDescribe(overlay.row, columns)
+              : defaultDescribe(overlay.row, columns))
           }
           onClose={() => setOverlay(null)}
         />

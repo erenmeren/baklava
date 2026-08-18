@@ -1,9 +1,9 @@
 import { requireConnection } from "@/lib/connections/server";
-import { listPods } from "@/lib/connections/kubernetes";
+import { listIngresses } from "@/lib/connections/kubernetes";
 import type { KubernetesConfig } from "@/lib/connections/types";
 import { formatError } from "@/lib/errors";
 import { resolveNamespace } from "@/lib/kubernetes/namespace";
-import { PodsView } from "./pods-view";
+import { IngressesView } from "./ingresses-view";
 import { LoadError } from "../load-error";
 
 export const dynamic = "force-dynamic";
@@ -13,10 +13,10 @@ interface Props {
   searchParams: Promise<{ ns?: string | string[] }>;
 }
 
-export default async function PodsPage({ params, searchParams }: Props) {
+export default async function IngressesPage({ params, searchParams }: Props) {
   const [{ connectionId }, search] = await Promise.all([params, searchParams]);
   const record = requireConnection<KubernetesConfig>(connectionId, "kubernetes");
-  const result = await listPods(
+  const result = await listIngresses(
     connectionId,
     record.config,
     resolveNamespace(search.ns, record.config.namespace),
@@ -25,8 +25,8 @@ export default async function PodsPage({ params, searchParams }: Props) {
     (err: unknown) => ({ ok: false as const, error: formatError(err) }),
   );
   return result.ok ? (
-    <PodsView list={result.list} />
+    <IngressesView list={result.list} />
   ) : (
-    <LoadError resource="pods" error={result.error} />
+    <LoadError resource="ingresses" error={result.error} />
   );
 }

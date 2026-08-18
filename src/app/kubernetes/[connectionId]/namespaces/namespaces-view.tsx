@@ -1,5 +1,6 @@
 "use client";
 
+import type { K8sList } from "@/lib/kubernetes/list";
 import { ResourceTable, type Column } from "../resource-table";
 import { formatAge, type NamespaceRow } from "@/lib/kubernetes/row-types";
 import { StatusPill } from "../status-pill";
@@ -55,14 +56,16 @@ const COLUMNS: Column<NamespaceRow>[] = [
 // one so the shared table's namespace filter doesn't hide everything.
 type NsRow = NamespaceRow & { namespace?: string };
 
-export function NamespacesView({ rows }: { rows: NamespaceRow[] }) {
-  const withNs: NsRow[] = rows.map((r) => ({ ...r, namespace: undefined }));
+export function NamespacesView({ list }: { list: K8sList<NamespaceRow> }) {
+  const withNs: NsRow[] = list.rows.map((r) => ({ ...r, namespace: undefined }));
   return (
     <ResourceTable
       resource="Namespaces"
       shortName="ns"
       kind="namespace"
       rows={withNs}
+      truncated={list.truncated}
+      remaining={list.remaining}
       columns={COLUMNS as Column<NsRow>[]}
       actions={{ edit: true, delete: true }}
     />
