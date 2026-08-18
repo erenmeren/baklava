@@ -36,6 +36,8 @@ export function K8sSidebar({
     { href: `${base}/configmaps`,  short: "cm",  key: "4", label: "ConfigMaps" },
     { href: `${base}/secrets`,     short: "sec", key: "5", label: "Secrets" },
     { href: `${base}/namespaces`,  short: "ns",  key: "6", label: "Namespaces" },
+    { href: `${base}/nodes`,       short: "no",  key: "7", label: "Nodes" },
+    { href: `${base}/events`,      short: "ev",  key: "8", label: "Events" },
   ];
 
   return (

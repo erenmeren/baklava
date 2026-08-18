@@ -115,7 +115,7 @@ export function K8sShell({
         return;
       }
 
-      // 1..6 — resource shortcuts to mirror the sidebar
+      // 1..8 — resource shortcuts to mirror the sidebar
       const numMap: Record<string, string> = {
         "1": "pods",
         "2": "deployments",
@@ -123,6 +123,8 @@ export function K8sShell({
         "4": "configmaps",
         "5": "secrets",
         "6": "namespaces",
+        "7": "nodes",
+        "8": "events",
       };
       if (numMap[e.key]) {
         e.preventDefault();
@@ -191,6 +193,12 @@ export function K8sShell({
         ns: arg ? "__ns_switch" : "namespaces",
         namespace: arg ? "__ns_switch" : "namespaces",
         namespaces: "namespaces",
+        no: "nodes",
+        node: "nodes",
+        nodes: "nodes",
+        ev: "events",
+        event: "events",
+        events: "events",
       };
       const target = ALIASES[head.toLowerCase()];
       setCommandOpen(false);

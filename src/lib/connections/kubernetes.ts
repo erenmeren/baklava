@@ -22,6 +22,8 @@ import type WebSocket from "isomorphic-ws";
 import type { KubernetesConfig } from "./types";
 import { DriverNotInstalledError } from "@/techs/contract";
 import { withReplicas, withRestartedAt } from "@/lib/kubernetes/deployment-ops";
+import { mapEvent, mapNode } from "@/lib/kubernetes/mappers";
+import type { EventRow, NodeRow } from "@/lib/kubernetes/row-types";
 
 let _k8sMod: typeof import("@kubernetes/client-node") | null = null;
 async function getK8s(): Promise<typeof import("@kubernetes/client-node")> {
@@ -496,6 +498,33 @@ export async function listNamespaces(
   return nsList.items.map((n) => mapNamespace(n, counts));
 }
 
+export async function listNodes(
+  connectionId: string,
+  cfg: KubernetesConfig,
+): Promise<NodeRow[]> {
+  const b = await bundleFor(connectionId, cfg);
+  const list = await b.core.listNode();
+  const now = new Date();
+  return list.items.map((n) => mapNode(n, now));
+}
+
+export async function listEvents(
+  connectionId: string,
+  cfg: KubernetesConfig,
+  namespace?: string,
+): Promise<EventRow[]> {
+  const b = await bundleFor(connectionId, cfg);
+  const list =
+    namespace && namespace !== "*"
+      ? await b.core.listNamespacedEvent({ namespace })
+      : await b.core.listEventForAllNamespaces();
+  const now = new Date();
+  // Newest first — an event list is read from the top.
+  return list.items
+    .map((e) => mapEvent(e, now))
+    .sort((a, z) => a.ageSeconds - z.ageSeconds);
+}
+
 export async function listPods(
   connectionId: string,
   cfg: KubernetesConfig,
@@ -802,6 +831,8 @@ const KIND_MAP: Record<
   configmap: { apiVersion: "v1", kind: "ConfigMap", namespaced: true },
   secret: { apiVersion: "v1", kind: "Secret", namespaced: true },
   namespace: { apiVersion: "v1", kind: "Namespace", namespaced: false },
+  node: { apiVersion: "v1", kind: "Node", namespaced: false },
+  event: { apiVersion: "v1", kind: "Event", namespaced: true },
 };
 
 export function resolveKind(kind: string): {

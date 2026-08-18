@@ -22,6 +22,8 @@ const RESOURCE_SUGGESTIONS: Suggestion[] = [
   { cmd: "configmaps", hint: "list configmaps (cm)", group: "resource" },
   { cmd: "secrets", hint: "list secrets (sec)", group: "resource" },
   { cmd: "namespaces", hint: "list namespaces (ns)", group: "resource" },
+  { cmd: "nodes", hint: "list nodes (no)", group: "resource" },
+  { cmd: "events", hint: "list events (ev)", group: "resource" },
 ];
 
 /**

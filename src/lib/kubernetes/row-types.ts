@@ -83,6 +83,34 @@ export interface NamespaceRow {
   labels: string;
 }
 
+export interface NodeRow {
+  name: string;
+  /** `kubectl get nodes` STATUS — "Ready", "NotReady,SchedulingDisabled", … */
+  status: string;
+  schedulable: boolean;
+  roles: string;
+  version: string;
+  os: string;
+  internalIP: string;
+  cpu: string;
+  memory: string;
+  podCapacity: number;
+  ageSeconds: number;
+}
+
+export interface EventRow {
+  namespace: string;
+  name: string;
+  type: "Normal" | "Warning";
+  reason: string;
+  /** The object the event is about, as "Kind/name". */
+  object: string;
+  message: string;
+  count: number;
+  /** Seconds since the event was *last* seen, not since it was created. */
+  ageSeconds: number;
+}
+
 export function formatAge(seconds: number): string {
   if (seconds < 60) return `${seconds}s`;
   const m = Math.floor(seconds / 60);
