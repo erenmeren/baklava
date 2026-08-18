@@ -50,8 +50,11 @@ async function openWorkspace(page: Page) {
  * image", and matching those would fail the test on working software.
  */
 async function expectNoErrorBanner(page: Page) {
-  await expect(page.getByRole("alert")).toHaveCount(0);
+  // LoadError's own two markers, not a bare getByRole("alert"): the Next dev
+  // overlay and the toast region also emit alerts, so an unscoped sweep fails
+  // on working software under parallel load.
   await expect(page.getByText(/could not list/i)).toHaveCount(0);
+  await expect(page.getByText("unreachable", { exact: true })).toHaveCount(0);
 }
 
 test.describe("kubernetes workspace", () => {
