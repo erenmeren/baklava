@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useK8s } from "./k8s-context";
 import { DetailOverlay } from "./detail-overlay";
@@ -67,6 +68,7 @@ export function ResourceTable<T extends { name: string; namespace?: string }>({
   describeYaml,
 }: ResourceTableProps<T>) {
   const k8s = useK8s();
+  const router = useRouter();
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const rowRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const [selected, setSelected] = useState(0);
@@ -77,6 +79,50 @@ export function ResourceTable<T extends { name: string; namespace?: string }>({
     | { kind: "edit"; row: T }
     | { kind: "delete"; row: T }
   >(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const closeDelete = useCallback(() => {
+    setOverlay(null);
+    setDeleteError(null);
+  }, []);
+
+  /**
+   * Delete the row through the same YAML endpoint the edit overlay uses.
+   * On success the route is refreshed — the rows come from a server
+   * component, so nothing else would take the deleted row off the screen.
+   */
+  const runDelete = useCallback(
+    async (row: T) => {
+      if (deleting) return;
+      if (!kind) {
+        setDeleteError("no kind configured for this table");
+        return;
+      }
+      setDeleting(true);
+      setDeleteError(null);
+      const qs = row.namespace
+        ? `?namespace=${encodeURIComponent(row.namespace)}`
+        : "";
+      const url = `/api/kubernetes/${k8s.connectionId}/yaml/${encodeURIComponent(
+        kind,
+      )}/${encodeURIComponent(row.name)}${qs}`;
+      try {
+        const res = await fetch(url, { method: "DELETE" });
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        if (!res.ok || data.error) {
+          throw new Error(data.error || `delete failed (${res.status})`);
+        }
+        setOverlay(null);
+        router.refresh();
+      } catch (err) {
+        setDeleteError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setDeleting(false);
+      }
+    },
+    [deleting, kind, k8s.connectionId, router],
+  );
 
   // Filter by namespace + free-text filter from the shell.
   const visibleRows = useMemo(() => {
@@ -430,17 +476,21 @@ export function ResourceTable<T extends { name: string; namespace?: string }>({
             <>
               You&apos;re about to delete{" "}
               <span className="font-mono text-foreground">
-                {overlay.row.namespace}/{overlay.row.name}
+                {overlay.row.namespace
+                  ? `${overlay.row.namespace}/${overlay.row.name}`
+                  : overlay.row.name}
               </span>
-              . This action is irreversible in a real cluster.
+              . This action is irreversible.
+              {deleteError ? (
+                <span className="mt-3 block font-mono text-xs text-destructive" role="alert">
+                  {deleteError}
+                </span>
+              ) : null}
             </>
           }
-          confirmLabel={`Delete ${overlay.row.name}`}
-          onClose={() => setOverlay(null)}
-          onConfirm={() => {
-            // mock — no-op in the UI shell
-            setOverlay(null);
-          }}
+          confirmLabel={deleting ? "deleting…" : `Delete ${overlay.row.name}`}
+          onClose={closeDelete}
+          onConfirm={() => void runDelete(overlay.row)}
         />
       ) : null}
     </div>

@@ -3,6 +3,7 @@ import { getConnection } from "@/lib/connections/store";
 import {
   readResourceYaml,
   replaceResourceYaml,
+  deleteResource,
 } from "@/lib/connections/kubernetes";
 import type { KubernetesConfig } from "@/lib/connections/types";
 import { formatError } from "@/lib/errors";
@@ -57,6 +58,21 @@ export async function PUT(req: NextRequest, ctx: RouteContext) {
   }
   try {
     await replaceResourceYaml(id, record.config as KubernetesConfig, body.yaml);
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    return NextResponse.json({ error: formatError(err) }, { status: 502 });
+  }
+}
+
+export async function DELETE(req: NextRequest, ctx: RouteContext) {
+  const { id, kind, name } = await ctx.params;
+  const record = getConnection(id);
+  if (!record || record.tech !== "kubernetes") {
+    return NextResponse.json({ error: "Connection not found" }, { status: 404 });
+  }
+  const ns = req.nextUrl.searchParams.get("namespace") || undefined;
+  try {
+    await deleteResource(id, record.config as KubernetesConfig, kind, ns, name);
     return NextResponse.json({ ok: true });
   } catch (err) {
     return NextResponse.json({ error: formatError(err) }, { status: 502 });

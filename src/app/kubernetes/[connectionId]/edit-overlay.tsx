@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -23,6 +24,7 @@ type FlashKind = "saved" | "discarded" | "error";
  * hand the buffer to the user.
  */
 export function EditOverlay({ connectionId, kind, namespace, name, onClose }: Props) {
+  const router = useRouter();
   const [initial, setInitial] = useState<string | null>(null);
   const [value, setValue] = useState("");
   const [loading, setLoading] = useState(true);
@@ -101,6 +103,9 @@ export function EditOverlay({ connectionId, kind, namespace, name, onClose }: Pr
       }
       setInitial(value);
       setFlash({ kind: "saved", text: `✓ ${target} applied` });
+      // The table behind this overlay is server-rendered — without a refresh
+      // it keeps showing the pre-apply row until the user navigates away.
+      router.refresh();
       setTimeout(onClose, 700);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

@@ -15,9 +15,10 @@ function sse(event: string, data: unknown) {
 }
 
 export async function GET(req: NextRequest, ctx: RouteContext) {
-  const { sid } = await ctx.params;
+  const { id, cid, sid } = await ctx.params;
   const session = getSession(sid);
-  if (!session) {
+  // Scoped to the connection + container in the path — see the DELETE handler.
+  if (!session || session.connectionId !== id || session.containerId !== cid) {
     return new Response("Session not found", { status: 404 });
   }
 
