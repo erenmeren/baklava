@@ -25,6 +25,7 @@ import type { KubernetesConfig } from "./types";
 import { DriverNotInstalledError } from "@/techs/contract";
 import { withReplicas, withRestartedAt } from "@/lib/kubernetes/deployment-ops";
 import { describeObject } from "@/lib/kubernetes/describe";
+import { LIST_LIMIT, toList, type K8sList } from "@/lib/kubernetes/list";
 import { mapEvent, mapNode } from "@/lib/kubernetes/mappers";
 import {
   mapCronJob,
@@ -506,197 +507,200 @@ export async function probe(
 export async function listNamespaces(
   connectionId: string,
   cfg: KubernetesConfig,
-): Promise<NamespaceRow[]> {
+): Promise<K8sList<NamespaceRow>> {
   const b = await bundleFor(connectionId, cfg);
   const [nsList, podList] = await Promise.all([
-    b.core.listNamespace(),
+    b.core.listNamespace({ limit: LIST_LIMIT }),
     // Only used for the per-namespace pod count. A namespace-scoped kubeconfig
     // is forbidden from listing pods cluster-wide, and losing a count column is
-    // no reason to fail the whole page.
-    b.core.listPodForAllNamespaces().catch<{ items: V1Pod[] }>(() => ({ items: [] })),
+    // no reason to fail the whole page. Bounded like every other list — the
+    // count is a hint, not an audit.
+    b.core
+      .listPodForAllNamespaces({ limit: LIST_LIMIT })
+      .catch<{ items: V1Pod[] }>(() => ({ items: [] })),
   ]);
   const counts = new Map<string, number>();
   for (const p of podList.items) {
     const ns = p.metadata?.namespace ?? "default";
     counts.set(ns, (counts.get(ns) ?? 0) + 1);
   }
-  return nsList.items.map((n) => mapNamespace(n, counts));
+  return toList(nsList, (n) => mapNamespace(n, counts));
 }
 
 export async function listStatefulSets(
   connectionId: string,
   cfg: KubernetesConfig,
   namespace?: string,
-): Promise<StatefulSetRow[]> {
+): Promise<K8sList<StatefulSetRow>> {
   const b = await bundleFor(connectionId, cfg);
   const list =
     namespace && namespace !== "*"
-      ? await b.apps.listNamespacedStatefulSet({ namespace })
-      : await b.apps.listStatefulSetForAllNamespaces();
+      ? await b.apps.listNamespacedStatefulSet({ namespace, limit: LIST_LIMIT })
+      : await b.apps.listStatefulSetForAllNamespaces({ limit: LIST_LIMIT });
   const now = new Date();
-  return list.items.map((o) => mapStatefulSet(o, now));
+  return toList(list, (o) => mapStatefulSet(o, now));
 }
 
 export async function listDaemonSets(
   connectionId: string,
   cfg: KubernetesConfig,
   namespace?: string,
-): Promise<DaemonSetRow[]> {
+): Promise<K8sList<DaemonSetRow>> {
   const b = await bundleFor(connectionId, cfg);
   const list =
     namespace && namespace !== "*"
-      ? await b.apps.listNamespacedDaemonSet({ namespace })
-      : await b.apps.listDaemonSetForAllNamespaces();
+      ? await b.apps.listNamespacedDaemonSet({ namespace, limit: LIST_LIMIT })
+      : await b.apps.listDaemonSetForAllNamespaces({ limit: LIST_LIMIT });
   const now = new Date();
-  return list.items.map((o) => mapDaemonSet(o, now));
+  return toList(list, (o) => mapDaemonSet(o, now));
 }
 
 export async function listJobs(
   connectionId: string,
   cfg: KubernetesConfig,
   namespace?: string,
-): Promise<JobRow[]> {
+): Promise<K8sList<JobRow>> {
   const b = await bundleFor(connectionId, cfg);
   const list =
     namespace && namespace !== "*"
-      ? await b.batch.listNamespacedJob({ namespace })
-      : await b.batch.listJobForAllNamespaces();
+      ? await b.batch.listNamespacedJob({ namespace, limit: LIST_LIMIT })
+      : await b.batch.listJobForAllNamespaces({ limit: LIST_LIMIT });
   const now = new Date();
-  return list.items.map((o) => mapJob(o, now));
+  return toList(list, (o) => mapJob(o, now));
 }
 
 export async function listCronJobs(
   connectionId: string,
   cfg: KubernetesConfig,
   namespace?: string,
-): Promise<CronJobRow[]> {
+): Promise<K8sList<CronJobRow>> {
   const b = await bundleFor(connectionId, cfg);
   const list =
     namespace && namespace !== "*"
-      ? await b.batch.listNamespacedCronJob({ namespace })
-      : await b.batch.listCronJobForAllNamespaces();
+      ? await b.batch.listNamespacedCronJob({ namespace, limit: LIST_LIMIT })
+      : await b.batch.listCronJobForAllNamespaces({ limit: LIST_LIMIT });
   const now = new Date();
-  return list.items.map((o) => mapCronJob(o, now));
+  return toList(list, (o) => mapCronJob(o, now));
 }
 
 export async function listIngresses(
   connectionId: string,
   cfg: KubernetesConfig,
   namespace?: string,
-): Promise<IngressRow[]> {
+): Promise<K8sList<IngressRow>> {
   const b = await bundleFor(connectionId, cfg);
   const list =
     namespace && namespace !== "*"
-      ? await b.networking.listNamespacedIngress({ namespace })
-      : await b.networking.listIngressForAllNamespaces();
+      ? await b.networking.listNamespacedIngress({ namespace, limit: LIST_LIMIT })
+      : await b.networking.listIngressForAllNamespaces({ limit: LIST_LIMIT });
   const now = new Date();
-  return list.items.map((o) => mapIngress(o, now));
+  return toList(list, (o) => mapIngress(o, now));
 }
 
 export async function listPvcs(
   connectionId: string,
   cfg: KubernetesConfig,
   namespace?: string,
-): Promise<PvcRow[]> {
+): Promise<K8sList<PvcRow>> {
   const b = await bundleFor(connectionId, cfg);
   const list =
     namespace && namespace !== "*"
-      ? await b.core.listNamespacedPersistentVolumeClaim({ namespace })
-      : await b.core.listPersistentVolumeClaimForAllNamespaces();
+      ? await b.core.listNamespacedPersistentVolumeClaim({ namespace, limit: LIST_LIMIT })
+      : await b.core.listPersistentVolumeClaimForAllNamespaces({ limit: LIST_LIMIT });
   const now = new Date();
-  return list.items.map((o) => mapPvc(o, now));
+  return toList(list, (o) => mapPvc(o, now));
 }
 
 export async function listNodes(
   connectionId: string,
   cfg: KubernetesConfig,
-): Promise<NodeRow[]> {
+): Promise<K8sList<NodeRow>> {
   const b = await bundleFor(connectionId, cfg);
-  const list = await b.core.listNode();
+  const list = await b.core.listNode({ limit: LIST_LIMIT });
   const now = new Date();
-  return list.items.map((n) => mapNode(n, now));
+  return toList(list, (n) => mapNode(n, now));
 }
 
 export async function listEvents(
   connectionId: string,
   cfg: KubernetesConfig,
   namespace?: string,
-): Promise<EventRow[]> {
+): Promise<K8sList<EventRow>> {
   const b = await bundleFor(connectionId, cfg);
   const list =
     namespace && namespace !== "*"
-      ? await b.core.listNamespacedEvent({ namespace })
-      : await b.core.listEventForAllNamespaces();
+      ? await b.core.listNamespacedEvent({ namespace, limit: LIST_LIMIT })
+      : await b.core.listEventForAllNamespaces({ limit: LIST_LIMIT });
   const now = new Date();
+  const out = toList(list, (e) => mapEvent(e, now));
   // Newest first — an event list is read from the top.
-  return list.items
-    .map((e) => mapEvent(e, now))
-    .sort((a, z) => a.ageSeconds - z.ageSeconds);
+  out.rows.sort((a, z) => a.ageSeconds - z.ageSeconds);
+  return out;
 }
 
 export async function listPods(
   connectionId: string,
   cfg: KubernetesConfig,
   namespace?: string,
-): Promise<PodRow[]> {
+): Promise<K8sList<PodRow>> {
   const b = await bundleFor(connectionId, cfg);
   const list =
     namespace && namespace !== "*"
-      ? await b.core.listNamespacedPod({ namespace })
-      : await b.core.listPodForAllNamespaces();
-  return list.items.map(mapPod);
+      ? await b.core.listNamespacedPod({ namespace, limit: LIST_LIMIT })
+      : await b.core.listPodForAllNamespaces({ limit: LIST_LIMIT });
+  return toList(list, (o) => mapPod(o));
 }
 
 export async function listDeployments(
   connectionId: string,
   cfg: KubernetesConfig,
   namespace?: string,
-): Promise<DeploymentRow[]> {
+): Promise<K8sList<DeploymentRow>> {
   const b = await bundleFor(connectionId, cfg);
   const list =
     namespace && namespace !== "*"
-      ? await b.apps.listNamespacedDeployment({ namespace })
-      : await b.apps.listDeploymentForAllNamespaces();
-  return list.items.map(mapDeployment);
+      ? await b.apps.listNamespacedDeployment({ namespace, limit: LIST_LIMIT })
+      : await b.apps.listDeploymentForAllNamespaces({ limit: LIST_LIMIT });
+  return toList(list, (o) => mapDeployment(o));
 }
 
 export async function listServices(
   connectionId: string,
   cfg: KubernetesConfig,
   namespace?: string,
-): Promise<ServiceRow[]> {
+): Promise<K8sList<ServiceRow>> {
   const b = await bundleFor(connectionId, cfg);
   const list =
     namespace && namespace !== "*"
-      ? await b.core.listNamespacedService({ namespace })
-      : await b.core.listServiceForAllNamespaces();
-  return list.items.map(mapService);
+      ? await b.core.listNamespacedService({ namespace, limit: LIST_LIMIT })
+      : await b.core.listServiceForAllNamespaces({ limit: LIST_LIMIT });
+  return toList(list, (o) => mapService(o));
 }
 
 export async function listConfigMaps(
   connectionId: string,
   cfg: KubernetesConfig,
   namespace?: string,
-): Promise<ConfigMapRow[]> {
+): Promise<K8sList<ConfigMapRow>> {
   const b = await bundleFor(connectionId, cfg);
   const list =
     namespace && namespace !== "*"
-      ? await b.core.listNamespacedConfigMap({ namespace })
-      : await b.core.listConfigMapForAllNamespaces();
-  return list.items.map(mapConfigMap);
+      ? await b.core.listNamespacedConfigMap({ namespace, limit: LIST_LIMIT })
+      : await b.core.listConfigMapForAllNamespaces({ limit: LIST_LIMIT });
+  return toList(list, (o) => mapConfigMap(o));
 }
 
 export async function listSecrets(
   connectionId: string,
   cfg: KubernetesConfig,
   namespace?: string,
-): Promise<SecretRow[]> {
+): Promise<K8sList<SecretRow>> {
   const b = await bundleFor(connectionId, cfg);
   const list =
     namespace && namespace !== "*"
-      ? await b.core.listNamespacedSecret({ namespace })
-      : await b.core.listSecretForAllNamespaces();
-  return list.items.map(mapSecret);
+      ? await b.core.listNamespacedSecret({ namespace, limit: LIST_LIMIT })
+      : await b.core.listSecretForAllNamespaces({ limit: LIST_LIMIT });
+  return toList(list, (o) => mapSecret(o));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -16,11 +16,11 @@ export default async function NodesPage({ params }: Props) {
   const record = requireConnection<KubernetesConfig>(connectionId, "kubernetes");
   // Nodes are cluster-scoped — the namespace selector doesn't apply.
   const result = await listNodes(connectionId, record.config).then(
-    (rows) => ({ ok: true as const, rows }),
+    (list) => ({ ok: true as const, list }),
     (err: unknown) => ({ ok: false as const, error: formatError(err) }),
   );
   return result.ok ? (
-    <NodesView rows={result.rows} />
+    <NodesView list={result.list} />
   ) : (
     <LoadError resource="nodes" error={result.error} />
   );

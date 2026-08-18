@@ -63,6 +63,10 @@ export interface ResourceTableProps<T extends { name: string; namespace?: string
     edit?: boolean;
     delete?: boolean;
   };
+  /** The cluster had more rows than one page — say so, never look complete. */
+  truncated?: boolean;
+  /** The server's estimate of how many more, when it offers one. */
+  remaining?: number | null;
   /** Resource-specific actions contributed by the view (scale, restart, …). */
   rowActions?: RowAction<T>[];
   /** Render the right-hand "describe" YAML for the selected row. */
@@ -86,6 +90,8 @@ export function ResourceTable<T extends { name: string; namespace?: string }>({
   rows,
   columns,
   actions = {},
+  truncated = false,
+  remaining = null,
   rowActions,
   describeYaml,
 }: ResourceTableProps<T>) {
@@ -519,6 +525,14 @@ export function ResourceTable<T extends { name: string; namespace?: string }>({
           </span>
         </span>
       </div>
+
+      {truncated ? (
+        <div className="shrink-0 border-t border-amber-500/30 bg-amber-500/10 px-4 py-1.5 font-mono text-[10.5px] text-amber-700 dark:text-amber-300">
+          Showing the first {rows.length}
+          {remaining !== null ? ` — ${remaining} more in the cluster` : " — the cluster has more"}
+          . The filter only searches what was fetched.
+        </div>
+      ) : null}
 
       {/* Overlays */}
       {overlay?.kind === "describe" || overlay?.kind === "yaml" ? (

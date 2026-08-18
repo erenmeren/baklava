@@ -1,5 +1,6 @@
 "use client";
 
+import type { K8sList } from "@/lib/kubernetes/list";
 import { ResourceTable, type Column } from "../resource-table";
 import { formatAge, type EventRow } from "@/lib/kubernetes/row-types";
 import { cn } from "@/lib/utils";
@@ -73,13 +74,15 @@ const COLUMNS: Column<EventRow>[] = [
   },
 ];
 
-export function EventsView({ rows }: { rows: EventRow[] }) {
+export function EventsView({ list }: { list: K8sList<EventRow> }) {
   return (
     <ResourceTable
       resource="Events"
       shortName="ev"
       kind="event"
-      rows={rows}
+      rows={list.rows}
+      truncated={list.truncated}
+      remaining={list.remaining}
       columns={COLUMNS}
       actions={{}}
     />

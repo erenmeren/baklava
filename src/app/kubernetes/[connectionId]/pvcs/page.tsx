@@ -21,11 +21,11 @@ export default async function PvcsPage({ params, searchParams }: Props) {
     record.config,
     resolveNamespace(search.ns, record.config.namespace),
   ).then(
-    (rows) => ({ ok: true as const, rows }),
+    (list) => ({ ok: true as const, list }),
     (err: unknown) => ({ ok: false as const, error: formatError(err) }),
   );
   return result.ok ? (
-    <PvcsView rows={result.rows} />
+    <PvcsView list={result.list} />
   ) : (
     <LoadError resource="persistent volume claims" error={result.error} />
   );

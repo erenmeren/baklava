@@ -1,5 +1,6 @@
 "use client";
 
+import type { K8sList } from "@/lib/kubernetes/list";
 import { ResourceTable, type Column } from "../resource-table";
 import { formatAge, type JobRow } from "@/lib/kubernetes/row-types";
 import { cn } from "@/lib/utils";
@@ -59,13 +60,15 @@ const COLUMNS: Column<JobRow>[] = [
   },
 ];
 
-export function JobsView({ rows }: { rows: JobRow[] }) {
+export function JobsView({ list }: { list: K8sList<JobRow> }) {
   return (
     <ResourceTable
       resource="Jobs"
       shortName="job"
       kind="job"
-      rows={rows}
+      rows={list.rows}
+      truncated={list.truncated}
+      remaining={list.remaining}
       columns={COLUMNS}
       actions={{ edit: true, delete: true }}
     />

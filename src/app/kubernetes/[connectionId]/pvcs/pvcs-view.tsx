@@ -1,5 +1,6 @@
 "use client";
 
+import type { K8sList } from "@/lib/kubernetes/list";
 import { ResourceTable, type Column } from "../resource-table";
 import { formatAge, type PvcRow } from "@/lib/kubernetes/row-types";
 
@@ -56,13 +57,15 @@ const COLUMNS: Column<PvcRow>[] = [
   },
 ];
 
-export function PvcsView({ rows }: { rows: PvcRow[] }) {
+export function PvcsView({ list }: { list: K8sList<PvcRow> }) {
   return (
     <ResourceTable
       resource="PVCs"
       shortName="pvc"
       kind="persistentvolumeclaim"
-      rows={rows}
+      rows={list.rows}
+      truncated={list.truncated}
+      remaining={list.remaining}
       columns={COLUMNS}
       actions={{ edit: true, delete: true }}
     />

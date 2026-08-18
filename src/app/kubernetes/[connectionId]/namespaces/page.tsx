@@ -15,11 +15,11 @@ export default async function NamespacesPage({ params }: Props) {
   const { connectionId } = await params;
   const record = requireConnection<KubernetesConfig>(connectionId, "kubernetes");
   const result = await listNamespaces(connectionId, record.config).then(
-    (rows) => ({ ok: true as const, rows }),
+    (list) => ({ ok: true as const, list }),
     (err: unknown) => ({ ok: false as const, error: formatError(err) }),
   );
   return result.ok ? (
-    <NamespacesView rows={result.rows} />
+    <NamespacesView list={result.list} />
   ) : (
     <LoadError resource="namespaces" error={result.error} />
   );

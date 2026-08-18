@@ -1,5 +1,6 @@
 "use client";
 
+import type { K8sList } from "@/lib/kubernetes/list";
 import { ResourceTable, type Column } from "../resource-table";
 import { formatAge, type NodeRow } from "@/lib/kubernetes/row-types";
 import { cn } from "@/lib/utils";
@@ -86,13 +87,15 @@ const COLUMNS: Column<NodeRow>[] = [
 // namespace filter from hiding every row.
 type Row = NodeRow & { namespace?: string };
 
-export function NodesView({ rows }: { rows: NodeRow[] }) {
+export function NodesView({ list }: { list: K8sList<NodeRow> }) {
   return (
     <ResourceTable
       resource="Nodes"
       shortName="no"
       kind="node"
-      rows={rows as Row[]}
+      rows={list.rows as Row[]}
+      truncated={list.truncated}
+      remaining={list.remaining}
       columns={COLUMNS as Column<Row>[]}
       actions={{ edit: true }}
     />

@@ -1,5 +1,6 @@
 "use client";
 
+import type { K8sList } from "@/lib/kubernetes/list";
 import { ResourceTable, type Column } from "../resource-table";
 import { StatusPill } from "../status-pill";
 import { formatAge, type PodRow } from "@/lib/kubernetes/row-types";
@@ -138,13 +139,15 @@ function describePod(p: PodRow): string {
   ].join("\n");
 }
 
-export function PodsView({ rows }: { rows: PodRow[] }) {
+export function PodsView({ list }: { list: K8sList<PodRow> }) {
   return (
     <ResourceTable
       resource="Pods"
       shortName="po"
       kind="pod"
-      rows={rows}
+      rows={list.rows}
+      truncated={list.truncated}
+      remaining={list.remaining}
       columns={COLUMNS}
       actions={{ logs: true, shell: true, edit: true, delete: true }}
       describeYaml={describePod}

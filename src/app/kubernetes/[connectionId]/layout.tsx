@@ -30,14 +30,14 @@ export default async function KubernetesWorkspaceLayout({
   // connection without a hard 500.
   const [probeResult, nsRows] = await Promise.all([
     probe(connectionId, cfg).catch(() => null),
-    listNamespaces(connectionId, cfg).catch(() => []),
+    listNamespaces(connectionId, cfg).catch(() => null),
   ]);
 
   const context = probeResult?.context || cfg.context || "current-context";
   const serverVersion = probeResult?.serverVersion || "unknown";
   const nodeCount = probeResult?.nodeCount ?? 0;
   const subtitle = `${context} · ${serverVersion}`;
-  const namespaceNames = nsRows.map((n) => n.name);
+  const namespaceNames = (nsRows?.rows ?? []).map((n) => n.name);
 
   return (
     <WorkspaceShell

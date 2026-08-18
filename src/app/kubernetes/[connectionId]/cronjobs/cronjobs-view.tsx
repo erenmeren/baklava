@@ -1,5 +1,6 @@
 "use client";
 
+import type { K8sList } from "@/lib/kubernetes/list";
 import { ResourceTable, type Column } from "../resource-table";
 import { formatAge, type CronJobRow } from "@/lib/kubernetes/row-types";
 
@@ -57,13 +58,15 @@ const COLUMNS: Column<CronJobRow>[] = [
   },
 ];
 
-export function CronJobsView({ rows }: { rows: CronJobRow[] }) {
+export function CronJobsView({ list }: { list: K8sList<CronJobRow> }) {
   return (
     <ResourceTable
       resource="CronJobs"
       shortName="cj"
       kind="cronjob"
-      rows={rows}
+      rows={list.rows}
+      truncated={list.truncated}
+      remaining={list.remaining}
       columns={COLUMNS}
       actions={{ edit: true, delete: true }}
     />

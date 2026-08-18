@@ -21,11 +21,11 @@ export default async function CronJobsPage({ params, searchParams }: Props) {
     record.config,
     resolveNamespace(search.ns, record.config.namespace),
   ).then(
-    (rows) => ({ ok: true as const, rows }),
+    (list) => ({ ok: true as const, list }),
     (err: unknown) => ({ ok: false as const, error: formatError(err) }),
   );
   return result.ok ? (
-    <CronJobsView rows={result.rows} />
+    <CronJobsView list={result.list} />
   ) : (
     <LoadError resource="cron jobs" error={result.error} />
   );

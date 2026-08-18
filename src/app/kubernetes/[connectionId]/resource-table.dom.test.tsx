@@ -273,3 +273,46 @@ describe("ResourceTable describe", () => {
     expect(await screen.findByText(/name\s+: api-0/)).toBeTruthy();
   });
 });
+
+describe("ResourceTable truncation notice", () => {
+  let restore: () => void;
+  beforeEach(() => {
+    restore = mockFetch({ "/yaml/": { ok: true } });
+  });
+  afterEach(() => restore());
+
+  function renderTruncated(props: { truncated: boolean; remaining: number | null }) {
+    render(
+      <K8sContextProvider value={CTX}>
+        <ResourceTable
+          resource="Pods"
+          kind="pod"
+          rows={ROWS}
+          columns={COLUMNS}
+          truncated={props.truncated}
+          remaining={props.remaining}
+        />
+      </K8sContextProvider>,
+    );
+  }
+
+  it("says so when the cluster had more than one page", () => {
+    renderTruncated({ truncated: true, remaining: null });
+    expect(screen.getByText(/showing the first/i)).toBeTruthy();
+  });
+
+  it("says how many more when the server estimated it", () => {
+    renderTruncated({ truncated: true, remaining: 4200 });
+    expect(screen.getByText(/4200 more/i)).toBeTruthy();
+  });
+
+  it("stays quiet when the list was complete", () => {
+    renderTruncated({ truncated: false, remaining: null });
+    expect(screen.queryByText(/showing the first/i)).toBeNull();
+  });
+
+  it("warns that the filter only searched what was fetched", () => {
+    renderTruncated({ truncated: true, remaining: null });
+    expect(screen.getByText(/filter/i)).toBeTruthy();
+  });
+});

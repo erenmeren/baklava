@@ -21,11 +21,11 @@ export default async function SecretsPage({ params, searchParams }: Props) {
     record.config,
     resolveNamespace(search.ns, record.config.namespace),
   ).then(
-    (rows) => ({ ok: true as const, rows }),
+    (list) => ({ ok: true as const, list }),
     (err: unknown) => ({ ok: false as const, error: formatError(err) }),
   );
   return result.ok ? (
-    <SecretsView rows={result.rows} />
+    <SecretsView list={result.list} />
   ) : (
     <LoadError resource="secrets" error={result.error} />
   );

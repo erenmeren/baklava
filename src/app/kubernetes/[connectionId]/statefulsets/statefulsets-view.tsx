@@ -1,5 +1,6 @@
 "use client";
 
+import type { K8sList } from "@/lib/kubernetes/list";
 import { ResourceTable, type Column } from "../resource-table";
 import { formatAge, type StatefulSetRow } from "@/lib/kubernetes/row-types";
 
@@ -44,13 +45,15 @@ const COLUMNS: Column<StatefulSetRow>[] = [
   },
 ];
 
-export function StatefulSetsView({ rows }: { rows: StatefulSetRow[] }) {
+export function StatefulSetsView({ list }: { list: K8sList<StatefulSetRow> }) {
   return (
     <ResourceTable
       resource="StatefulSets"
       shortName="sts"
       kind="statefulset"
-      rows={rows}
+      rows={list.rows}
+      truncated={list.truncated}
+      remaining={list.remaining}
       columns={COLUMNS}
       actions={{ edit: true, delete: true }}
     />
