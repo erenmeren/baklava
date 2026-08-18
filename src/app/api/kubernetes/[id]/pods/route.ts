@@ -3,6 +3,7 @@ import { getConnection, updateStatus } from "@/lib/connections/store";
 import { listPods } from "@/lib/connections/kubernetes";
 import type { KubernetesConfig } from "@/lib/connections/types";
 import { formatError } from "@/lib/errors";
+import { resolveNamespace } from "@/lib/kubernetes/namespace";
 
 export const runtime = "nodejs";
 
@@ -16,9 +17,15 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
   if (!record || record.tech !== "kubernetes") {
     return NextResponse.json({ error: "Connection not found" }, { status: 404 });
   }
-  const ns = req.nextUrl.searchParams.get("namespace") || undefined;
+  const cfg = record.config as KubernetesConfig;
+  // No `?namespace=` falls back to the connection's configured namespace — a
+  // namespace-scoped kubeconfig can't list cluster-wide.
+  const ns = resolveNamespace(
+    req.nextUrl.searchParams.get("namespace") ?? undefined,
+    cfg.namespace,
+  );
   try {
-    const rows = await listPods(id, record.config as KubernetesConfig, ns);
+    const rows = await listPods(id, cfg, ns);
     updateStatus(id, "ok");
     return NextResponse.json({ rows });
   } catch (err) {

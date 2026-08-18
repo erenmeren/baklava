@@ -482,7 +482,10 @@ export async function listNamespaces(
   const b = await bundleFor(connectionId, cfg);
   const [nsList, podList] = await Promise.all([
     b.core.listNamespace(),
-    b.core.listPodForAllNamespaces(),
+    // Only used for the per-namespace pod count. A namespace-scoped kubeconfig
+    // is forbidden from listing pods cluster-wide, and losing a count column is
+    // no reason to fail the whole page.
+    b.core.listPodForAllNamespaces().catch<{ items: V1Pod[] }>(() => ({ items: [] })),
   ]);
   const counts = new Map<string, number>();
   for (const p of podList.items) {
