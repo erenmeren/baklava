@@ -21,6 +21,7 @@ import {
   replaceResourceYaml,
   deleteResource,
   describeResource,
+  proxyPodHttp,
   scaleDeployment,
   restartDeployment,
 } from "@/lib/connections/kubernetes";
@@ -129,6 +130,27 @@ export function kubernetesTools(
           kind as string,
           namespace as string | undefined,
           name as string,
+        ),
+    },
+    {
+      name: "k8s_pod_http",
+      description:
+        "GET a pod's HTTP port through the apiserver proxy — health endpoints, metrics, admin pages. HTTP only: this is not a TCP tunnel, so cluster databases are not reachable. Categorised as a write because the pod decides what a GET does.",
+      category: "write",
+      inputSchema: z.object({
+        namespace: z.string(),
+        pod: z.string(),
+        port: z.union([z.number().int().min(1).max(65535), z.string()]),
+        path: z.string().default("/"),
+      }),
+      execute: async ({ namespace, pod, port, path }) =>
+        proxyPodHttp(
+          connectionId,
+          config,
+          namespace as string,
+          pod as string,
+          port as number | string,
+          path as string,
         ),
     },
     {

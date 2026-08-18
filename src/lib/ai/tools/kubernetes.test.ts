@@ -16,6 +16,7 @@ vi.mock("@/lib/connections/kubernetes", () => ({
   listIngresses: vi.fn(async () => []),
   listPvcs: vi.fn(async () => []),
   describeResource: vi.fn(async () => "Name:  api-0"),
+  proxyPodHttp: vi.fn(async () => ({ status: 200, body: "ok", truncated: false })),
   scaleDeployment: vi.fn(async () => undefined),
   restartDeployment: vi.fn(async () => undefined),
   getPodLogs: vi.fn(async () => "log line"),
@@ -125,5 +126,30 @@ describe("kubernetesTools coverage", () => {
     const restart = tools().find((t) => t.name === "k8s_restart_deployment")!;
     await restart.execute({ namespace: "demo", name: "api" });
     expect(k.restartDeployment).toHaveBeenCalledWith("c1", cfg, "demo", "api");
+  });
+});
+
+describe("k8s_pod_http", () => {
+  const tool = () =>
+    kubernetesTools("c1", cfg as never, DEFAULT_POLICY).find((t) => t.name === "k8s_pod_http")!;
+
+  it("is a write — the pod decides what a GET does", () => {
+    expect(tool().category).toBe("write");
+  });
+
+  it("delegates with the port and path", async () => {
+    await tool().execute({ namespace: "demo", pod: "api-0", port: 80, path: "/healthz" });
+    expect(k.proxyPodHttp).toHaveBeenCalledWith("c1", cfg, "demo", "api-0", 80, "/healthz");
+  });
+
+  it("defaults the path to root", () => {
+    const parsed = tool().inputSchema.parse({ namespace: "d", pod: "p", port: 80 }) as {
+      path: string;
+    };
+    expect(parsed.path).toBe("/");
+  });
+
+  it("rejects a port outside the valid range", () => {
+    expect(() => tool().inputSchema.parse({ namespace: "d", pod: "p", port: 0 })).toThrow();
   });
 });

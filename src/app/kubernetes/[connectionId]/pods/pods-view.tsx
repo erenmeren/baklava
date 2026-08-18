@@ -1,7 +1,9 @@
 "use client";
 
 import type { K8sList } from "@/lib/kubernetes/list";
-import { ResourceTable, type Column } from "../resource-table";
+import { ResourceTable, type Column, type RowAction } from "../resource-table";
+import { useK8s } from "../k8s-context";
+import { PodProxyOverlay } from "./pod-proxy-overlay";
 import { StatusPill } from "../status-pill";
 import { formatAge, type PodRow } from "@/lib/kubernetes/row-types";
 
@@ -160,6 +162,16 @@ function describePod(p: PodRow): string {
 }
 
 export function PodsView({ list }: { list: K8sList<PodRow> }) {
+  const { connectionId } = useK8s();
+  const rowActions: RowAction<PodRow>[] = [
+    {
+      key: "F",
+      label: "http",
+      render: ({ row, close }) => (
+        <PodProxyOverlay connectionId={connectionId} row={row} close={close} />
+      ),
+    },
+  ];
   return (
     <ResourceTable
       resource="Pods"
@@ -169,6 +181,7 @@ export function PodsView({ list }: { list: K8sList<PodRow> }) {
       truncated={list.truncated}
       remaining={list.remaining}
       columns={COLUMNS}
+      rowActions={rowActions}
       actions={{ logs: true, shell: true, edit: true, delete: true }}
       describeYaml={describePod}
     />

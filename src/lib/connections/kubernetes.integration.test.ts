@@ -276,6 +276,50 @@ describe("kubernetes driver", async () => {
     expect(typeof replaceResourceYaml).toBe("function");
   });
 
+  /**
+   * A Running, non-terminating storefront pod. The scale/restart tests above
+   * roll this deployment, and the apiserver proxy legitimately 502s at a pod
+   * that is shutting down — so wait for a settled one rather than racing it.
+   */
+  async function readyStorefrontPod(): Promise<string> {
+    const { listPods } = await import("./kubernetes");
+    for (let i = 0; i < 40; i++) {
+      const { rows } = await listPods(ID, cfg, NS);
+      const pod = rows.find(
+        (p) => p.name.startsWith("storefront-") && p.status === "Running" && p.ready === "2/2",
+      );
+      if (pod) return pod.name;
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    throw new Error("no ready storefront pod appeared");
+  }
+
+  it.skipIf(!up)("proxyPodHttp reaches the pod's HTTP port through the apiserver", async () => {
+    const { proxyPodHttp } = await import("./kubernetes");
+    const pod = await readyStorefrontPod();
+
+    // The seed runs nginx on port 80 in the `web` container.
+    const res = await proxyPodHttp(ID, cfg, NS, pod, 80, "/");
+    expect(res.status).toBe(200);
+    expect(res.body).toContain("Welcome to nginx");
+    expect(res.truncated).toBe(false);
+  });
+
+  it.skipIf(!up)("proxyPodHttp returns the pod's own 404 as a result, not a throw", async () => {
+    const { proxyPodHttp } = await import("./kubernetes");
+    const pod = await readyStorefrontPod();
+
+    const res = await proxyPodHttp(ID, cfg, NS, pod, 80, "/nope");
+    expect(res.status).toBe(404);
+  });
+
+  it.skipIf(!up)("proxyPodHttp refuses a path that climbs out of the subresource", async () => {
+    const { proxyPodHttp } = await import("./kubernetes");
+    await expect(
+      proxyPodHttp(ID, cfg, NS, "storefront", 80, "/../../../api/v1/secrets"),
+    ).rejects.toThrow(/path/i);
+  });
+
   it.skipIf(!up)("rejects an unsupported kind rather than guessing", async () => {
     const { readResourceYaml } = await import("./kubernetes");
     await expect(

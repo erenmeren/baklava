@@ -35,7 +35,9 @@ const SECTIONS: { title: string; rows: { k: string; desc: string }[] }[] = [
       { k: "e", desc: "edit in place" },
       { k: "D", desc: "delete selected (capital)" },
       { k: "S", desc: "scale deployment (capital)" },
-      { k: "R", desc: "rollout restart deployment (capital)" },
+      { k: "R", desc: "rollout restart deployment / drain node (capital)" },
+      { k: "C", desc: "cordon or uncordon node (capital)" },
+      { k: "F", desc: "GET a pod's HTTP port via the apiserver (capital)" },
     ],
   },
   {
