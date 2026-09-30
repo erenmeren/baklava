@@ -68,3 +68,14 @@ describe("assertHostAllowed", () => {
     await expect(assertHostAllowed("nope.invalid", { lookup: lookup({}) })).rejects.toBeInstanceOf(EgressBlockedError);
   });
 });
+
+describe("classifyIp — addresses hiding inside other ranges", () => {
+  it.each([
+    ["64:ff9b::a9fe:a9fe", "metadata"], // NAT64 of 169.254.169.254
+    ["2002:a9fe:a9fe::", "metadata"], // 6to4 of 169.254.169.254
+    ["64:ff9b::a9fe:0101", "link-local"],
+    ["100.100.100.200", "metadata"], // Alibaba
+    ["192.0.0.192", "metadata"], // Oracle
+    ["64:ff9b::0a00:0005", "private"], // NAT64 of 10.0.0.5
+  ])("%s → %s", (ip, cat) => expect(classifyIp(ip)).toBe(cat));
+});

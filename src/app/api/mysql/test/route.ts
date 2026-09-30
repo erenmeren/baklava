@@ -4,6 +4,7 @@ import { saveConnection, publicView } from "@/lib/connections/store";
 import type { MysqlConfig } from "@/lib/connections/types";
 import { formatError } from "@/lib/errors";
 import { getCurrentUser } from "@/lib/auth/current-user";
+import { egressRejection } from "@/lib/net/connection-targets";
 
 export const runtime = "nodejs";
 
@@ -24,6 +25,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "host is required" }, { status: 400 });
   }
 
+  const egress = await egressRejection("mysql", body.config);
+  if (egress) return egress;
   try {
     const probe = await probeMysql(body.config);
     const record = body.save

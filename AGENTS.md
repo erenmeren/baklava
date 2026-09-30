@@ -74,7 +74,7 @@ Every route file should start with `export const runtime = "nodejs";` (we need N
 
 **Re-pointing a connection** (`src/lib/connections/target-keys.ts`): host/port/brokers/uri/url/endpoint/TLS-type keys can be changed only by the owner or an admin — PATCH keeps a stored secret on a blank field, so a `write` grantee changing the host would receive the owner's password. The per-connection AI policy (`PUT /api/ai/connections/<id>/policy`) is owner/admin-only for the same reason: it's shared.
 
-**Egress policy** (`src/lib/net/egress.ts`): user-supplied target hosts (load-test URL, health reachability probe) pass through `assertHostAllowed`, which resolves the hostname, pins the resulting IP, and blocks cloud-metadata ranges (`169.254.169.254`, `fd00:ec2::254`) and link-local addresses; private/loopback targets are allowed; `BAKLAVA_EGRESS_ALLOW=<ip,ip>` re-allows specific IPs.
+**Egress policy** (`src/lib/net/egress.ts`): user-supplied target hosts — every `/api/<tech>/test` route and connection PATCH (via `egressRejection` / `targetHostsOf` in `src/lib/net/connection-targets.ts` — a new tech's host-bearing config keys go there), the load-test URL, the health reachability probe — pass through `assertHostAllowed`, which resolves the hostname, pins the resulting IP, and blocks cloud-metadata ranges (`169.254.169.254`, `fd00:ec2::254`) and link-local addresses; private/loopback targets are allowed; `BAKLAVA_EGRESS_ALLOW=<ip,ip>` re-allows specific IPs. The k6 script additionally gets `blacklistIPs` (`ALWAYS_BLOCKED_CIDRS`) and a `hosts` pin to the checked IP, so neither a redirect nor a second DNS answer escapes the check.
 
 ### SSE / streaming routes
 

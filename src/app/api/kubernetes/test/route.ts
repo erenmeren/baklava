@@ -6,6 +6,7 @@ import { formatError } from "@/lib/errors";
 import { dropKubernetesClient, probe } from "@/lib/connections/kubernetes";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { hostLocalForbidden, hostLocalReason } from "@/lib/connections/host-local";
+import { egressRejection } from "@/lib/net/connection-targets";
 
 export const runtime = "nodejs";
 
@@ -55,6 +56,8 @@ export async function POST(req: NextRequest) {
   const hostLocal = hostLocalReason("kubernetes", body.config);
   if (hostLocal && user?.role !== "admin") return hostLocalForbidden(hostLocal);
 
+  const egress = await egressRejection("kubernetes", body.config);
+  if (egress) return egress;
   // Probe with a temporary id so the cached client doesn't poison a real
   // record if the user is about to save under a different id.
   const probeId = `__probe_${randomUUID()}`;

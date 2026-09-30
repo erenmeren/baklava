@@ -23,6 +23,7 @@ import {
   touchesLocation,
 } from "@/lib/connections/host-local";
 import { changedTargetKeys } from "@/lib/connections/target-keys";
+import { egressRejection } from "@/lib/net/connection-targets";
 import { deletePolicy } from "@/lib/ai/policy-store";
 
 export const runtime = "nodejs";
@@ -117,6 +118,13 @@ export async function PATCH(req: Request, ctx: RouteContext) {
     for (const key of body.unset ?? []) delete merged[key];
     const reason = hostLocalReason(existing.tech, merged);
     if (reason) return hostLocalForbidden(reason);
+  }
+  // Same egress policy as the /test routes, for the new target.
+  if (body.config || body.unset?.length) {
+    const merged = mergeConfig(existing.config as Record<string, unknown>, body.config ?? {});
+    for (const key of body.unset ?? []) delete merged[key];
+    const egress = await egressRejection(existing.tech, merged);
+    if (egress) return egress;
   }
   const updated = updateConnection(id, body);
   if (!updated) {

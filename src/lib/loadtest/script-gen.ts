@@ -145,13 +145,29 @@ function requestStepCode(
   return lines.join("\n");
 }
 
-export function generateK6Script(config: LoadTestConfig): string {
+export interface ScriptEgress {
+  /** hostname → the IP the egress check approved; k6 must not re-resolve it. */
+  pinnedHosts?: Record<string, string>;
+  /** CIDRs k6 must refuse to connect to — on every request and redirect hop. */
+  blockedCidrs?: string[];
+  /** Stop following redirects (when a blocked range had to be carved out). */
+  noRedirects?: boolean;
+}
+
+export function generateK6Script(config: LoadTestConfig, egress: ScriptEgress = {}): string {
   const { url } = rewriteLocalhostForDocker(config.target.baseUrl);
   const base = url.replace(/\/+$/, "");
   const options = {
     scenarios: { default: profileToScenario(config.profile) },
     thresholds: thresholdsToK6(config.thresholds),
     summaryTrendStats: SUMMARY_TREND_STATS,
+    // The target passed the egress check, but a redirect (a 302 to
+    // 169.254.169.254) or a second DNS answer could still send k6 elsewhere.
+    // k6 enforces blacklistIPs on every connection, redirects included, and
+    // the checked address is pinned like an /etc/hosts entry.
+    ...(egress.blockedCidrs?.length ? { blacklistIPs: egress.blockedCidrs } : {}),
+    ...(egress.noRedirects ? { maxRedirects: 0 } : {}),
+    ...(egress.pinnedHosts && Object.keys(egress.pinnedHosts).length ? { hosts: egress.pinnedHosts } : {}),
   };
 
   const trendDecls = config.requests

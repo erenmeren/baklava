@@ -4,6 +4,7 @@ import { saveConnection, publicView } from "@/lib/connections/store";
 import type { KafkaConfig } from "@/lib/connections/types";
 import { formatError } from "@/lib/errors";
 import { getCurrentUser } from "@/lib/auth/current-user";
+import { egressRejection } from "@/lib/net/connection-targets";
 
 export const runtime = "nodejs";
 
@@ -27,6 +28,8 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const egress = await egressRejection("kafka", body.config);
+  if (egress) return egress;
   try {
     const probe = await probeKafka(body.config);
     const record = body.save

@@ -5,6 +5,7 @@ import type { DockerConfig } from "@/lib/connections/types";
 import { formatError } from "@/lib/errors";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { hostLocalForbidden, hostLocalReason } from "@/lib/connections/host-local";
+import { egressRejection } from "@/lib/net/connection-targets";
 
 export const runtime = "nodejs";
 
@@ -31,6 +32,8 @@ export async function POST(req: NextRequest) {
   const hostLocal = hostLocalReason("docker", body.config);
   if (hostLocal && user?.role !== "admin") return hostLocalForbidden(hostLocal);
 
+  const egress = await egressRejection("docker", body.config);
+  if (egress) return egress;
   try {
     const info = await pingDocker(body.config);
     const record = body.save
