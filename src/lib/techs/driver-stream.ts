@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { resolveInstallPackages, isInstallAllowed } from "@/lib/techs/install";
 import { invalidatePresence } from "@/techs/presence";
 import { formatError } from "@/lib/errors";
+import { getCurrentUser } from "@/lib/auth/current-user";
 
 const encoder = new TextEncoder();
 
@@ -52,6 +53,11 @@ export function driverNpmStream(
 ): Response {
   if (!isInstallAllowed(req.headers.get("host"))) {
     return sseError(`Driver ${action} is only allowed from localhost`, 403);
+  }
+  // The Host header is client-supplied, so the localhost check alone is not a
+  // gate: uninstalling a driver takes that tech down for every user.
+  if (getCurrentUser(req)?.role !== "admin") {
+    return sseError(`Driver ${action} requires an admin`, 403);
   }
 
   let packages: string[];

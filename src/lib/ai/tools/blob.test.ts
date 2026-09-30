@@ -31,7 +31,12 @@ const tools = () => blobTools("r2", "c1", cfg);
 const get = (name: string) => tools().find((t) => t.name === name)!;
 
 describe("blobTools", () => {
-  beforeEach(() => vi.clearAllMocks());
+  const notFound = () => Object.assign(new Error("Not Found"), { name: "NotFound" });
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Destination keys don't exist unless a test says so.
+    vi.mocked(s3.headObject).mockRejectedValue(notFound());
+  });
 
   it("tags categories (read/write/destructive)", () => {
     const cat = Object.fromEntries(tools().map((t) => [t.name, t.category]));
@@ -48,12 +53,43 @@ describe("blobTools", () => {
     expect(cat["blob_move_object"]).toBe("destructive");
   });
 
+  it("upload/copy refuse to replace an existing key unless overwrite: true", async () => {
+    vi.mocked(s3.headObject).mockResolvedValue({} as never);
+    await expect(
+      get("blob_upload_object").execute({ bucket: "b", key: "k", content: "x" }),
+    ).rejects.toThrow(/already exists/);
+    await expect(get("blob_copy_object").execute({ bucket: "b", from: "a", to: "k" })).rejects.toThrow(
+      /already exists/,
+    );
+    expect(s3.uploadObject).not.toHaveBeenCalled();
+    expect(s3.copyObject).not.toHaveBeenCalled();
+
+    await get("blob_upload_object").execute({ bucket: "b", key: "k", content: "x", overwrite: true });
+    expect(s3.uploadObject).toHaveBeenCalled();
+  });
+
+  it("overwrite: true escalates upload/copy to destructive", () => {
+    for (const name of ["blob_upload_object", "blob_copy_object"]) {
+      const t = get(name);
+      expect(t.categoryFor?.({ overwrite: true })).toBe("destructive");
+      expect(t.categoryFor?.({})).toBe("write");
+    }
+  });
+
+  it("a head error other than 404 is not mistaken for 'free to write'", async () => {
+    vi.mocked(s3.headObject).mockRejectedValue(Object.assign(new Error("denied"), { name: "AccessDenied" }));
+    await expect(
+      get("blob_upload_object").execute({ bucket: "b", key: "k", content: "x" }),
+    ).rejects.toThrow(/denied/);
+  });
+
   it("exposes no content-read or presigned-url tool", () => {
     const names = tools().map((t) => t.name);
     expect(names.some((n) => /presign|download|read_object|get_object|content/i.test(n))).toBe(false);
   });
 
   it("blob_head_object returns metadata only (delegates to headObject)", async () => {
+    vi.mocked(s3.headObject).mockResolvedValueOnce({} as never);
     await get("blob_head_object").execute({ bucket: "b", key: "k" });
     expect(s3.headObject).toHaveBeenCalledWith(fakeClient, "b", "k");
   });

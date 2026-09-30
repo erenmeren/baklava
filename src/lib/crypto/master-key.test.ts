@@ -47,3 +47,18 @@ describe("resolveKeyMaterial", () => {
     expect(a).toBe(b);
   });
 });
+
+describe("resolveKeyMaterial — key-file hygiene", () => {
+  it("refuses an empty master.key instead of using a zero-length key", () => {
+    fs.writeFileSync(path.join(dir, "master.key"), "  \n");
+    expect(() => resolveKeyMaterial({ keychain: null })).toThrow(/empty/);
+  });
+
+  it("tightens a key file that was copied in world-readable", () => {
+    const keyPath = path.join(dir, "master.key");
+    fs.writeFileSync(keyPath, "existing-key", { mode: 0o644 });
+    fs.chmodSync(keyPath, 0o644);
+    expect(resolveKeyMaterial({ keychain: null }).material.toString()).toBe("existing-key");
+    expect(fs.statSync(keyPath).mode & 0o777).toBe(0o600);
+  });
+});

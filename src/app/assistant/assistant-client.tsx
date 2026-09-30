@@ -15,10 +15,6 @@ import { AiSettingsDialog } from "@/components/ai/ai-settings-dialog";
 import { ModelPicker } from "@/components/ai/model-picker";
 import { consumeAssistantStream } from "./stream";
 
-function genId() {
-  return Math.random().toString(36).slice(2) + Date.now().toString(36);
-}
-
 export function AssistantClient() {
   const [allConns, setAllConns] = useState<ConnectionRecord[]>([]);
   const [rows, setRows] = useState<ConversationListItem[]>([]);
@@ -37,7 +33,6 @@ export function AssistantClient() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [agentName, setAgentName] = useState("");
   const [aiPaused, setAiPaused] = useState(false);
-  const sessionRef = useRef(genId());
   const planModeRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
   const initedRef = useRef(false);
@@ -113,7 +108,6 @@ export function AssistantClient() {
       const d = await res.json();
       setActiveId(d.conversation.id);
       setSetIds([]); setMessages([]); setChips([]); setPending([]); setPlan(null);
-      sessionRef.current = genId();
       refreshList();
     } catch {
       toast.error("Couldn't start a new chat");
@@ -142,7 +136,6 @@ export function AssistantClient() {
           .filter((m: ChatMessage) => m.content.trim().length > 0),
       );
       setChips([]); setPending([]); setPlan(null);
-      sessionRef.current = genId();
     } catch {
       toast.error("Couldn't load that conversation");
     } finally {
@@ -218,21 +211,32 @@ export function AssistantClient() {
 
   const removeConn = useCallback((id: string) => setSetIds((ids) => ids.filter((x) => x !== id)), []);
 
-  const changePolicy = useCallback((id: string, p: PolicyView) => {
-    setPolicies((prev) => ({ ...prev, [id]: p }));
-    void fetch(`/api/ai/connections/${id}/policy`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(p) });
+  const changePolicy = useCallback(async (id: string, p: PolicyView) => {
+    let previous: PolicyView | undefined;
+    setPolicies((prev) => {
+      previous = prev[id];
+      return { ...prev, [id]: p };
+    });
+    // Only the owner or an admin may change it; revert the optimistic update otherwise.
+    const res = await fetch(`/api/ai/connections/${id}/policy`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(p) }).catch(() => null);
+    if (!res?.ok) {
+      setPolicies((prev) => ({ ...prev, [id]: previous ?? prev[id] }));
+      const d = (await res?.json().catch(() => null)) as { error?: string } | null;
+      toast.error("Couldn't change the policy", { description: d?.error });
+    }
   }, []);
 
-  const decide = useCallback(async (toolCallId: string, decision: "approve" | "reject") => {
+  const decide = useCallback(async (toolCallId: string, decision: "approve" | "reject", confirm?: string) => {
     const target = pending.find((x) => x.toolCallId === toolCallId);
     setPending((p) => p.filter((x) => x.toolCallId !== toolCallId));
     try {
       const res = await fetch("/api/ai/chat/approve", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        // Use the session the approval belongs to (not the current one, which
-        // may have changed if the user switched chats while the card was open).
-        body: JSON.stringify({ sessionId: target?.sessionId ?? sessionRef.current, toolCallId, decision }),
+        // The server minted this session for the turn that asked (it rides on
+        // the approval-needed event), so the decision reaches the right one
+        // even if the user has since switched chats.
+        body: JSON.stringify({ sessionId: target?.sessionId, toolCallId, decision, confirm }),
       });
       const d = (await res.json().catch(() => ({ ok: false }))) as { ok?: boolean };
       if (!d.ok) toast.error("Couldn't deliver your decision", { description: "That request may have already ended." });
@@ -242,7 +246,7 @@ export function AssistantClient() {
   }, [pending]);
 
   const decidePlan = useCallback(async (toolCallId: string, decision: "approve" | "reject") => {
-    const sessionId = plan?.sessionId ?? sessionRef.current;
+    const sessionId = plan?.sessionId;
     setPlan(null);
     try {
       const res = await fetch("/api/ai/chat/approve", {
@@ -295,7 +299,6 @@ export function AssistantClient() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           conversationId: convId,
-          sessionId: sessionRef.current,
           connections: setConns.map((c) => ({ id: c.id, tech: c.tech })),
           userMessage: { role: "user", content: userMsg.content },
           planMode: planModeRef.current,
@@ -312,7 +315,7 @@ export function AssistantClient() {
         onToolCall: (d) =>
           setChips((c) => [...c, { toolCallId: d.toolCallId, tool: d.tool, connection: d.args?.connection }]),
         onApprovalNeeded: (d) => setPending((p) => [...p, d]),
-        onPlan: (d) => setPlan({ sessionId: sessionRef.current, ...d }),
+        onPlan: (d) => setPlan(d),
         onError: (msg) => setMessages((m) => patchLast(m, `⚠️ ${msg}`)),
       });
       refreshList();

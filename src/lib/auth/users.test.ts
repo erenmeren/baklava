@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import os from "node:os";
 import path from "node:path";
 import fs from "node:fs";
@@ -203,6 +203,10 @@ describe("users store — migration from legacy single password", () => {
     // Sessions were revoked (revokeAllExcept(null)).
     expect(sessions.verifySession(sess.id)).toBe(false);
     expect(users.needsSetup()).toBe(false);
+    // The legacy hash is gone from auth.json, so deleting users.json later
+    // can't resurrect an admin with the old password.
+    const legacyStore = await import("./store");
+    expect(legacyStore.getLegacyPasswordForMigration()).toBeNull();
   });
 
   it("does not migrate when there is no legacy password (stays empty)", async () => {
@@ -221,5 +225,26 @@ describe("users store — migration from legacy single password", () => {
     users.createUser({ username: "bob", password: "pw", role: "member" });
     users._resetUsersCacheForTests();
     expect(users.listUsers()).toHaveLength(2); // migration did not run again
+  });
+});
+
+describe("users.json robustness", () => {
+  it("an unreadable users.json keeps setup closed instead of reopening it", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "baklava-users-corrupt-"));
+    const prev = process.env.BAKLAVA_DATA_DIR;
+    process.env.BAKLAVA_DATA_DIR = dir;
+    try {
+      fs.writeFileSync(path.join(dir, "users.json"), "{ not json");
+      delete (globalThis as Record<symbol, unknown>)[Symbol.for("baklava.usersStore")];
+      const err = vi.spyOn(console, "error").mockImplementation(() => {});
+      const users = await import("./users");
+      expect(users.needsSetup()).toBe(false);
+      expect(users.listUsers()).toEqual([]);
+      expect(err).toHaveBeenCalled();
+    } finally {
+      delete (globalThis as Record<symbol, unknown>)[Symbol.for("baklava.usersStore")];
+      process.env.BAKLAVA_DATA_DIR = prev;
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

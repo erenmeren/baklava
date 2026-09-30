@@ -64,4 +64,46 @@ describe("sessions API", () => {
     expect(after.sessions).toHaveLength(1);
     void listed;
   });
+
+  it("lists only the caller's own sessions", async () => {
+    const { GET } = await import("./route");
+    const mine = createSessionToken("u", "mine");
+    createSessionToken("admin", "admin-laptop");
+    const body = (await (await GET(reqWithCookie("http://x/api/auth/sessions", mine) as never)).json()) as {
+      sessions: Array<{ userAgent: string }>;
+    };
+    expect(body.sessions.map((s) => s.userAgent)).toEqual(["mine"]);
+  });
+
+  it("DELETE on another user's session → 404, and it survives", async () => {
+    const { DELETE } = await import("./[id]/route");
+    const { getSession } = await import("@/lib/auth/sessions");
+    const { sessionIdFromToken } = await import("@/lib/auth/session");
+    const mine = createSessionToken("u", "mine");
+    const adminId = sessionIdFromToken(createSessionToken("admin", "admin-laptop"))!;
+    const res = await DELETE(
+      reqWithCookie(`http://x/api/auth/sessions/${adminId}`, mine, "DELETE") as never,
+      { params: Promise.resolve({ id: adminId }) },
+    );
+    expect(res.status).toBe(404);
+    expect(getSession(adminId)).not.toBeNull();
+  });
+
+  it("revoke-others leaves other users signed in", async () => {
+    const { POST } = await import("./revoke-others/route");
+    const { getSession } = await import("@/lib/auth/sessions");
+    const { sessionIdFromToken } = await import("@/lib/auth/session");
+    const mine = createSessionToken("u", "keep");
+    const myOther = sessionIdFromToken(createSessionToken("u", "drop"))!;
+    const adminId = sessionIdFromToken(createSessionToken("admin", "admin-laptop"))!;
+    await POST(reqWithCookie("http://x/api/auth/sessions/revoke-others", mine, "POST") as never);
+    expect(getSession(myOther)).toBeNull();
+    expect(getSession(adminId)).not.toBeNull();
+  });
+
+  it("no session cookie → 401", async () => {
+    const { GET } = await import("./route");
+    const res = await GET(new Request("http://x/api/auth/sessions") as never);
+    expect(res.status).toBe(401);
+  });
 });

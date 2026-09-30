@@ -18,6 +18,9 @@ import {
 } from "@/lib/connections/kafka";
 import type { AiTool } from "./types";
 
+// Topic configs whose new value can make the broker delete existing messages.
+const DATA_DROPPING_CONFIG = /^(?:local\.)?retention\.|^cleanup\.policy$|^segment\.|^delete\.retention\.ms$/;
+
 export function kafkaTools(_connectionId: string, config: KafkaConfig): AiTool[] {
   return [
     {
@@ -118,8 +121,14 @@ export function kafkaTools(_connectionId: string, config: KafkaConfig): AiTool[]
     },
     {
       name: "kafka_alter_topic_config",
-      description: "Set topic config entries (e.g. retention.ms).",
+      description:
+        "Set topic config entries (e.g. retention.ms). Retention, cleanup and segment settings are DESTRUCTIVE — lowering them deletes messages.",
       category: "write",
+      categoryFor: ({ entries }) =>
+        Array.isArray(entries) &&
+        entries.some((e) => DATA_DROPPING_CONFIG.test(String((e as { name?: unknown })?.name ?? "")))
+          ? "destructive"
+          : "write",
       inputSchema: z.object({
         topic: z.string(),
         entries: z

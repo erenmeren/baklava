@@ -48,6 +48,6 @@ describe("connections store encryption", () => {
     store.saveConnection({ tech: "postgres", name: "new", config: {}, status: "untested" });
     const onDisk = fs.readFileSync(file, "utf8");
     expect(onDisk).toContain("baklava-enc");
-    expect(fs.existsSync(`${file}.pre-encryption.bak`)).toBe(true);
+    expect(fs.existsSync(`${file}.pre-encryption.bak`)).toBe(false);
   });
 });

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getExecSession } from "@/lib/connections/kubernetes-sessions";
+import { getCurrentUser } from "@/lib/auth/current-user";
 
 export const runtime = "nodejs";
 
@@ -16,7 +17,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
   const { id, sid } = await ctx.params;
   const session = getExecSession(sid);
   // Scoped to the connection in the path — see the DELETE handler's note.
-  if (!session || session.connectionId !== id) {
+  if (!session || session.connectionId !== id || session.userId !== (getCurrentUser(req)?.id ?? "")) {
     return NextResponse.json({ error: "Session not found" }, { status: 404 });
   }
   if (session.closed) {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/connections/terminal-sessions";
 import { formatError } from "@/lib/errors";
+import { getCurrentUser } from "@/lib/auth/current-user";
 
 export const runtime = "nodejs";
 
@@ -17,7 +18,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
   const { id, cid, sid } = await ctx.params;
   const session = getSession(sid);
   // Scoped to the connection + container in the path — see the DELETE handler.
-  if (!session || session.connectionId !== id || session.containerId !== cid) {
+  if (!session || session.connectionId !== id || session.containerId !== cid || session.userId !== (getCurrentUser(req)?.id ?? "")) {
     return NextResponse.json({ error: "Session not found" }, { status: 404 });
   }
   const body = (await req.json().catch(() => ({}))) as Body;

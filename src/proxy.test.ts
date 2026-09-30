@@ -340,8 +340,6 @@ describe("proxy() write floor on connection-scoped paths", () => {
     ["qdrant vector search", (id: string) => `/api/qdrant/${id}/collections/docs/search`],
     ["mongo distinct", (id: string) => `/api/mongo/${id}/databases/app/collections/users/distinct`],
     ["mongo explain", (id: string) => `/api/mongo/${id}/databases/app/collections/users/explain`],
-    ["docker fs list", (id: string) => `/api/docker/${id}/containers/abc/fs/list`],
-    ["docker fs cat", (id: string) => `/api/docker/${id}/containers/abc/fs/cat`],
   ] as const;
 
   for (const [label, path] of READ_SHAPED) {
@@ -377,6 +375,10 @@ describe("proxy() write floor on connection-scoped paths", () => {
     ["postgres explain (ANALYZE)", (id: string) => `/api/postgres/${id}/databases/app/explain`],
     ["mongo aggregate ($out can write)", (id: string) => `/api/mongo/${id}/databases/app/collections/users/aggregate`],
     ["redis command", (id: string) => `/api/redis/${id}/command`],
+    // Both run `docker exec` inside the container (as its user, often root):
+    // /run/secrets and /proc/1/environ are one `cat` away.
+    ["docker fs list (exec)", (id: string) => `/api/docker/${id}/containers/abc/fs/list`],
+    ["docker fs cat (exec)", (id: string) => `/api/docker/${id}/containers/abc/fs/cat`],
   ] as const;
 
   for (const [label, path] of NOT_READ_SHAPED) {
@@ -439,5 +441,185 @@ describe("proxy() write floor on connection-scoped paths", () => {
       req("http://localhost/api/users", { token: ctx.strangerToken, method: "POST" }),
     );
     expect(res.headers.get("x-middleware-next")).toBe("1");
+  });
+});
+
+describe("proxy() percent-encoded connection ids", () => {
+  // nextUrl.pathname stays encoded but Next decodes params for the handler, so
+  // the gate must judge the decoded id or `%61bc` sneaks past as "unknown".
+  const encode = (id: string) =>
+    [...id].map((c) => "%" + c.charCodeAt(0).toString(16).padStart(2, "0")).join("");
+
+  it("decodes the id segment", async () => {
+    const { proxy } = await load();
+    const techIds = new Set(["postgres"]);
+    expect(proxy.connectionIdFromPath("/api/postgres/%61bc/query", techIds)).toBe("abc");
+    expect(proxy.connectionIdFromPath("/postgres/%61bc", techIds)).toBe("abc");
+  });
+
+  it("no grant + fully encoded id → 403", async () => {
+    const ctx = await seed();
+    const res = ctx.proxy.proxy(
+      req(`http://localhost/api/postgres/${encode(ctx.conn.id)}/query`, {
+        token: ctx.strangerToken,
+        method: "POST",
+      }),
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it("read grant + encoded id still hits the write floor", async () => {
+    const ctx = await seed();
+    ctx.access.setGrants(ctx.conn.id, { [ctx.stranger.id]: "read" });
+    const res = ctx.proxy.proxy(
+      req(`http://localhost/api/postgres/${encode(ctx.conn.id)}/query`, {
+        token: ctx.strangerToken,
+        method: "POST",
+      }),
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it("malformed escape in the id → 400", async () => {
+    const ctx = await seed();
+    const res = ctx.proxy.proxy(
+      req("http://localhost/api/postgres/%E0%A4%A/query", { token: ctx.strangerToken }),
+    );
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("proxy matcher", () => {
+  // Next compiles `/(…)` matchers to an anchored regex over the pathname.
+  const matches = async (pathname: string) => {
+    const { proxy } = await load();
+    const src = proxy.config.matcher[0];
+    return new RegExp(`^${src}$`).test(pathname);
+  };
+
+  it.each([
+    "/api/kafka/c1/topics/foo.js",
+    "/api/mysql/c1/databases/d/tables/x.css",
+    "/api/s3/c1/buckets/b/objects/logo.png",
+    "/kafka/c1/topics/foo.js",
+    "/api/auth/security",
+    "/",
+  ])("runs on %s", async (p) => {
+    expect(await matches(p)).toBe(true);
+  });
+
+  it.each([
+    "/_next/static/chunks/main.js",
+    "/_next/image",
+    "/fonts/Geist-Variable.woff2",
+    "/icons/postgres.svg",
+    "/favicon.ico",
+    "/icon.svg",
+    "/xterm.css",
+    "/og-image.png",
+  ])("skips static asset %s", async (p) => {
+    expect(await matches(p)).toBe(false);
+  });
+});
+
+describe("proxy() cross-site gate", () => {
+  const make = (url: string, method: string, headers: Record<string, string>) =>
+    new NextRequest(url, { method, headers: { host: "localhost:3000", ...headers } });
+
+  afterEach(() => {
+    delete process.env.BAKLAVA_ALLOWED_ORIGINS;
+    delete process.env.BAKLAVA_TRUST_PROXY;
+  });
+
+  it("refuses a POST from another origin — even with the login gate off", async () => {
+    const { proxy, authStore } = await load();
+    authStore.setAuthEnabled(false);
+    try {
+      const res = proxy.proxy(
+        make("http://localhost:3000/api/postgres/c1/query", "POST", { origin: "http://evil.example" }),
+      );
+      expect(res.status).toBe(403);
+    } finally {
+      authStore.setAuthEnabled(true);
+    }
+  });
+
+  it("refuses a POST from a sibling port (same-site, cookies still sent)", async () => {
+    const { proxy } = await load();
+    const res = proxy.proxy(
+      make("http://localhost:3000/api/auth/security", "POST", { origin: "http://localhost:8080" }),
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it("refuses an API GET labelled cross-site or same-site (EventSource-shaped actions)", async () => {
+    const { proxy } = await load();
+    for (const site of ["cross-site", "same-site"]) {
+      const res = proxy.proxy(
+        make("http://localhost:3000/api/techs/redis/uninstall", "GET", { "sec-fetch-site": site }),
+      );
+      expect(res.status).toBe(403);
+    }
+  });
+
+  it("lets a cross-site top-level navigation to a page through", async () => {
+    const { proxy } = await load();
+    const res = proxy.proxy(make("http://localhost:3000/login", "GET", { "sec-fetch-site": "cross-site" }));
+    expect(res.status).not.toBe(403);
+  });
+
+  it("allows same-origin requests and non-browser clients", async () => {
+    const { proxy } = await load();
+    expect(
+      proxy.crossSiteRejection(
+        make("http://localhost:3000/api/auth/login", "POST", {
+          origin: "http://localhost:3000",
+          "sec-fetch-site": "same-origin",
+        }),
+      ),
+    ).toBeNull();
+    expect(proxy.crossSiteRejection(make("http://localhost:3000/api/auth/login", "POST", {}))).toBeNull();
+  });
+
+  it("refuses Origin: null", async () => {
+    const { proxy } = await load();
+    expect(
+      proxy.crossSiteRejection(make("http://localhost:3000/api/auth/login", "POST", { origin: "null" }))?.status,
+    ).toBe(403);
+  });
+
+  it("honours X-Forwarded-Host only behind a trusted proxy, and BAKLAVA_ALLOWED_ORIGINS", async () => {
+    const { proxy } = await load();
+    const viaProxy = () =>
+      make("http://localhost:3000/api/auth/login", "POST", {
+        origin: "https://ops.example.com",
+        "x-forwarded-host": "ops.example.com",
+      });
+    expect(proxy.crossSiteRejection(viaProxy())?.status).toBe(403);
+    process.env.BAKLAVA_TRUST_PROXY = "1";
+    expect(proxy.crossSiteRejection(viaProxy())).toBeNull();
+    delete process.env.BAKLAVA_TRUST_PROXY;
+    process.env.BAKLAVA_ALLOWED_ORIGINS = "https://ops.example.com";
+    expect(proxy.crossSiteRejection(viaProxy())).toBeNull();
+  });
+});
+
+describe("proxy() write-shaped GETs", () => {
+  it("a read grant can't pull an image through the EventSource GET", async () => {
+    const ctx = await seed();
+    const docker = ctx.store.saveConnection({
+      tech: "docker",
+      name: "d",
+      config: { mode: "tcp", host: "10.0.0.2" } as unknown as Record<string, unknown>,
+      status: "ok",
+      ownerId: ctx.owner.id,
+    });
+    ctx.access.setGrants(docker.id, { [ctx.stranger.id]: "read" });
+    const pull = ctx.proxy.proxy(
+      req(`http://localhost/api/docker/${docker.id}/images/pull-stream?ref=alpine`, { token: ctx.strangerToken }),
+    );
+    expect(pull.status).toBe(403);
+    const list = ctx.proxy.proxy(req(`http://localhost/api/docker/${docker.id}/images`, { token: ctx.strangerToken }));
+    expect(list.status).not.toBe(403);
   });
 });

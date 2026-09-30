@@ -28,9 +28,10 @@ export function validateSqlServerIdentifier(name: string, kind = "identifier"): 
 }
 
 /**
- * Reject `;` in free-form SQL fragments (column types, DEFAULT expressions).
- * T-SQL lets `;` separate statements, so blocking it is the SQLi guard for
- * fragments that can't be parameterized — mirrors the Postgres adapter.
+ * Reject `;` in a free-form SQL fragment. NOT sufficient on its own for T-SQL:
+ * unlike Postgres, T-SQL needs no terminator between statements
+ * (`int) DROP TABLE x --` is two statements), so fragments spliced into DDL go
+ * through the structural validators below instead.
  */
 export function requireNoStatementTerminator(value: string, fieldName: string): string {
   if (value.includes(";")) {
@@ -97,4 +98,77 @@ export function splitGoBatches(script: string): Array<{ sql: string; count: numb
   const tail = buf.join("\n").trim();
   if (tail) out.push({ sql: tail, count: 1 });
   return out;
+}
+
+// One type-name part: a regular identifier or a bracketed one (no `]` inside,
+// so it can't close the bracket early).
+const TYPE_PART = String.raw`(?:\[[A-Za-z_][\w ]*\]|[A-Za-z_]\w*)`;
+const DATA_TYPE_RE = new RegExp(
+  String.raw`^(?:${TYPE_PART}\.)?${TYPE_PART}(?:\s+(?:precision|varying))?` +
+    String.raw`(?:\s*\(\s*(?:\d+|max)\s*(?:,\s*\d+\s*)?\))?$`,
+  "i",
+);
+
+/**
+ * A column / alias base type: `int`, `nvarchar(max)`, `decimal(18, 2)`,
+ * `dbo.MyType`, `[my type]`, `double precision`. Anything else — including a
+ * second statement tacked on after the type — is rejected.
+ */
+export function requireSqlServerDataType(value: string, fieldName: string): string {
+  const v = value.trim();
+  if (!DATA_TYPE_RE.test(v)) {
+    throw new Error(`${fieldName} "${v}" is not a valid SQL Server data type`);
+  }
+  return v;
+}
+
+const OBJECT_PART = String.raw`(?:\[[^\]\r\n]+\]|[A-Za-z_@#][\w@#$]*)`;
+const OBJECT_NAME_RE = new RegExp(String.raw`^(?:${OBJECT_PART}?\.){0,3}${OBJECT_PART}$`);
+
+/** A 1- to 4-part object reference (`server.db.schema.obj`, `db..obj`, `[a b].c`). */
+export function requireSqlServerObjectName(value: string, fieldName: string): string {
+  const v = value.trim();
+  if (!OBJECT_NAME_RE.test(v)) {
+    throw new Error(`${fieldName} "${v}" is not a valid 1- to 4-part object name`);
+  }
+  return v;
+}
+
+/**
+ * A DEFAULT expression, spliced as `DEFAULT (<expr>)`. The splice is safe as
+ * long as the expression can never close that outer parenthesis: then anything
+ * the author writes stays inside it and is at worst a syntax error, never a
+ * second statement. So: strings and brackets must close, parentheses must
+ * balance without ever dipping below zero, and no comment may swallow the
+ * closing `)`.
+ */
+export function requireSqlServerDefaultExpression(value: string, fieldName: string): string {
+  const v = value.trim();
+  const bad = (why: string) => new Error(`${fieldName} ${why}`);
+  let depth = 0;
+  for (let i = 0; i < v.length; i++) {
+    const ch = v[i];
+    if (ch === "'" || ch === "[" || ch === '"') {
+      const close = ch === "[" ? "]" : ch;
+      let j = i + 1;
+      for (;;) {
+        if (j >= v.length) throw bad("has an unterminated quote");
+        if (v[j] === close) {
+          if (v[j + 1] === close) { j += 2; continue; } // '' / ]] / "" escape
+          break;
+        }
+        j++;
+      }
+      i = j;
+      continue;
+    }
+    if ((ch === "-" && v[i + 1] === "-") || (ch === "/" && v[i + 1] === "*")) {
+      throw bad("cannot contain comments");
+    }
+    if (ch === ";") throw bad("cannot contain ';'");
+    if (ch === "(") depth++;
+    if (ch === ")" && --depth < 0) throw bad("has an unbalanced ')'");
+  }
+  if (depth !== 0) throw bad("has an unbalanced '('");
+  return v;
 }

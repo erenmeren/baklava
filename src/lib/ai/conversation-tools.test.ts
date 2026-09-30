@@ -9,8 +9,10 @@ process.env.BAKLAVA_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "baklava-ct
 
 const pgExec = vi.fn(async () => ({ rows: [[1]] }));
 const dockerExec = vi.fn(async () => ({ ok: true }));
+const seenPolicies: Array<{ tech: string; policy: { allowK8sSecretValues?: boolean } }> = [];
 vi.mock("./tools/registry", () => ({
-  buildTools: (tech: string) => {
+  buildTools: (tech: string, _id: string, _cfg: unknown, policy: { allowK8sSecretValues?: boolean }) => {
+    seenPolicies.push({ tech, policy });
     if (tech === "postgres")
       return [{ name: "pg_run_sql", description: "run sql", category: "read", inputSchema: z.object({ sql: z.string() }), execute: pgExec }] as AiTool[];
     if (tech === "docker")
@@ -61,5 +63,20 @@ describe("buildConversationTools", () => {
 
   it("empty set yields no tools", () => {
     expect(buildConversationTools([], base)).toEqual([]);
+  });
+
+  it("k8s Secret values reach the tools only with a write grant, whatever the policy says", () => {
+    const k8s = (access: "read" | "write") => ({
+      id: `k-${access}`,
+      tech: "kubernetes" as const,
+      name: `k-${access}`,
+      config: {},
+      policy: { ...DEFAULT_POLICY, allowK8sSecretValues: true },
+      access,
+    });
+    seenPolicies.length = 0;
+    buildConversationTools([k8s("read"), k8s("write")], base);
+    const byTech = seenPolicies.filter((p) => p.tech === "kubernetes").map((p) => p.policy.allowK8sSecretValues);
+    expect(byTech).toEqual([false, true]);
   });
 });

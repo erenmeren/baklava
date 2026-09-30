@@ -2,6 +2,7 @@ import { requireAdmin, authErrorResponse } from "@/lib/auth/current-user";
 import { updateUser, deleteUser, publicUser, type Role } from "@/lib/auth/users";
 import { revokeUserSessions } from "@/lib/auth/sessions";
 import { listConnections, reassignOwner } from "@/lib/connections/store";
+import { passwordProblem } from "@/lib/auth/password-policy";
 
 export const runtime = "nodejs";
 
@@ -18,7 +19,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     const patch: { role?: Role; disabled?: boolean; password?: string } = {};
     if (body?.role === "admin" || body?.role === "member") patch.role = body.role;
     if (typeof body?.disabled === "boolean") patch.disabled = body.disabled;
-    if (typeof body?.password === "string" && body.password) patch.password = body.password;
+    if (typeof body?.password === "string" && body.password) {
+      const weak = passwordProblem(body.password);
+      if (weak) return Response.json({ error: weak }, { status: 400 });
+      patch.password = body.password;
+    }
 
     let user;
     try {

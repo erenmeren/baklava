@@ -71,3 +71,27 @@ describe("session token layer", () => {
     expect(verifySessionToken(token)).toBe(false); // but record is gone
   });
 });
+
+describe("isHttps", () => {
+  const r = (url: string, xfp?: string) => ({
+    url,
+    headers: new Headers(xfp ? { "x-forwarded-proto": xfp } : {}),
+  });
+
+  it("follows X-Forwarded-Proto, then the URL", async () => {
+    const { isHttps } = await import("./session");
+    expect(isHttps(r("http://x/", "https"))).toBe(true);
+    expect(isHttps(r("https://x/"))).toBe(true);
+    expect(isHttps(r("http://x/"))).toBe(false);
+  });
+
+  it("BAKLAVA_SECURE_COOKIES=1 forces Secure behind a proxy that sends no header", async () => {
+    const { isHttps } = await import("./session");
+    process.env.BAKLAVA_SECURE_COOKIES = "1";
+    try {
+      expect(isHttps(r("http://x/"))).toBe(true);
+    } finally {
+      delete process.env.BAKLAVA_SECURE_COOKIES;
+    }
+  });
+});

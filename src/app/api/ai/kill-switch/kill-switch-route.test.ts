@@ -1,8 +1,14 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { _resetControlsForTests } from "@/lib/ai/kill-switch";
+
+// POST is admin-only (member → 403 is covered in api/admin-only-routes.test.ts).
+vi.mock("@/lib/auth/current-user", async (importActual) => ({
+  ...(await importActual<typeof import("@/lib/auth/current-user")>()),
+  requireAdmin: () => ({ id: "a", role: "admin" }),
+}));
 
 let dir: string;
 beforeEach(() => {

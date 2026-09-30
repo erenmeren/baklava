@@ -40,6 +40,12 @@ export function writeSecretFileSync(file: string, plaintext: string): void {
   const tmp = `${file}.tmp`;
   fs.writeFileSync(tmp, envelope, { mode: 0o600 });
   fs.renameSync(tmp, file);
+
+  // The pre-encryption backup is a plaintext copy of the very secrets this
+  // file now encrypts. Keep it only until the encrypted file is proven
+  // readable; then remove it (also sweeps one left by an older version).
+  const plainBak = `${file}.pre-encryption.bak`;
+  if (fs.existsSync(plainBak) && canDecrypt(envelope)) fs.rmSync(plainBak, { force: true });
 }
 
 function backupOnce(bakPath: string, content: string): void {

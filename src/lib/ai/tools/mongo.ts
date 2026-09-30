@@ -6,6 +6,7 @@ import {
   listCollections,
   findDocuments,
   runAggregate,
+  assertNoServerJs,
   sampleSchema,
   listIndexes,
   insertDocument,
@@ -66,7 +67,7 @@ export function mongoTools(connectionId: string, config: MongoConfig): AiTool[] 
       execute: async ({ database, collection, pipeline }) => {
         let stages: unknown;
         try {
-          stages = parseEjson<unknown>(pipeline as string);
+          stages = await parseEjson<unknown>(pipeline as string);
         } catch (e) {
           throw new Error(
             `Invalid pipeline EJSON: ${e instanceof Error ? e.message : String(e)}`,
@@ -86,6 +87,7 @@ export function mongoTools(connectionId: string, config: MongoConfig): AiTool[] 
             "aggregate is read-only: $out / $merge stages are not allowed.",
           );
         }
+        assertNoServerJs(stages, "Pipeline");
         return runAggregate(
           connectionId,
           config,

@@ -1,5 +1,6 @@
 import { requireAdmin, authErrorResponse } from "@/lib/auth/current-user";
 import { listUsers, createUser, publicUser, type Role } from "@/lib/auth/users";
+import { passwordProblem } from "@/lib/auth/password-policy";
 
 export const runtime = "nodejs";
 
@@ -27,6 +28,8 @@ export async function POST(req: Request) {
     if (!password) {
       return Response.json({ error: "Password is required." }, { status: 400 });
     }
+    const weak = passwordProblem(password);
+    if (weak) return Response.json({ error: weak }, { status: 400 });
 
     try {
       const user = createUser({ username, password, role });

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { PassThrough } from "node:stream";
 import type { NextRequest } from "next/server";
 import {
@@ -6,6 +6,11 @@ import {
   getExecSession,
   dropConnectionExecSessions,
 } from "@/lib/connections/kubernetes-sessions";
+
+// Sessions belong to the user who opened them; the routes compare against the
+// caller. Tests act as "owner" unless they switch.
+const caller = { id: "owner" };
+vi.mock("@/lib/auth/current-user", () => ({ getCurrentUser: () => ({ id: caller.id, role: "member" }) }));
 import { DELETE as deleteSession } from "./[id]/exec/[sid]/route";
 import { GET as streamSession } from "./[id]/exec/[sid]/stream/route";
 import { POST as inputSession } from "./[id]/exec/[sid]/input/route";
@@ -24,6 +29,7 @@ function makeSession(connectionId: string) {
   let closed = false;
   const session = registerExecSession({
     connectionId,
+    userId: "owner",
     namespace: "default",
     podName: "api-0",
     stdin,
@@ -48,12 +54,30 @@ function req(init: RequestInit = {}, signal?: AbortSignal): NextRequest {
 
 describe("k8s exec-session routes are scoped to their own connection", () => {
   beforeEach(() => {
+    caller.id = "owner";
     dropConnectionExecSessions("conn-a");
     dropConnectionExecSessions("conn-b");
   });
   afterEach(() => {
     dropConnectionExecSessions("conn-a");
     dropConnectionExecSessions("conn-b");
+  });
+
+  it("another user on the same cluster can neither watch nor type into the shell", async () => {
+    const { session, stdin } = makeSession("conn-a");
+    const written: Buffer[] = [];
+    stdin.on("data", (c: Buffer) => written.push(c));
+    caller.id = "someone-else";
+    const watch = await streamSession(req(), ctx("conn-a", session.id));
+    expect(watch.status).toBe(404);
+    const type = await inputSession(
+      req({ method: "POST", body: JSON.stringify({ data: "id\n" }) }),
+      ctx("conn-a", session.id),
+    );
+    expect(type.status).toBe(404);
+    await new Promise((r) => setImmediate(r));
+    expect(Buffer.concat(written).toString()).toBe("");
+    expect(getExecSession(session.id)).toBeDefined();
   });
 
   it("refuses to write stdin into another connection's session", async () => {

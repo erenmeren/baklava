@@ -4,6 +4,7 @@ import type { MongoConfig } from "@/lib/connections/types";
 import { formatError } from "@/lib/errors";
 import { dropMongoClient, probe } from "@/lib/connections/mongo";
 import { getCurrentUser } from "@/lib/auth/current-user";
+import { egressRejection } from "@/lib/net/connection-targets";
 
 export const runtime = "nodejs";
 
@@ -42,6 +43,8 @@ export async function POST(req: NextRequest) {
   // Use the cleaned value going forward.
   body.config = { ...body.config, uri: cleaned };
 
+  const egress = await egressRejection("mongo", body.config);
+  if (egress) return egress;
   const probeId = `__probe_${Math.random().toString(36).slice(2)}`;
   try {
     const result = await probe(probeId, body.config);

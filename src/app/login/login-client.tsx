@@ -29,6 +29,7 @@ export function LoginClient({
   const [password, setPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirm, setConfirm] = useState("");
+  const [setupToken, setSetupToken] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -68,7 +69,7 @@ export function LoginClient({
       const res = await fetch("/api/auth/setup", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ username, newPassword }),
+        body: JSON.stringify({ username, newPassword, setupToken }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -97,7 +98,7 @@ export function LoginClient({
         <CardDescription>
           {mode === "login"
             ? "Enter the password to access this console."
-            : "Set a password to protect this console."}
+            : "Create the first admin. The setup token is printed in the output of the terminal running Baklava."}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -145,11 +146,24 @@ export function LoginClient({
         ) : (
           <form onSubmit={submitSetup} className="space-y-4">
             <div className="space-y-1.5">
+              <Label htmlFor="setupToken">Setup token</Label>
+              <Input
+                id="setupToken"
+                type="text"
+                autoFocus
+                autoComplete="off"
+                autoCapitalize="none"
+                spellCheck={false}
+                value={setupToken}
+                onChange={(e) => setSetupToken(e.target.value)}
+                disabled={busy}
+              />
+            </div>
+            <div className="space-y-1.5">
               <Label htmlFor="username">Username</Label>
               <Input
                 id="username"
                 type="text"
-                autoFocus
                 autoComplete="username"
                 autoCapitalize="none"
                 spellCheck={false}
@@ -189,7 +203,7 @@ export function LoginClient({
             <Button
               type="submit"
               className="w-full"
-              disabled={busy || !username || !newPassword || !confirm}
+              disabled={busy || !setupToken || !username || !newPassword || !confirm}
             >
               {busy ? (
                 <Loader2 className="size-4 animate-spin" />

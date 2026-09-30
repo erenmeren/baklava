@@ -81,12 +81,14 @@ Run `npm run baklava:show-key` to display the active master key for safekeeping.
 
 ### The password gate
 
-Because Baklava can read every stored credential and run destructive queries, it sits behind a **single shared password** (one password, no usernames) whenever it's reachable over a network.
+Because Baklava can read every stored credential and run destructive queries, it sits behind a sign-in whenever it's reachable over a network.
 
-- **You create the password on first run** — there is no default to forget or leak.
+- **It listens on `127.0.0.1` by default.** To serve it to your network, start it with `BAKLAVA_HOST=0.0.0.0 npm start` (or `npm run dev -- -H 0.0.0.0`) — and put TLS in front of it.
+- **You create the first admin on first run** — there is no default to forget or leak. The sign-in page asks for a one-time **setup token**, printed in the terminal running Baklava, so nobody else on the network can claim the console before you do (`BAKLAVA_SETUP_TOKEN` pre-sets it for scripted installs).
+- **Passwords need at least 12 characters.**
 - **Change it** anytime in **Settings → Security**, and use **Lock console** in the header to sign out.
 - **Turn the gate off** in **Settings → Security** if you're on a trusted machine and the prompt is just friction. Leave it **on** for anything exposed to a network.
-- Prefer to set it up front? Start with `BAKLAVA_INITIAL_PASSWORD='your-password' npm run dev` to skip the create-password screen.
+- Prefer to set it up front? Start with `BAKLAVA_INITIAL_PASSWORD='your-password' npm run dev` to skip the setup screen (it becomes the `admin` user's password).
 
 The password is hashed (scrypt) and stored in `~/.baklava/auth.json`. It never leaves the server.
 
@@ -114,16 +116,38 @@ The `/assistant` page lets you run a natural-language agent over your connection
 - **Destructive circuit breaker** — if 8 destructive actions fire within 60 seconds the session pauses; reads are never blocked.
 - **Global kill switch** — the **Pause AI** toggle in the assistant header writes to `~/.baklava/ai-controls.json` and survives process restart. When paused, all non-read AI actions are blocked across every session; reads still go through.
 - **Stop button** — aborts the current in-flight run immediately.
-- **Destructive actions always require explicit approval** — this cannot be turned off, even in autonomous mode. Every approval prompt shows a **risk level** (low / medium / high) and the reasons behind it (e.g. "no WHERE clause", "wildcard match"). High-risk destructive actions go one step further: the Approve button stays disabled until you type the connection name to confirm. The risk assessment comes from `src/lib/ai/risk.ts`; the gate itself lives in `src/lib/ai/permissions.ts`.
+- **Destructive actions always require explicit approval** — this cannot be turned off, even in autonomous mode. Every approval prompt shows a **risk level** (low / medium / high) and the reasons behind it (e.g. "no WHERE clause", "wildcard match"). High-risk destructive actions go one step further: the Approve button stays disabled until you type the connection name to confirm, and the server re-checks that name. An approval can only be answered by the user who started the turn, and is declined automatically when the request ends or after 15 minutes. The risk assessment comes from `src/lib/ai/risk.ts`; the gate itself lives in `src/lib/ai/permissions.ts`.
 - **Plan mode** — an opt-in toggle you can flip per conversation. When it's on, the assistant proposes an ordered plan of the steps it intends to take and waits for your approval before acting. It augments the safety gates above rather than replacing them: destructive steps still require their own per-action approval when they run.
 
 ### Egress safety (SSRF protection)
 
-The server blocks outbound connections to cloud-metadata endpoints (e.g. `169.254.169.254`, `fd00:ec2::254`) and link-local addresses when those addresses come from user-supplied input — specifically the load-test target URL and the health reachability probe. The host is resolved first and the resulting IP is pinned for the actual connection, so DNS rebinding attacks can't slip a blocked address past the check after the initial lookup. Private and loopback addresses (your machine, your LAN) are intentionally **not** blocked, so you can test and monitor local services as normal. If you genuinely need to reach a specific blocked address (e.g. from inside a container network), set `BAKLAVA_EGRESS_ALLOW=<ip,ip>` to re-allow those exact IPs.
+The server blocks outbound connections to cloud-metadata endpoints (e.g. `169.254.169.254`, `fd00:ec2::254`, Alibaba's `100.100.100.200`, Oracle's `192.0.0.192`, and their NAT64 / 6to4 spellings) and link-local addresses when those addresses come from user-supplied input — connection targets (checked when a connection is tested, saved or edited), the load-test target URL and the health reachability probe. Load tests also hand k6 the blocked ranges as `blacklistIPs`, so a redirect can't lead there either. The host is resolved first and the resulting IP is pinned for the actual connection, so DNS rebinding attacks can't slip a blocked address past the check after the initial lookup. Private and loopback addresses (your machine, your LAN) are intentionally **not** blocked, so you can test and monitor local services as normal. If you genuinely need to reach a specific blocked address (e.g. from inside a container network), set `BAKLAVA_EGRESS_ALLOW=<ip,ip>` to re-allow those exact IPs.
 
 ### Sessions
 
-Signing in creates a **server-side session** stored in `~/.baklava/sessions.json`. You can view and revoke individual devices under **Settings → Active sessions**, or sign out all other devices at once.
+Signing in creates a **server-side session** stored in `~/.baklava/sessions.json`. You can view and revoke your own devices under **Settings → Active sessions**, or sign out all your other devices at once.
+
+Failed sign-ins are throttled per account (10 per 15 minutes).
+
+### Running behind a reverse proxy
+
+State-changing requests from another origin — including another port on the same host — are refused, as are API calls a browser labels cross-site or same-site. When Baklava sits behind a reverse proxy that serves it on a different host name:
+
+- `BAKLAVA_TRUST_PROXY=1` trusts `X-Forwarded-Host` (for the origin check) and `X-Forwarded-For` (adds a per-client login throttle). Only set it when the proxy overwrites those headers.
+- `BAKLAVA_ALLOWED_ORIGINS=https://ops.example.com,…` lists extra origins allowed to make requests.
+
+Responses carry `frame-ancestors 'none'`, `X-Frame-Options: DENY`, `nosniff` and `Referrer-Policy: same-origin`. Terminate TLS and set HSTS at the proxy.
+If the proxy terminates TLS but doesn't send `X-Forwarded-Proto`, set `BAKLAVA_SECURE_COOKIES=1` so the session cookie is still marked `Secure`.
+
+### Hardening checklist
+
+For anything beyond your own laptop:
+
+- **Keep the sign-in on**, and serve Baklava only over TLS (reverse proxy + HSTS). It binds `127.0.0.1` unless you tell it otherwise.
+- **Set `BAKLAVA_MASTER_KEY`** (or use an OS keychain) instead of relying on `~/.baklava/master.key`, and back up `~/.baklava` together with that key.
+- **Give each connection a least-privilege database user.** The assistant's read-only SQL tools screen out statements that write, but the database role is the real boundary: no superuser / `pg_execute_server_program` on Postgres, no `FILE` / `SUPER` on MySQL, no `sysadmin` on SQL Server for connections the assistant or read-only members use.
+- **Grant members only the connections they need**, and `read` unless they must change things. Only admins can use the host's Docker socket or kubeconfig files.
+- Leave the **AI kill switch** within reach (assistant header) and review a connection's assistant policy before switching it to autonomous.
 
 - Sessions expire after **7 days idle** (sliding) or **30 days absolute**, whichever comes first.
 - Signing out revokes the session server-side — deleting the cookie is not enough for a remote attacker to reuse it.

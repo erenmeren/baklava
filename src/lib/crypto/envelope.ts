@@ -40,8 +40,12 @@ function gcmEncrypt(key: Buffer, plaintext: Buffer): GcmPart {
 }
 
 function gcmDecrypt(key: Buffer, part: GcmPart): Buffer {
-  const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(part.iv, "hex"));
-  decipher.setAuthTag(Buffer.from(part.tag, "hex"));
+  // Pin the tag length: GCM otherwise accepts a truncated tag (down to 4
+  // bytes), which makes forging a ciphertext far cheaper.
+  const tag = Buffer.from(part.tag, "hex");
+  if (tag.length !== 16) throw new Error("Invalid envelope: bad auth tag length");
+  const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(part.iv, "hex"), { authTagLength: 16 });
+  decipher.setAuthTag(tag);
   return Buffer.concat([decipher.update(Buffer.from(part.ct, "base64")), decipher.final()]);
 }
 

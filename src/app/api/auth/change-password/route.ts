@@ -8,6 +8,7 @@ import {
   sessionCookieOptions,
   isHttps,
 } from "@/lib/auth/session";
+import { passwordProblem } from "@/lib/auth/password-policy";
 
 export const runtime = "nodejs";
 
@@ -40,6 +41,8 @@ export async function POST(req: NextRequest) {
   if (!newPassword) {
     return NextResponse.json({ error: "Enter a new password" }, { status: 400 });
   }
+  const weak = passwordProblem(newPassword);
+  if (weak) return NextResponse.json({ error: weak }, { status: 400 });
 
   updateUser(user.id, { password: newPassword });
 

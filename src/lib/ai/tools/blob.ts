@@ -25,6 +25,32 @@ const MAX_UPLOAD_BYTES = 256 * 1024;
 const TEXT_CONTENT_TYPE =
   /^(text\/|application\/(json|xml|yaml|x-yaml|toml|x-ndjson|csv|javascript))/i;
 
+/** True when `key` already exists — a 404 is the only "no". */
+async function objectExists(
+  c: Parameters<typeof headObject>[0],
+  bucket: string,
+  key: string,
+): Promise<boolean> {
+  try {
+    await headObject(c, bucket, key);
+    return true;
+  } catch (err) {
+    const e = err as { name?: string; $metadata?: { httpStatusCode?: number } };
+    if (e?.name === "NotFound" || e?.$metadata?.httpStatusCode === 404) return false;
+    throw err;
+  }
+}
+
+// Writing onto an existing key replaces it with no way back (unless the bucket
+// is versioned), so it's refused unless the call says `overwrite: true` — which
+// escalates the call to destructive.
+const overwrite = z
+  .boolean()
+  .optional()
+  .describe("Replace the destination if it already exists. DESTRUCTIVE.");
+const overwriteCategory = ({ overwrite }: Record<string, unknown>) =>
+  overwrite === true ? "destructive" : "write";
+
 /**
  * Shared tool factory for every S3-compatible tech (r2, minio, s3). They all
  * route through the same s3.ts ops, so one `blob_*` tool set serves all three;
@@ -97,15 +123,17 @@ export function blobTools(tech: TechId, connectionId: string, config: unknown): 
     {
       name: "blob_upload_object",
       description:
-        "Upload a small TEXT object from a string body (≤256KB, text/json/xml/yaml/csv only). For binary or large files, use the workspace UI.",
+        "Upload a small TEXT object from a string body (≤256KB, text/json/xml/yaml/csv only). Refuses to replace an existing key unless overwrite is true. For binary or large files, use the workspace UI.",
       category: "write",
+      categoryFor: overwriteCategory,
       inputSchema: z.object({
         bucket,
         key: z.string().min(1),
         content: z.string(),
         contentType: z.string().optional(),
+        overwrite,
       }),
-      execute: async ({ bucket, key, content, contentType }) => {
+      execute: async ({ bucket, key, content, contentType, overwrite }) => {
         const type = (contentType as string) || "text/plain";
         if (!TEXT_CONTENT_TYPE.test(type)) {
           throw new Error(
@@ -118,17 +146,27 @@ export function blobTools(tech: TechId, connectionId: string, config: unknown): 
             `Body is ${bytes} bytes; the limit is ${MAX_UPLOAD_BYTES} (256KB).`,
           );
         }
-        await uploadObject(await client(), bucket as string, key as string, Buffer.from(content as string, "utf8"), type);
+        const c = await client();
+        if (overwrite !== true && (await objectExists(c, bucket as string, key as string))) {
+          throw new Error(`"${key}" already exists; pass overwrite: true to replace it.`);
+        }
+        await uploadObject(c, bucket as string, key as string, Buffer.from(content as string, "utf8"), type);
         return { uploaded: { bucket, key, bytes, contentType: type } };
       },
     },
     {
       name: "blob_copy_object",
-      description: "Server-side copy an object to a new key in the same bucket (source kept).",
+      description:
+        "Server-side copy an object to a new key in the same bucket (source kept). Refuses to replace an existing destination unless overwrite is true.",
       category: "write",
-      inputSchema: z.object({ bucket, from: z.string().min(1), to: z.string().min(1) }),
-      execute: async ({ bucket, from, to }) => {
-        await copyObject(await client(), bucket as string, from as string, to as string);
+      categoryFor: overwriteCategory,
+      inputSchema: z.object({ bucket, from: z.string().min(1), to: z.string().min(1), overwrite }),
+      execute: async ({ bucket, from, to, overwrite }) => {
+        const c = await client();
+        if (overwrite !== true && (await objectExists(c, bucket as string, to as string))) {
+          throw new Error(`"${to}" already exists; pass overwrite: true to replace it.`);
+        }
+        await copyObject(c, bucket as string, from as string, to as string);
         return { copied: { from, to } };
       },
     },

@@ -34,7 +34,11 @@ describe("conversation store", () => {
       messages: [{ role: "user", content: "hi" }],
       connectionIds: ["c1"],
     }, A);
-    const onDisk = JSON.parse(fs.readFileSync(path.join(dir, "ai-conversations", `${c.id}.json`), "utf8"));
+    const file = path.join(dir, "ai-conversations", `${c.id}.json`);
+    // Encrypted at rest: the raw file is an envelope, the decrypted one the record.
+    expect(fs.readFileSync(file, "utf8")).toContain("baklava-enc");
+    const { readSecretFileSync } = await import("@/lib/crypto/secret-file");
+    const onDisk = JSON.parse(readSecretFileSync(file)!);
     expect(onDisk.messages).toHaveLength(1);
     expect(onDisk.connectionIds).toEqual(["c1"]);
     expect(onDisk.userId).toBe(A);

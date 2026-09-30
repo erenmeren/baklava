@@ -242,6 +242,31 @@ export interface FindResult {
   limit: number;
 }
 
+/** Server-side time cap for every read, so one query can't pin a mongod. */
+export const READ_MAX_TIME_MS = 30_000;
+
+const SERVER_JS_OPERATORS = new Set(["$where", "$function", "$accumulator"]);
+
+/**
+ * Reject operators that run JavaScript inside mongod. These read paths are
+ * open to `read` grants (and the AI's read tools), where `$where` is a way to
+ * burn server CPU — `{"$where": "while(1){}"}` — rather than to read.
+ */
+export function assertNoServerJs(value: unknown, where = "Query"): void {
+  if (Array.isArray(value)) {
+    for (const v of value) assertNoServerJs(v, where);
+    return;
+  }
+  if (value && typeof value === "object") {
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (SERVER_JS_OPERATORS.has(k)) {
+        throw new Error(`${where} can't use ${k} (server-side JavaScript).`);
+      }
+      assertNoServerJs(v, where);
+    }
+  }
+}
+
 export async function findDocuments(
   connectionId: string,
   cfg: MongoConfig,
@@ -260,11 +285,13 @@ export async function findDocuments(
     : undefined;
   const limit = Math.min(Math.max(options.limit ?? 50, 1), 500);
   const skip = Math.max(options.skip ?? 0, 0);
+  assertNoServerJs(filter, "Filter");
+  assertNoServerJs(projection, "Projection");
 
-  const cursor = coll.find(filter, { projection, sort, limit, skip });
+  const cursor = coll.find(filter, { projection, sort, limit, skip, maxTimeMS: READ_MAX_TIME_MS });
   const [docs, total] = await Promise.all([
     cursor.toArray(),
-    coll.countDocuments(filter).catch(() => 0),
+    coll.countDocuments(filter, { maxTimeMS: READ_MAX_TIME_MS }).catch(() => 0),
   ]);
   return {
     documents: await Promise.all(docs.map((d) => stringifyEjson(d))),
@@ -605,10 +632,12 @@ export async function explainFind(
 ): Promise<Record<string, unknown>> {
   const b = await bundleFor(connectionId, cfg);
   const filter = filterEjson ? await parseEjson<Document>(filterEjson) : ({} as Document);
+  assertNoServerJs(filter, "Filter");
   const result = await b.client
     .db(dbName)
     .command({
-      explain: { find: collName, filter },
+      // executionStats runs the query, so it gets the same time cap.
+      explain: { find: collName, filter, maxTimeMS: READ_MAX_TIME_MS },
       verbosity,
     });
   return result as Record<string, unknown>;
@@ -628,10 +657,11 @@ export async function distinctValues(
 ): Promise<string[]> {
   const b = await bundleFor(connectionId, cfg);
   const filter = filterEjson ? await parseEjson<Document>(filterEjson) : ({} as Document);
+  assertNoServerJs(filter, "Filter");
   const values = await b.client
     .db(dbName)
     .collection(collName)
-    .distinct(field, filter);
+    .distinct(field, filter, { maxTimeMS: READ_MAX_TIME_MS });
   return Promise.all(values.map((v) => stringifyEjson(v, false)));
 }
 

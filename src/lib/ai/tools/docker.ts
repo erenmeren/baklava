@@ -8,6 +8,28 @@ import {
 } from "@/lib/connections/docker";
 import type { AiTool } from "./types";
 
+/**
+ * `Config.Env` is where containers keep their database passwords and API keys.
+ * Tool output goes to the LLM provider, so keep the variable names (useful for
+ * debugging) and drop the values.
+ */
+export function redactContainerEnv(inspect: unknown): unknown {
+  const env = (inspect as { Config?: { Env?: unknown } } | null)?.Config?.Env;
+  if (!Array.isArray(env)) return inspect;
+  const i = inspect as { Config: Record<string, unknown> };
+  return {
+    ...i,
+    Config: {
+      ...i.Config,
+      Env: env.map((e) => {
+        const s = String(e);
+        const eq = s.indexOf("=");
+        return eq < 0 ? s : `${s.slice(0, eq)}=<redacted>`;
+      }),
+    },
+  };
+}
+
 export function dockerTools(_connectionId: string, config: DockerConfig): AiTool[] {
   return [
     {
@@ -19,10 +41,12 @@ export function dockerTools(_connectionId: string, config: DockerConfig): AiTool
     },
     {
       name: "docker_inspect",
-      description: "Inspect a container's full configuration and state.",
+      description:
+        "Inspect a container's full configuration and state. Environment variable values are redacted (names are kept).",
       category: "read",
       inputSchema: z.object({ containerId: z.string() }),
-      execute: async ({ containerId }) => inspectContainer(config, containerId as string),
+      execute: async ({ containerId }) =>
+        redactContainerEnv(await inspectContainer(config, containerId as string)),
     },
     {
       name: "docker_read_logs",
@@ -37,8 +61,9 @@ export function dockerTools(_connectionId: string, config: DockerConfig): AiTool
     },
     {
       name: "docker_action",
-      description: "Start, stop, restart, kill, pause, or unpause a container.",
+      description: "Start, stop, restart, kill, pause, or unpause a container. kill is DESTRUCTIVE (SIGKILL, no graceful shutdown).",
       category: "write",
+      categoryFor: ({ action }) => (action === "kill" ? "destructive" : "write"),
       inputSchema: z.object({
         containerId: z.string(),
         action: z.enum(["start", "stop", "restart", "kill", "pause", "unpause"]),

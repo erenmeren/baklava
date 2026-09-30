@@ -1,11 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("@/lib/connections/mongo", () => ({
-  parseEjson: (s: string) => JSON.parse(s),
+  // Async like the real one — a sync mock hid a missing `await` in mongo_aggregate.
+  parseEjson: async (s: string) => JSON.parse(s),
   listDatabases: vi.fn(async () => [{ name: "app" }]),
   listCollections: vi.fn(async () => [{ name: "orders" }]),
   findDocuments: vi.fn(async () => ({ documents: ["{}"], total: 1, skip: 0, limit: 50 })),
   runAggregate: vi.fn(async () => ({ documents: [], truncated: false })),
+  assertNoServerJs: (v: unknown) => {
+    if (JSON.stringify(v).includes('"$where"')) throw new Error("server-side JavaScript");
+  },
   sampleSchema: vi.fn(async () => ({ sampleSize: 1, fields: [] })),
   listIndexes: vi.fn(async () => []),
   insertDocument: vi.fn(async () => ({ insertedId: "1" })),
@@ -54,6 +58,21 @@ describe("mongoTools", () => {
     await expect(
       t.execute({ database: "app", collection: "orders", pipeline: '[{"$merge":{"into":"x"}}]' }),
     ).rejects.toThrow(/\$out|\$merge|read-only/i);
+    expect(mo.runAggregate).not.toHaveBeenCalled();
+  });
+
+  it("mongo_aggregate rejects $out even though parseEjson is async (was never awaited)", async () => {
+    const t = tools().find((x) => x.name === "mongo_aggregate")!;
+    await expect(
+      t.execute({ database: "app", collection: "orders", pipeline: '[{"$match":{}},{"$out":"dump"}]' }),
+    ).rejects.toThrow(/\$out|\$merge/);
+  });
+
+  it("mongo_aggregate refuses server-side JavaScript", async () => {
+    const t = tools().find((x) => x.name === "mongo_aggregate")!;
+    await expect(
+      t.execute({ database: "app", collection: "orders", pipeline: '[{"$match":{"$where":"while(1){}"}}]' }),
+    ).rejects.toThrow(/server-side JavaScript/);
     expect(mo.runAggregate).not.toHaveBeenCalled();
   });
 

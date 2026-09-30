@@ -6,6 +6,11 @@ import {
   getSession,
   dropConnectionSessions,
 } from "@/lib/connections/terminal-sessions";
+
+// Sessions belong to the user who opened them; the routes compare against the
+// caller. Tests act as "owner" unless they switch.
+const caller = { id: "owner" };
+vi.mock("@/lib/auth/current-user", () => ({ getCurrentUser: () => ({ id: caller.id, role: "member" }) }));
 import { DELETE as deleteSession } from "./[id]/containers/[cid]/terminal/[sid]/route";
 import { GET as streamSession } from "./[id]/containers/[cid]/terminal/[sid]/stream/route";
 import { POST as inputSession } from "./[id]/containers/[cid]/terminal/[sid]/input/route";
@@ -24,6 +29,7 @@ function makeSession(connectionId: string, containerId = "abc123") {
   const session = registerSession({
     connectionId,
     containerId,
+    userId: "owner",
     exec: { resize, inspect: async () => ({ ExitCode: 0 }) },
     stream,
   });
@@ -40,6 +46,7 @@ function req(init: RequestInit = {}, signal?: AbortSignal): NextRequest {
 
 describe("docker terminal-session routes are scoped to their own connection", () => {
   beforeEach(() => {
+    caller.id = "owner";
     resize.mockClear();
     dropConnectionSessions("conn-a");
     dropConnectionSessions("conn-b");
@@ -47,6 +54,26 @@ describe("docker terminal-session routes are scoped to their own connection", ()
   afterEach(() => {
     dropConnectionSessions("conn-a");
     dropConnectionSessions("conn-b");
+  });
+
+  it("another user on the same connection can neither watch nor type into the shell", async () => {
+    const { session, stream } = makeSession("conn-a");
+    const written: Buffer[] = [];
+    stream.on("data", (c: Buffer) => written.push(c));
+    caller.id = "someone-else";
+
+    const watch = await streamSession(req(), ctx("conn-a", session.id));
+    expect(watch.status).toBe(404);
+    const type = await inputSession(
+      req({ method: "POST", body: JSON.stringify({ data: "id\n" }) }),
+      ctx("conn-a", session.id),
+    );
+    expect(type.status).toBe(404);
+    const close = await deleteSession(req({ method: "DELETE" }), ctx("conn-a", session.id));
+    expect(close.status).toBe(404);
+    await new Promise((r) => setImmediate(r));
+    expect(Buffer.concat(written).toString()).toBe("");
+    expect(getSession(session.id)).toBeDefined();
   });
 
   it("refuses to write stdin into another connection's terminal", async () => {

@@ -38,7 +38,8 @@ describe("ApprovalCard", () => {
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "prod-db" } });
     expect(approve).not.toBeDisabled();
     fireEvent.click(approve);
-    expect(onDecision).toHaveBeenCalledWith("t1", "approve");
+    // The typed name goes to the server, which re-checks it.
+    expect(onDecision).toHaveBeenCalledWith("t1", "approve", "prod-db");
   });
 
   it("high-risk shows the risk reasons", () => {

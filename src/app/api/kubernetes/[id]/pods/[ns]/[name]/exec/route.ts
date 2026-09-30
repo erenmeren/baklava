@@ -4,6 +4,7 @@ import { startExec } from "@/lib/connections/kubernetes";
 import { registerExecSession } from "@/lib/connections/kubernetes-sessions";
 import type { KubernetesConfig } from "@/lib/connections/types";
 import { formatError } from "@/lib/errors";
+import { getCurrentUser } from "@/lib/auth/current-user";
 
 export const runtime = "nodejs";
 
@@ -35,6 +36,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
     );
     const session = registerExecSession({
       connectionId: id,
+      userId: getCurrentUser(req)?.id ?? "",
       namespace: ns,
       podName: name,
       stdin,

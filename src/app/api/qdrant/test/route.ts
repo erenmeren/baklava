@@ -4,6 +4,7 @@ import type { QdrantConfig } from "@/lib/connections/types";
 import { formatError } from "@/lib/errors";
 import { probeQdrant } from "@/lib/connections/qdrant";
 import { getCurrentUser } from "@/lib/auth/current-user";
+import { egressRejection } from "@/lib/net/connection-targets";
 
 export const runtime = "nodejs";
 
@@ -16,6 +17,8 @@ export async function POST(req: NextRequest) {
   const url = body?.config?.url?.trim();
   if (!url) return NextResponse.json({ error: "URL is required" }, { status: 400 });
   body.config = { ...body.config, url };
+  const egress = await egressRejection("qdrant", body.config);
+  if (egress) return egress;
   try {
     const probe = await probeQdrant(body.config);
     const record = body.save

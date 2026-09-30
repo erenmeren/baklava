@@ -2,7 +2,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("@/lib/connections/docker", () => ({
   listContainers: vi.fn(async () => [{ id: "abc", name: "api", state: "running" }]),
-  inspectContainer: vi.fn(async () => ({ State: { Status: "running" } })),
+  inspectContainer: vi.fn(async () => ({
+    State: { Status: "running" },
+    Config: { Image: "app", Env: ["DB_PASSWORD=hunter2", "NODE_ENV=production", "NOVALUE"] },
+  })),
   readContainerLogs: vi.fn(async () => "boom\nstack trace"),
   containerAction: vi.fn(async () => undefined),
 }));
@@ -14,6 +17,20 @@ const cfg = { mode: "socket" as const, socketPath: "/var/run/docker.sock" };
 
 describe("dockerTools", () => {
   beforeEach(() => vi.clearAllMocks());
+
+  it("docker_inspect keeps env var names but never their values", async () => {
+    const t = dockerTools("c1", cfg).find((x) => x.name === "docker_inspect")!;
+    const out = (await t.execute({ containerId: "abc" })) as { Config: { Env: string[]; Image: string } };
+    expect(out.Config.Env).toEqual(["DB_PASSWORD=<redacted>", "NODE_ENV=<redacted>", "NOVALUE"]);
+    expect(out.Config.Image).toBe("app");
+    expect(JSON.stringify(out)).not.toContain("hunter2");
+  });
+
+  it("docker_action kill escalates to destructive", () => {
+    const t = dockerTools("c1", cfg).find((x) => x.name === "docker_action")!;
+    expect(t.categoryFor?.({ action: "kill" })).toBe("destructive");
+    expect(t.categoryFor?.({ action: "restart" })).toBe("write");
+  });
 
   it("tags categories correctly", () => {
     const byName = Object.fromEntries(dockerTools("c1", cfg).map((t) => [t.name, t.category]));

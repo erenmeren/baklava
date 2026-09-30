@@ -1,6 +1,8 @@
 import "server-only";
 import { NextRequest, NextResponse } from "next/server";
 import { Readable } from "node:stream";
+import { randomUUID } from "node:crypto";
+import { egressRejection } from "@/lib/net/connection-targets";
 import type { CORSRule, LifecycleRule, S3Client } from "@aws-sdk/client-s3";
 import { getConnection, saveConnection, publicView } from "@/lib/connections/store";
 import { formatError } from "@/lib/errors";
@@ -31,7 +33,9 @@ export function blobHandlers(tech: TechId) {
       const cfg = body?.config;
       const invalid = bt.validateConfig(cfg);
       if (invalid) return NextResponse.json({ error: invalid }, { status: 400 });
-      const probeId = `__probe_${Math.random().toString(36).slice(2)}`;
+      const egress = await egressRejection(tech, cfg);
+      if (egress) return egress;
+      const probeId = `__probe_${randomUUID()}`;
       try {
         const client = await bt.clientFor(probeId, cfg);
         const { buckets } = await s3.probe(client);

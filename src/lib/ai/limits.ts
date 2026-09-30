@@ -21,7 +21,7 @@ export const DEFAULT_LIMITS: LimitConfig = {
 interface LimitState {
   totalBySession: Map<string, number>;
   callsByKey: Map<string, number[]>;
-  destructiveBySession: Map<string, number[]>;
+  destructiveByUser: Map<string, number[]>;
 }
 
 const globalKey = Symbol.for("baklava.aiLimits");
@@ -31,14 +31,21 @@ function state(): LimitState {
     g[globalKey] = {
       totalBySession: new Map(),
       callsByKey: new Map(),
-      destructiveBySession: new Map(),
+      destructiveByUser: new Map(),
     };
   }
   return g[globalKey];
 }
 
+/**
+ * `sessionId` is minted by the server per chat turn, so the call budget is per
+ * turn. The time-windowed limits — rate and the destructive breaker — are
+ * keyed by `userId`: keyed by session, every new turn (or, before sessions were
+ * server-minted, every made-up id) got a fresh window.
+ */
 export interface CheckArgs {
   sessionId: string;
+  userId: string;
   connectionId: string;
   category: LimitCategory;
   now?: number;
@@ -55,14 +62,14 @@ export function checkRateLimit(args: CheckArgs): { allowed: boolean; reason?: st
     return { allowed: false, reason: `session tool-call budget reached (${cfg.sessionBudget})` };
   }
 
-  const rkey = `${args.sessionId}:${args.connectionId}`;
+  const rkey = `${args.userId}:${args.connectionId}`;
   const calls = (s.callsByKey.get(rkey) ?? []).filter((t) => now - t < cfg.rateWindowMs);
   if (calls.length >= cfg.rateMax) {
     return { allowed: false, reason: "rate limit: too many actions in a short window" };
   }
 
   if (args.category === "destructive") {
-    const ds = (s.destructiveBySession.get(args.sessionId) ?? []).filter(
+    const ds = (s.destructiveByUser.get(args.userId) ?? []).filter(
       (t) => now - t < cfg.destructiveWindowMs,
     );
     if (ds.length >= cfg.destructiveMax) {
@@ -74,11 +81,11 @@ export function checkRateLimit(args: CheckArgs): { allowed: boolean; reason?: st
   calls.push(now);
   s.callsByKey.set(rkey, calls);
   if (args.category === "destructive") {
-    const ds = (s.destructiveBySession.get(args.sessionId) ?? []).filter(
+    const ds = (s.destructiveByUser.get(args.userId) ?? []).filter(
       (t) => now - t < cfg.destructiveWindowMs,
     );
     ds.push(now);
-    s.destructiveBySession.set(args.sessionId, ds);
+    s.destructiveByUser.set(args.userId, ds);
   }
   return { allowed: true };
 }

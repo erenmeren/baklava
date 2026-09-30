@@ -4,7 +4,8 @@
  */
 import type { SqlServerConfig } from "../types";
 import { withPool } from "./internal";
-import { SQLSERVER_DB_NAME_RE, requireNoStatementTerminator, splitGoBatches } from "./sql";
+import { SQLSERVER_DB_NAME_RE, splitGoBatches } from "./sql";
+import { assertReadOnlySql } from "@/lib/sql/read-only-guard";
 
 // ─── Query editor: GO-aware batch execution ─────────────────────────────
 
@@ -160,16 +161,11 @@ export interface ReadOnlyResult {
   rowCount: number;
 }
 
-// Defense-in-depth denylist for the read-only AI query path. The rollback wrap
-// below is the real backstop; this just rejects obvious writes early. `_` is a
-// word char so this won't trip on column names like `update_time`.
-const WRITE_KEYWORDS =
-  /\b(insert|update|delete|merge|drop|create|alter|truncate|exec|execute|grant|revoke|into|sp_|xp_)\b/i;
-
 /**
- * Run a single read-only statement. SQL Server has no READ ONLY transaction, so
- * we (1) block ';' (single statement), (2) reject write keywords, and (3) wrap in
- * BEGIN TRAN … ROLLBACK so anything that slips past still never persists.
+ * Run a single read-only statement. SQL Server has no READ ONLY transaction and
+ * needs no `;` between statements, so `assertReadOnlySql` (a SELECT/WITH-only
+ * shape check plus a denylist of acting verbs — COMMIT, KILL, BACKUP, sp_/xp_ …)
+ * is the guard; the BEGIN TRAN … ROLLBACK wrap is the backstop.
  */
 export async function runReadOnlyQuery(
   config: SqlServerConfig,
@@ -177,11 +173,7 @@ export async function runReadOnlyQuery(
   sql: string,
   maxRows = 1000,
 ): Promise<ReadOnlyResult> {
-  const single = requireNoStatementTerminator(sql.trim().replace(/;+\s*$/g, ""), "Query");
-  const m = single.match(WRITE_KEYWORDS);
-  if (m) {
-    throw new Error(`Read-only query rejected: contains a write keyword ("${m[0]}").`);
-  }
+  const single = assertReadOnlySql(sql, "sqlserver");
   return withPool(
     config,
     async (pool) => {
@@ -250,7 +242,9 @@ export async function getSqlServerEstimatedPlan(
     config,
     async (pool) => {
       // SHOWPLAN_XML must be its own batch; the plan comes back as a single
-      // XML column from the *next* batch.
+      // XML column from the *next* batch. It's a per-connection setting, so the
+      // pool is pinned to one connection below — on a second connection the
+      // query would simply *execute*.
       await pool.request().batch("SET SHOWPLAN_XML ON");
       const res = await pool.request().batch(query);
       await pool.request().batch("SET SHOWPLAN_XML OFF").catch(() => undefined);
@@ -351,6 +345,6 @@ export async function getSqlServerEstimatedPlan(
 
       return { root, totalCost, missingIndexes, rawXml: xml };
     },
-    { database: db, requestTimeoutMs: 30_000 },
+    { database: db, requestTimeoutMs: 30_000, singleConnection: true },
   );
 }

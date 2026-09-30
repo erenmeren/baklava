@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import {
   deleteConnection,
   getConnection,
+  mergeConfig,
   publicView,
   updateConnection,
 } from "@/lib/connections/store";
@@ -16,6 +17,13 @@ import { dropS3Client } from "@/lib/connections/s3-aws";
 import { dropPostgresPools } from "@/lib/connections/postgres";
 import { dropConnectionGrants, effectiveAccess } from "@/lib/connections/access";
 import { getCurrentUser } from "@/lib/auth/current-user";
+import {
+  hostLocalForbidden,
+  hostLocalReason,
+  touchesLocation,
+} from "@/lib/connections/host-local";
+import { changedTargetKeys } from "@/lib/connections/target-keys";
+import { egressRejection } from "@/lib/net/connection-targets";
 import { deletePolicy } from "@/lib/ai/policy-store";
 
 export const runtime = "nodejs";
@@ -86,6 +94,37 @@ export async function PATCH(req: Request, ctx: RouteContext) {
       { error: "Nothing to update — provide name or config" },
       { status: 400 }
     );
+  }
+  // A write *grant* lets a member use and tune a connection, not re-point it:
+  // the stored secret survives a blank field, so a new host would receive the
+  // owner's password on the next probe (see target-keys.ts).
+  const user = getCurrentUser(req);
+  const isOwnerOrAdmin = user?.role === "admin" || (!!user && user.id === existing.ownerId);
+  if (!isOwnerOrAdmin) {
+    const changed = changedTargetKeys(existing.config as Record<string, unknown>, body);
+    if (changed.length) {
+      return NextResponse.json(
+        { error: `Only the owner or an admin can change ${changed.join(", ")} on this connection.` },
+        { status: 403 },
+      );
+    }
+  }
+  // Re-pointing a connection at the Baklava host is admin-only, same as creating
+  // one (see host-local.ts). Untouched location keys don't re-trigger it, so a
+  // write grantee can still rename an admin's socket connection.
+  const patchedKeys = [...Object.keys(body.config ?? {}), ...(body.unset ?? [])];
+  if (touchesLocation(existing.tech, patchedKeys) && user?.role !== "admin") {
+    const merged = mergeConfig(existing.config as Record<string, unknown>, body.config ?? {});
+    for (const key of body.unset ?? []) delete merged[key];
+    const reason = hostLocalReason(existing.tech, merged);
+    if (reason) return hostLocalForbidden(reason);
+  }
+  // Same egress policy as the /test routes, for the new target.
+  if (body.config || body.unset?.length) {
+    const merged = mergeConfig(existing.config as Record<string, unknown>, body.config ?? {});
+    for (const key of body.unset ?? []) delete merged[key];
+    const egress = await egressRejection(existing.tech, merged);
+    if (egress) return egress;
   }
   const updated = updateConnection(id, body);
   if (!updated) {

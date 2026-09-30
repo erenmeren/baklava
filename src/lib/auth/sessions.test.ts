@@ -7,6 +7,7 @@ import {
   revokeUserSessions, listSessions,
   _resetSessionCacheForTests,
 } from "./sessions";
+import { readSecretFileSync } from "../crypto/secret-file";
 
 let dir: string;
 beforeEach(() => {
@@ -120,14 +121,10 @@ describe("sessions store", () => {
     createSession("u", "ghost", now);
     const past = now + 30 * 24 * 60 * 60 * 1000 + 1; // beyond absolute cap
     expect(listSessions(past)).toHaveLength(0);
-    const onDisk = JSON.parse(
-      fs.readFileSync(path.join(dir, "sessions.json"), "utf8"),
-    ) as unknown[];
+    const onDisk = JSON.parse(readSecretFileSync(path.join(dir, "sessions.json"))!) as unknown[];
     expect(onDisk).toHaveLength(0);
     createSession("u", "fresh", past);
-    const after = JSON.parse(
-      fs.readFileSync(path.join(dir, "sessions.json"), "utf8"),
-    ) as Array<{ userAgent: string }>;
+    const after = JSON.parse(readSecretFileSync(path.join(dir, "sessions.json"))!) as Array<{ userAgent: string }>;
     expect(after.map((r) => r.userAgent)).toEqual(["fresh"]);
   });
 });

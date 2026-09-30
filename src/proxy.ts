@@ -18,7 +18,7 @@ const TECH_IDS = new Set(Object.keys(TECH_META));
  * Used by the proxy to gate direct-by-id access (a member could otherwise hit
  * a connection they can't see by guessing its URL).
  */
-export function connectionIdFromPath(
+function rawConnectionIdFromPath(
   pathname: string,
   techIds: Set<string>
 ): string | null {
@@ -38,6 +38,22 @@ export function connectionIdFromPath(
   return null;
 }
 
+/**
+ * `req.nextUrl.pathname` is NOT percent-decoded, but Next decodes route params
+ * before the handler sees them. Matching the raw segment would let
+ * `/api/postgres/%61bc/query` look like an unknown connection here (→ allowed
+ * through) while the handler resolves the real `abc`. So compare the decoded
+ * id — the same string the handler will get. Throws URIError on malformed
+ * escapes; the proxy turns that into a 400.
+ */
+export function connectionIdFromPath(
+  pathname: string,
+  techIds: Set<string>
+): string | null {
+  const raw = rawConnectionIdFromPath(pathname, techIds);
+  return raw === null ? null : decodeURIComponent(raw);
+}
+
 const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 /**
@@ -50,13 +66,14 @@ const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
  * looking the part: `/query` and `redis/<id>/command` run free-form statements;
  * `kafka/.../messages` produces; `postgres/.../explain` defaults to EXPLAIN
  * ANALYZE, which executes the statement; `mongo/.../aggregate` accepts a
- * pipeline that may end in `$out`/`$merge`.
+ * pipeline that may end in `$out`/`$merge`; docker `fs/list` / `fs/cat` run
+ * `docker exec` in the container, so a file read there is an exec (secrets
+ * under /run/secrets, /proc/1/environ).
  */
 const READ_SHAPED_POSTS: RegExp[] = [
   /^\/api\/kafka\/[^/]+\/topics\/[^/]+\/search$/,
   /^\/api\/qdrant\/[^/]+\/collections\/[^/]+\/search$/,
   /^\/api\/mongo\/[^/]+\/databases\/[^/]+\/collections\/[^/]+\/(?:distinct|explain)$/,
-  /^\/api\/docker\/[^/]+\/containers\/[^/]+\/fs\/(?:list|cat)$/,
 ];
 
 /**
@@ -66,8 +83,17 @@ const READ_SHAPED_POSTS: RegExp[] = [
  */
 const MONGO_DOCUMENTS = /^\/api\/mongo\/[^/]+\/databases\/[^/]+\/collections\/[^/]+\/documents$/;
 
+/**
+ * The reverse of READ_SHAPED_POSTS: GETs that change things, because
+ * EventSource can only GET. Pulling an image writes to the Docker host and
+ * spends the stored registry credentials. (The k8s pod proxy checks `write`
+ * in its handler.)
+ */
+const WRITE_SHAPED_GETS: RegExp[] = [/^\/api\/docker\/[^/]+\/images\/pull-stream$/];
+
 /** True when the request mutates the connection or its resources. */
 function isMutating(method: string, url: URL): boolean {
+  if (method === "GET" && WRITE_SHAPED_GETS.some((re) => re.test(url.pathname))) return true;
   if (!WRITE_METHODS.has(method)) return false;
   if (method !== "POST") return true;
   const { pathname } = url;
@@ -82,12 +108,73 @@ function isMutating(method: string, url: URL): boolean {
 // so it can verify the HMAC-signed session cookie against the on-disk secret
 // (node:crypto + node:fs) — a real gate, not just a cookie-presence check.
 
+/** Hosts a browser may send a state-changing request from: this one, plus
+ *  the public host a trusted reverse proxy forwards, plus any operator-listed
+ *  origins (`BAKLAVA_ALLOWED_ORIGINS=https://ops.example.com,…`). */
+function allowedHosts(req: NextRequest): Set<string> {
+  const hosts = new Set<string>();
+  const host = req.headers.get("host");
+  if (host) hosts.add(host.toLowerCase());
+  if (process.env.BAKLAVA_TRUST_PROXY === "1") {
+    const fwd = req.headers.get("x-forwarded-host")?.split(",")[0].trim();
+    if (fwd) hosts.add(fwd.toLowerCase());
+  }
+  for (const o of (process.env.BAKLAVA_ALLOWED_ORIGINS ?? "").split(",")) {
+    try {
+      if (o.trim()) hosts.add(new URL(o.trim()).host.toLowerCase());
+    } catch {
+      /* ignore a malformed entry */
+    }
+  }
+  return hosts;
+}
+
+/**
+ * CSRF / cross-site gate. The session cookie is SameSite=Lax, which still
+ * rides along on requests from *same-site* origins — another port on the same
+ * host, a sibling subdomain — and on nothing at all when the login gate is off,
+ * which is exactly when a localhost console is most exposed to a hostile page.
+ * So, before anything else:
+ *
+ * - API calls come only from Baklava's own pages: a browser-labelled
+ *   `Sec-Fetch-Site: cross-site | same-site` is refused (this also covers the
+ *   GET-shaped actions EventSource forces, like driver install and image pull).
+ * - A state-changing request whose `Origin` isn't this host is refused (for
+ *   browsers that don't send Sec-Fetch-*). Requests with neither header are
+ *   non-browser clients, which CSRF can't drive.
+ */
+export function crossSiteRejection(req: NextRequest): NextResponse | null {
+  const forbidden = () =>
+    NextResponse.json({ error: "Cross-site request refused" }, { status: 403 });
+  const site = req.headers.get("sec-fetch-site");
+  if (req.nextUrl.pathname.startsWith("/api/") && (site === "cross-site" || site === "same-site")) {
+    return forbidden();
+  }
+  if (WRITE_METHODS.has(req.method)) {
+    const origin = req.headers.get("origin");
+    if (origin !== null) {
+      let host: string | null = null;
+      try {
+        host = new URL(origin).host.toLowerCase();
+      } catch {
+        /* "null" (sandboxed / privacy-redirected) or garbage */
+      }
+      if (!host || !allowedHosts(req).has(host)) return forbidden();
+    }
+  }
+  return null;
+}
+
 // Reachable without a valid session.
 const PUBLIC_PAGES = ["/login"];
 const PUBLIC_APIS = ["/api/auth/login", "/api/auth/logout"];
 const SETUP_API = "/api/auth/setup";
 
 export function proxy(req: NextRequest): NextResponse {
+  // Runs even with the login gate off — see crossSiteRejection.
+  const crossSite = crossSiteRejection(req);
+  if (crossSite) return crossSite;
+
   // Gate turned off in Settings → let everything through.
   if (!isAuthEnabled()) return NextResponse.next();
 
@@ -127,7 +214,12 @@ export function proxy(req: NextRequest): NextResponse {
   // connections a member can't access, but a member could still hit one
   // directly by id — so re-check access here for every connection-scoped path.
   const isApi = pathname.startsWith("/api/");
-  const connId = connectionIdFromPath(pathname, TECH_IDS);
+  let connId: string | null;
+  try {
+    connId = connectionIdFromPath(pathname, TECH_IDS);
+  } catch {
+    return NextResponse.json({ error: "Bad request" }, { status: 400 });
+  }
   if (connId) {
     const conn = getConnection(connId);
     // Unknown connection → let the route 404 normally (don't leak existence via
@@ -162,9 +254,11 @@ export function proxy(req: NextRequest): NextResponse {
 }
 
 export const config = {
-  // Run on everything except Next internals and static assets (incl. the public
-  // /icons and /fonts dirs). RSC/page/API requests are all gated by the fn.
+  // Run on everything except Next internals and the public assets, excluded by
+  // *prefix / exact name*, never by extension: an extension rule also skipped
+  // `/api/kafka/<id>/topics/foo.js` and `/kafka/<id>/topics/foo.css`, i.e. any
+  // route whose last segment is a user-named object ending in `.js`/`.css`/….
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|icons|fonts|.*\\.(?:png|jpg|jpeg|gif|svg|webp|ico|woff|woff2|ttf|css|js|map)$).*)",
+    "/((?!_next/static/|_next/image|icons/|fonts/|brand/|favicon\\.ico$|manifest\\.webmanifest$|icon\\.svg$|apple-icon\\.png$|icon-192\\.png$|icon-512\\.png$|og-image\\.png$|xterm\\.css$).*)",
   ],
 };

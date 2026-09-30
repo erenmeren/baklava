@@ -29,7 +29,13 @@ export async function getMssql(): Promise<typeof import("mssql")> {
 export async function withPool<T>(
   config: SqlServerConfig,
   fn: (pool: ConnectionPool) => Promise<T>,
-  opts?: { database?: string; requestTimeoutMs?: number }
+  opts?: {
+    database?: string;
+    requestTimeoutMs?: number;
+    /** Pin every request in `fn` to one connection — for session-scoped
+     *  SET options (SHOWPLAN_XML) that must apply to the next batch. */
+    singleConnection?: boolean;
+  }
 ): Promise<T> {
   // IMPORTANT: do NOT use `sql.connect(cfg)` — that returns mssql's
   // *global* pool, which is shared across every concurrent request in the
@@ -50,6 +56,7 @@ export async function withPool<T>(
     },
     connectionTimeout: 8000,
     requestTimeout: opts?.requestTimeoutMs ?? 15000,
+    ...(opts?.singleConnection ? { pool: { max: 1, min: 0 } } : {}),
   });
   await pool.connect();
   try {

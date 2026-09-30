@@ -253,3 +253,69 @@ describe("gate kill switch + limits", () => {
     expect(blockedReason).toMatch(/destructive|rate|budget/i);
   });
 });
+
+describe("wrapExecute — per-call category escalation", () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "bk-gate-esc-"));
+    process.env.BAKLAVA_DATA_DIR = dir;
+    _resetControlsForTests();
+    _resetLimitsForTests();
+  });
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+    delete process.env.BAKLAVA_DATA_DIR;
+  });
+
+  const escalating = (exec = vi.fn(async () => ({ ok: true }))): AiTool => ({
+    ...tool("write", exec),
+    name: "t_ttl",
+    categoryFor: (args) => (args.ttl === 0 ? "destructive" : "write"),
+  });
+
+  it("an escalated call needs approval even in autonomous mode, with the escalated category", async () => {
+    const exec = vi.fn(async () => ({ ok: true }));
+    const c = ctx({
+      policy: { ...DEFAULT_POLICY, mode: "autonomous", write: true, destructive: true },
+      awaitApproval: vi.fn(async () => true),
+    });
+    await wrapExecute(escalating(exec), c)({ ttl: 0 }, "call-1");
+    expect(c.awaitApproval).toHaveBeenCalledWith(
+      "call-1",
+      expect.objectContaining({ category: "destructive" }),
+      { ttl: 0 },
+    );
+    expect(exec).toHaveBeenCalled();
+  });
+
+  it("the same tool on a harmless call stays an autonomous write", async () => {
+    const c = ctx({ policy: { ...DEFAULT_POLICY, mode: "autonomous", write: true } });
+    await wrapExecute(escalating(), c)({ ttl: 3600 });
+    expect(c.awaitApproval).not.toHaveBeenCalled();
+  });
+
+  it("an escalated call is blocked when the policy disallows destructive", async () => {
+    const exec = vi.fn(async () => ({ ok: true }));
+    const c = ctx({ policy: { ...DEFAULT_POLICY, mode: "autonomous", write: true, destructive: false } });
+    const out = await wrapExecute(escalating(exec), c)({ ttl: 0 });
+    expect(exec).not.toHaveBeenCalled();
+    expect(out).toMatchObject({ error: expect.stringMatching(/not permitted/) });
+  });
+
+  it("categoryFor can never relax a tool's category", async () => {
+    const { effectiveCategory } = await import("./gate");
+    const t: AiTool = { ...tool("destructive"), categoryFor: () => "read" };
+    expect(effectiveCategory(t, {})).toBe("destructive");
+  });
+
+  it("a categoryFor that throws is treated as destructive", async () => {
+    const { effectiveCategory } = await import("./gate");
+    const t: AiTool = {
+      ...tool("write"),
+      categoryFor: () => {
+        throw new Error("bad args");
+      },
+    };
+    expect(effectiveCategory(t, {})).toBe("destructive");
+  });
+});

@@ -16,7 +16,9 @@ test.describe("rbac multi-user", () => {
   }) => {
     // Unique, valid (a-z0-9._-) username per project so the two concurrent
     // projects don't collide on the same global user.
-    const uname = `member_${test.info().project.name}`
+    // Spec-specific prefix too: auth-flow.spec runs concurrently (fullyParallel)
+    // and creates its own member — sharing a name made one spec's create 409.
+    const uname = `rbac_${test.info().project.name}`
       .toLowerCase()
       .replace(/[^a-z0-9._-]/g, "");
     const memberPassword = "member-pass-123";
@@ -34,8 +36,14 @@ test.describe("rbac multi-user", () => {
     ).toBeVisible();
 
     // 2. Create a member user through the "Add user" form, unless a previous
-    //    (retried) run already created it. The list is keyed by username text.
-    const existingRow = page.getByRole("listitem").filter({ hasText: uname });
+    //    (retried, or reused-server) run already created it. The list is keyed
+    //    by username text. Rows only — a sonner toast is also a listitem, and
+    //    a "…already exists" toast would otherwise match the username too.
+    const userRows = page.getByRole("listitem").and(page.locator(":not([data-sonner-toast])"));
+    // Wait for the list to load (the admin's own row) before deciding whether
+    // the member exists — counting an empty, still-loading list re-creates it.
+    await expect(userRows.filter({ hasText: "you" })).toBeVisible();
+    const existingRow = userRows.filter({ hasText: uname });
     if ((await existingRow.count()) === 0) {
       await page.getByPlaceholder("username").fill(uname);
       await page.getByPlaceholder("password").fill(memberPassword);
@@ -47,7 +55,7 @@ test.describe("rbac multi-user", () => {
 
     // The member appears in the list with a "member" badge. Tolerate the 409
     // from a concurrent/retry create — we only require the row to exist.
-    const memberRow = page.getByRole("listitem").filter({ hasText: uname });
+    const memberRow = userRows.filter({ hasText: uname });
     await expect(memberRow).toBeVisible({ timeout: 10_000 });
     // "member" appears both as the role badge and inside the role Select trigger;
     // target the badge element specifically (data-slot="badge").

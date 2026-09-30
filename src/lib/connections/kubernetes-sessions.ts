@@ -6,6 +6,8 @@ import type WebSocket from "isomorphic-ws";
 export interface K8sExecSession {
   id: string;
   connectionId: string;
+  /** Who opened it — see TerminalSession.userId. */
+  userId: string;
   namespace: string;
   podName: string;
   stdin: PassThrough;
@@ -37,6 +39,7 @@ function genId() {
 
 interface RegisterArgs {
   connectionId: string;
+  userId: string;
   namespace: string;
   podName: string;
   stdin: PassThrough;

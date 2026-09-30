@@ -4,6 +4,7 @@ import type { RedisConfig } from "@/lib/connections/types";
 import { formatError } from "@/lib/errors";
 import { dropRedisClient, probe } from "@/lib/connections/redis";
 import { getCurrentUser } from "@/lib/auth/current-user";
+import { egressRejection } from "@/lib/net/connection-targets";
 
 export const runtime = "nodejs";
 
@@ -36,6 +37,8 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const egress = await egressRejection("redis", body.config);
+  if (egress) return egress;
   const probeId = `__probe_${Math.random().toString(36).slice(2)}`;
   try {
     const result = await probe(probeId, body.config);

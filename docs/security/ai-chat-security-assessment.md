@@ -7,6 +7,13 @@ date: "2026-06-09"
 
 # Baklava AI Chat — Architecture & Security Assessment
 
+> **Historical snapshot (2026-06-09).** This assessment predates multi-user
+> RBAC, the server-side approval binding, the read-only SQL screen and the
+> September 2026 hardening pass; statements such as "no authentication or
+> authorization anywhere" no longer hold. The current security model is
+> described in `AGENTS.md` (sections *Connection-access gate*, *AI tool gate*,
+> *Egress policy*) and in the README's security sections.
+
 | | |
 |---|---|
 | **Document type** | Architectural, operational & security assessment |

@@ -6,13 +6,16 @@ import {
   sessionCookieOptions,
   isHttps,
 } from "@/lib/auth/session";
+import { verifySetupToken } from "@/lib/auth/setup-token";
+import { passwordProblem } from "@/lib/auth/password-policy";
 
 export const runtime = "nodejs";
 
 // First-run admin creation. Public (the user has no session yet) but usable
 // ONLY while the console has no users — once any user exists this 409s, so it
-// can't be abused to mint a second admin. Any non-empty password is fine; there
-// are no length or composition rules. The username must match createUser's regex.
+// can't be abused to mint a second admin — and only with the one-time setup
+// token from the server's output (setup-token.ts), so the first visitor from
+// the network can't claim the console. The username must match createUser's regex.
 export async function POST(req: NextRequest) {
   if (!needsSetup()) {
     return NextResponse.json(
@@ -24,7 +27,14 @@ export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => ({}))) as {
     username?: unknown;
     newPassword?: unknown;
+    setupToken?: unknown;
   };
+  if (typeof body.setupToken !== "string" || !verifySetupToken(body.setupToken)) {
+    return NextResponse.json(
+      { error: "Enter the setup token printed in the server's output" },
+      { status: 403 },
+    );
+  }
   const username = typeof body.username === "string" ? body.username : "";
   const newPassword =
     typeof body.newPassword === "string" ? body.newPassword : "";
@@ -35,6 +45,8 @@ export async function POST(req: NextRequest) {
   if (!newPassword) {
     return NextResponse.json({ error: "Enter a password" }, { status: 400 });
   }
+  const weak = passwordProblem(newPassword);
+  if (weak) return NextResponse.json({ error: weak }, { status: 400 });
 
   let user;
   try {

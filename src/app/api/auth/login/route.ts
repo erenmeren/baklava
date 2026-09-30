@@ -6,6 +6,11 @@ import {
   type UserRecord,
 } from "@/lib/auth/users";
 import {
+  clearLoginFailures,
+  isLoginThrottled,
+  recordLoginFailure,
+} from "@/lib/auth/login-throttle";
+import {
   SESSION_COOKIE,
   createSessionToken,
   sessionCookieOptions,
@@ -29,40 +34,7 @@ const DUMMY_USER: UserRecord = {
 
 export const runtime = "nodejs";
 
-// Best-effort in-memory brute-force throttle. Resets on restart and is
-// per-process, but slows credential stuffing against an exposed instance.
-const WINDOW_MS = 15 * 60 * 1000;
-const MAX_ATTEMPTS = 10;
-const attempts = new Map<string, { count: number; first: number }>();
-
-function clientKey(req: NextRequest): string {
-  return req.headers.get("x-forwarded-for")?.split(",")[0].trim() || "local";
-}
-
-function isRateLimited(key: string): boolean {
-  const rec = attempts.get(key);
-  if (!rec || Date.now() - rec.first > WINDOW_MS) return false;
-  return rec.count >= MAX_ATTEMPTS;
-}
-
-function recordFailure(key: string): void {
-  const rec = attempts.get(key);
-  if (!rec || Date.now() - rec.first > WINDOW_MS) {
-    attempts.set(key, { count: 1, first: Date.now() });
-  } else {
-    rec.count += 1;
-  }
-}
-
 export async function POST(req: NextRequest) {
-  const key = clientKey(req);
-  if (isRateLimited(key)) {
-    return NextResponse.json(
-      { error: "Too many attempts — wait a few minutes and try again." },
-      { status: 429 },
-    );
-  }
-
   const body = (await req.json().catch(() => ({}))) as {
     username?: unknown;
     password?: unknown;
@@ -80,6 +52,17 @@ export async function POST(req: NextRequest) {
     if (enabled.length === 1) user = enabled[0];
   }
 
+  // Throttle per account (see login-throttle.ts). The sole-user password-only
+  // form shares the account's bucket, and unknown usernames get their own, so
+  // the answer is the same whether or not the account exists.
+  const account = user?.username ?? username;
+  if (isLoginThrottled(account, req.headers)) {
+    return NextResponse.json(
+      { error: "Too many attempts — wait a few minutes and try again." },
+      { status: 429 },
+    );
+  }
+
   // Anti-enumeration: when no user is resolved, still run a scrypt verify
   // against a dummy record so the timing matches the user-exists path. We never
   // reveal whether the username exists or the password was simply wrong — the
@@ -88,11 +71,11 @@ export async function POST(req: NextRequest) {
   const ok = !!user && !user.disabled && passwordOk;
 
   if (!ok || !user) {
-    recordFailure(key);
+    recordLoginFailure(account, req.headers);
     return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
   }
 
-  attempts.delete(key);
+  clearLoginFailures(account);
   const res = NextResponse.json({ ok: true });
   res.cookies.set(
     SESSION_COOKIE,

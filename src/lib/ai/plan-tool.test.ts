@@ -9,7 +9,7 @@ const STEPS: PlanStep[] = [
 
 describe("makeProposePlanTool", () => {
   it("exposes the PreparedTool shape with the right name", () => {
-    const t = makeProposePlanTool({ sessionId: "s1", emit: vi.fn() });
+    const t = makeProposePlanTool({ sessionId: "s1", userId: "u", emit: vi.fn() });
     expect(t.name).toBe(PLAN_TOOL_NAME);
     expect(typeof t.description).toBe("string");
     expect(t.description.length).toBeGreaterThan(0);
@@ -19,35 +19,36 @@ describe("makeProposePlanTool", () => {
 
   it("emits a `plan` event with toolCallId, steps, and rationale", async () => {
     const emit = vi.fn();
-    const t = makeProposePlanTool({ sessionId: "s1", emit });
+    const t = makeProposePlanTool({ sessionId: "s1", userId: "u", emit });
     const p = t.run({ steps: STEPS, rationale: "because" }, "call1");
     // emit must happen synchronously before we resolve the pending decision
     expect(emit).toHaveBeenCalledWith("plan", {
       toolCallId: "call1",
+      sessionId: "s1",
       steps: STEPS,
       rationale: "because",
     });
-    resolvePending("s1", "call1", true);
+    resolvePending("s1", "call1", true, { userId: "u" });
     await p;
   });
 
   it("returns { approved: true } after the pending decision approves", async () => {
-    const t = makeProposePlanTool({ sessionId: "s2", emit: vi.fn() });
+    const t = makeProposePlanTool({ sessionId: "s2", userId: "u", emit: vi.fn() });
     const p = t.run({ steps: STEPS }, "call2");
-    queueMicrotask(() => resolvePending("s2", "call2", true));
+    queueMicrotask(() => resolvePending("s2", "call2", true, { userId: "u" }));
     await expect(p).resolves.toEqual({ approved: true });
   });
 
   it("returns { approved: false } after the pending decision rejects", async () => {
-    const t = makeProposePlanTool({ sessionId: "s3", emit: vi.fn() });
+    const t = makeProposePlanTool({ sessionId: "s3", userId: "u", emit: vi.fn() });
     const p = t.run({ steps: STEPS }, "call3");
-    queueMicrotask(() => resolvePending("s3", "call3", false));
+    queueMicrotask(() => resolvePending("s3", "call3", false, { userId: "u" }));
     await expect(p).resolves.toEqual({ approved: false });
   });
 
   it("uses a custom awaitDecision when provided", async () => {
     const awaitDecision = vi.fn(async () => true);
-    const t = makeProposePlanTool({ sessionId: "s4", emit: vi.fn(), awaitDecision });
+    const t = makeProposePlanTool({ sessionId: "s4", userId: "u", emit: vi.fn(), awaitDecision });
     await expect(t.run({ steps: STEPS, rationale: "r" }, "call4")).resolves.toEqual({
       approved: true,
     });
@@ -55,28 +56,28 @@ describe("makeProposePlanTool", () => {
   });
 
   it("rejects input with an empty steps array", async () => {
-    const t = makeProposePlanTool({ sessionId: "s5", emit: vi.fn() });
+    const t = makeProposePlanTool({ sessionId: "s5", userId: "u", emit: vi.fn() });
     const parsed = t.inputSchema.safeParse({ steps: [] });
     expect(parsed.success).toBe(false);
   });
 
   it("rejects steps missing required fields", async () => {
-    const t = makeProposePlanTool({ sessionId: "s6", emit: vi.fn() });
+    const t = makeProposePlanTool({ sessionId: "s6", userId: "u", emit: vi.fn() });
     const parsed = t.inputSchema.safeParse({ steps: [{ connection: "x" }] });
     expect(parsed.success).toBe(false);
   });
 
   it("accepts valid input (connection optional)", async () => {
-    const t = makeProposePlanTool({ sessionId: "s7", emit: vi.fn() });
+    const t = makeProposePlanTool({ sessionId: "s7", userId: "u", emit: vi.fn() });
     const parsed = t.inputSchema.safeParse({ steps: [{ tool: "a", summary: "b" }] });
     expect(parsed.success).toBe(true);
   });
 
   it("has no side effects beyond emit + await (emits exactly once, only `plan`)", async () => {
     const emit = vi.fn();
-    const t = makeProposePlanTool({ sessionId: "s8", emit });
+    const t = makeProposePlanTool({ sessionId: "s8", userId: "u", emit });
     const p = t.run({ steps: STEPS }, "call8");
-    resolvePending("s8", "call8", true);
+    resolvePending("s8", "call8", true, { userId: "u" });
     await p;
     // only the single plan emit, no tool-result / blocked / audit events etc.
     expect(emit).toHaveBeenCalledTimes(1);

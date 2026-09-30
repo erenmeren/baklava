@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { buildPlanAdditions } from "./route";
 import { PLAN_TOOL_NAME } from "@/lib/ai/plan-tool";
 
-const ctx = { sessionId: "s1", emit: vi.fn() };
+const ctx = { sessionId: "s1", userId: "u1", emit: vi.fn() };
 const BASE = "Connections in this conversation: prod (postgres). You may only act on these.";
 
 describe("buildPlanAdditions", () => {

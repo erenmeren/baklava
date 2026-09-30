@@ -260,14 +260,19 @@ test.describe("mysql SQL workspace", () => {
     });
 
     // MySQL's sidebar has no schema level and no "Tables" group — `renderDb`
-    // (mysql-sidebar.tsx:176-235) lists a database's tables directly as
-    // <TableRow> children the moment the database row is expanded. So this is
-    // genuinely two clicks, not three, and there's no
-    // auto-open-then-re-collapse hazard like the other two blocks have.
-    // Exact-matched and sidebar-scoped for the same strict-mode reason as
-    // above.
-    await sidebar.getByRole("button", { name: /^demo$/ }).click();
-    await sidebar.getByRole("link", { name: "customers", exact: true }).click();
+    // lists a database's tables directly under the database row. The
+    // connection's default database (`demo`, filled above) starts *expanded*
+    // (mysql-sidebar.tsx `openDb` initial state), so clicking it blindly
+    // collapses it. Give the auto-open a moment to load its tables, and only
+    // expand by hand if they didn't appear. Exact-matched and sidebar-scoped
+    // for the same strict-mode reason as above.
+    const customers = sidebar.getByRole("link", { name: "customers", exact: true });
+    const opened = await customers
+      .waitFor({ state: "visible", timeout: 5_000 })
+      .then(() => true)
+      .catch(() => false);
+    if (!opened) await sidebar.getByRole("button", { name: /^demo$/ }).click();
+    await customers.click();
 
     await expect(page.getByRole("tab", { name: "Data" })).toBeVisible({
       timeout: 10_000,

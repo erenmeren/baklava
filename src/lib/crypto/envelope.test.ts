@@ -29,3 +29,20 @@ describe("envelope", () => {
     expect(isEnvelope("not json")).toBe(false);
   });
 });
+
+describe("envelope — auth tag", () => {
+  it("rejects a truncated GCM tag", () => {
+    const key = Buffer.from("k".repeat(32));
+    const env = JSON.parse(encryptEnvelope("secret", key)) as Record<string, unknown>;
+    const truncate = (o: unknown): unknown => {
+      if (o && typeof o === "object") {
+        for (const [k, v] of Object.entries(o as Record<string, unknown>)) {
+          if (k === "tag" && typeof v === "string") (o as Record<string, unknown>)[k] = v.slice(0, 8);
+          else truncate(v);
+        }
+      }
+      return o;
+    };
+    expect(() => decryptEnvelope(JSON.stringify(truncate(env)), key)).toThrow();
+  });
+});

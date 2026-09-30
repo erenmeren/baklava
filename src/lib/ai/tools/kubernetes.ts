@@ -155,8 +155,9 @@ export function kubernetesTools(
     },
     {
       name: "k8s_scale_deployment",
-      description: "Set a deployment's replica count. Scaling to 0 stops every pod it owns.",
+      description: "Set a deployment's replica count. Scaling to 0 stops every pod it owns (DESTRUCTIVE).",
       category: "write",
+      categoryFor: ({ replicas }) => (replicas === 0 ? "destructive" : "write"),
       inputSchema: z.object({
         namespace: z.string(),
         name: z.string(),
@@ -187,8 +188,10 @@ export function kubernetesTools(
     {
       name: "k8s_apply_yaml",
       description:
-        "Apply (full PUT replace) a resource from a complete YAML manifest. Do NOT submit a Secret manifest obtained from k8s_get_yaml when its values were redacted — it would erase the Secret's data.",
-      category: "write",
+        "Apply (full PUT replace) a resource from a complete YAML manifest. DESTRUCTIVE: it overwrites the whole object. Do NOT submit a Secret manifest obtained from k8s_get_yaml when its values were redacted — it would erase the Secret's data.",
+      // A full replace of *any* kind: it can wipe a Secret, grant cluster-admin
+      // through a RoleBinding, or run a privileged pod — never a routine write.
+      category: "destructive",
       inputSchema: z.object({ yaml: z.string() }),
       execute: async ({ yaml }) => {
         await replaceResourceYaml(connectionId, config, yaml as string);
