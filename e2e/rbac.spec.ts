@@ -16,7 +16,9 @@ test.describe("rbac multi-user", () => {
   }) => {
     // Unique, valid (a-z0-9._-) username per project so the two concurrent
     // projects don't collide on the same global user.
-    const uname = `member_${test.info().project.name}`
+    // Spec-specific prefix too: auth-flow.spec runs concurrently (fullyParallel)
+    // and creates its own member — sharing a name made one spec's create 409.
+    const uname = `rbac_${test.info().project.name}`
       .toLowerCase()
       .replace(/[^a-z0-9._-]/g, "");
     const memberPassword = "member-pass-123";

@@ -18,7 +18,8 @@ test.describe("auth flow", () => {
   test("login → logout → protected-route redirect", async ({ page, browser }) => {
     // Unique, valid (a-z0-9._-) username per project so the two concurrent
     // projects don't collide on the same global user.
-    const uname = `member_${test.info().project.name}`
+    // Spec-specific prefix: rbac.spec runs concurrently and creates its own member.
+    const uname = `auth_${test.info().project.name}`
       .toLowerCase()
       .replace(/[^a-z0-9._-]/g, "");
     const memberPassword = "member-pass-123";
@@ -34,7 +35,11 @@ test.describe("auth flow", () => {
       page.getByText("People who can sign in to this console"),
     ).toBeVisible();
 
-    const existingRow = page.getByRole("listitem").filter({ hasText: uname });
+    // Rows only (a sonner toast is also a listitem), and only once the list has
+    // loaded (the admin's own row) — see rbac.spec.
+    const userRows = page.getByRole("listitem").and(page.locator(":not([data-sonner-toast])"));
+    await expect(userRows.filter({ hasText: "you" })).toBeVisible();
+    const existingRow = userRows.filter({ hasText: uname });
     if ((await existingRow.count()) === 0) {
       await page.getByPlaceholder("username").fill(uname);
       await page.getByPlaceholder("password").fill(memberPassword);
@@ -43,9 +48,7 @@ test.describe("auth flow", () => {
     }
     // Require only that the member row exists (tolerate a 409 from the
     // concurrent/retry create).
-    await expect(
-      page.getByRole("listitem").filter({ hasText: uname }),
-    ).toBeVisible({ timeout: 10_000 });
+    await expect(userRows.filter({ hasText: uname })).toBeVisible({ timeout: 10_000 });
 
     // 2. FRESH context, NO storageState — fully isolated from the shared admin
     //    session. This is the only place we drive login/logout.

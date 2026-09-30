@@ -18,7 +18,11 @@ const E2E_PASSWORD = "e2e-test-password";
 const E2E_DATA_DIR = path.join(os.tmpdir(), "baklava-e2e-data");
 process.env.E2E_PASSWORD = E2E_PASSWORD; // read by global-setup (same process)
 // Start from a clean slate each run so the seeded password always matches.
-rmSync(E2E_DATA_DIR, { recursive: true, force: true });
+// Only in the runner process: Playwright re-evaluates this config in every
+// worker, and those start *after* the web server and global-setup have
+// written users/sessions here — wiping it then would delete the running
+// server's files from under it.
+if (!process.env.TEST_WORKER_INDEX) rmSync(E2E_DATA_DIR, { recursive: true, force: true });
 
 export default defineConfig({
   testDir: "./e2e",

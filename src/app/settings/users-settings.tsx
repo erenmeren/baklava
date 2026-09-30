@@ -152,7 +152,6 @@ export function UsersSettings() {
         setNewUsername("");
         setNewPassword("");
         setNewRole("member");
-        await refresh();
       } else {
         toast.error(await readError(res, "Could not create user."));
       }
@@ -160,6 +159,10 @@ export function UsersSettings() {
       toast.error("Could not create user.");
     } finally {
       setAdding(false);
+      // Refresh either way: a POST the browser silently retried (e.g. over a
+      // keep-alive socket the server closed) can succeed first and then 409 —
+      // the user exists, and the list should say so.
+      await refresh();
     }
   }
 
