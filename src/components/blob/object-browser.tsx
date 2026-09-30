@@ -134,6 +134,9 @@ export function ObjectBrowser({ tech, connectionId, bucket }: Props) {
   };
 
   const download = (key: string) => {
+    // A file download from an API route (Content-Disposition), not a page
+    // navigation — router.push would try to render it.
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination
     window.location.href = `${apiBase}/objects/download?key=${encodeURIComponent(key)}`;
   };
 
