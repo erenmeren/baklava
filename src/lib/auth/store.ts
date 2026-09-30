@@ -158,6 +158,15 @@ export function getLegacyPasswordForMigration(): { passwordHash: string; salt: s
   return { passwordHash: s.passwordHash, salt: s.salt };
 }
 
+/** Drop the legacy hash once it has been migrated into users.json. Left in
+ *  place, deleting users.json later would resurrect an `admin` with that old
+ *  password, even after the admin changed theirs. */
+export function clearLegacyPassword(): void {
+  const s = load();
+  if (s.passwordHash === "") return;
+  persist({ ...s, passwordHash: "", mustChange: false, updatedAt: Date.now() });
+}
+
 /** Set the password (first-time setup or a later rotation), marking the console
  *  configured. Secret is preserved so the caller's freshly issued session stays
  *  valid. */

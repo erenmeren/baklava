@@ -72,10 +72,20 @@ function assertNoSecrets(body: unknown) {
   expect(text).not.toMatch(/[0-9a-f]{128}/i);
 }
 
-async function runSetup(username: string, newPassword: string, cookie?: string) {
+async function runSetup(
+  username: string,
+  newPassword: string,
+  cookie?: string,
+  setupToken?: string,
+) {
   const { POST } = await import("@/app/api/auth/setup/route");
+  const { getSetupToken } = await import("@/lib/auth/setup-token");
   return POST(
-    jsonReq("http://x/api/auth/setup", { username, newPassword }, cookie) as never,
+    jsonReq(
+      "http://x/api/auth/setup",
+      { username, newPassword, setupToken: setupToken ?? getSetupToken() },
+      cookie,
+    ) as never,
   );
 }
 
@@ -90,8 +100,27 @@ async function runChangePassword(body: unknown, cookie?: string) {
 }
 
 describe("auth routes (multi-user)", () => {
+  it("setup without the one-time token → 403, and no user is created", async () => {
+    const res = await runSetup("admin", "hunter2-long-pw", undefined, "guess");
+    expect(res.status).toBe(403);
+    const { needsSetup } = await import("@/lib/auth/users");
+    expect(needsSetup()).toBe(true);
+  });
+
+  it("setup refuses a password under 12 characters", async () => {
+    const res = await runSetup("admin", "short");
+    expect(res.status).toBe(400);
+  });
+
+  it("change-password refuses a password under 12 characters", async () => {
+    const setup = await runSetup("admin", "hunter2-long-pw");
+    const cookie = `${SESSION_COOKIE}=${cookieToken(setup)}`;
+    const res = await runChangePassword({ currentPassword: "hunter2-long-pw", newPassword: "short" }, cookie);
+    expect(res.status).toBe(400);
+  });
+
   it("setup creates the first admin and sets a session cookie", async () => {
-    const res = await runSetup("admin", "hunter2");
+    const res = await runSetup("admin", "hunter2-long-pw");
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toEqual({ ok: true });
@@ -104,7 +133,7 @@ describe("auth routes (multi-user)", () => {
   });
 
   it("setup 409s once a user exists", async () => {
-    await runSetup("admin", "hunter2");
+    await runSetup("admin", "hunter2-long-pw");
     const res = await runSetup("second", "pw");
     expect(res.status).toBe(409);
   });
@@ -115,8 +144,8 @@ describe("auth routes (multi-user)", () => {
   });
 
   it("login by username succeeds and sets a cookie", async () => {
-    await runSetup("admin", "hunter2");
-    const res = await runLogin({ username: "admin", password: "hunter2" });
+    await runSetup("admin", "hunter2-long-pw");
+    const res = await runLogin({ username: "admin", password: "hunter2-long-pw" });
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toEqual({ ok: true });
@@ -125,24 +154,24 @@ describe("auth routes (multi-user)", () => {
   });
 
   it("login with password only works when exactly one user exists", async () => {
-    await runSetup("admin", "hunter2");
-    const res = await runLogin({ password: "hunter2" });
+    await runSetup("admin", "hunter2-long-pw");
+    const res = await runLogin({ password: "hunter2-long-pw" });
     expect(res.status).toBe(200);
     expect(cookieToken(res)).toBeTruthy();
   });
 
   it("login password-only fails when multiple users exist", async () => {
-    await runSetup("admin", "hunter2");
+    await runSetup("admin", "hunter2-long-pw");
     const { createUser } = await import("@/lib/auth/users");
     createUser({ username: "bob", password: "bobpw", role: "member" });
-    const res = await runLogin({ password: "hunter2" });
+    const res = await runLogin({ password: "hunter2-long-pw" });
     expect(res.status).toBe(401);
     const body = await res.json();
     expect(body).toEqual({ error: "Invalid credentials" });
   });
 
   it("unknown username and wrong password return identical 401 bodies", async () => {
-    await runSetup("admin", "hunter2");
+    await runSetup("admin", "hunter2-long-pw");
 
     const unknown = await runLogin({ username: "nobody", password: "whatever" });
     const wrong = await runLogin({ username: "admin", password: "wrong" });
@@ -159,7 +188,7 @@ describe("auth routes (multi-user)", () => {
   });
 
   it("a disabled user cannot log in", async () => {
-    await runSetup("admin", "hunter2");
+    await runSetup("admin", "hunter2-long-pw");
     const { createUser, updateUser } = await import("@/lib/auth/users");
     const bob = createUser({ username: "bob", password: "bobpw", role: "member" });
     updateUser(bob.id, { disabled: true });
@@ -169,7 +198,7 @@ describe("auth routes (multi-user)", () => {
   });
 
   it("disabled-user login still runs the scrypt cost path (no timing oracle)", async () => {
-    await runSetup("admin", "hunter2");
+    await runSetup("admin", "hunter2-long-pw");
     const users = await import("@/lib/auth/users");
     const bob = users.createUser({ username: "bob", password: "bobpw", role: "member" });
     users.updateUser(bob.id, { disabled: true });
@@ -192,7 +221,7 @@ describe("auth routes (multi-user)", () => {
   });
 
   it("disabled-user 401 body is byte-identical to the unknown-user 401", async () => {
-    await runSetup("admin", "hunter2");
+    await runSetup("admin", "hunter2-long-pw");
     const { createUser, updateUser } = await import("@/lib/auth/users");
     const bob = createUser({ username: "bob", password: "bobpw", role: "member" });
     updateUser(bob.id, { disabled: true });
@@ -209,19 +238,19 @@ describe("auth routes (multi-user)", () => {
   });
 
   it("change-password verifies current, rotates, and keeps this device logged in", async () => {
-    const setup = await runSetup("admin", "hunter2");
+    const setup = await runSetup("admin", "hunter2-long-pw");
     const token = cookieToken(setup)!;
     const cookie = `${SESSION_COOKIE}=${token}`;
 
     // wrong current password → 401
     const wrong = await runChangePassword(
-      { currentPassword: "nope", newPassword: "new1" },
+      { currentPassword: "nope", newPassword: "new-password-1" },
       cookie,
     );
     expect(wrong.status).toBe(401);
 
     const res = await runChangePassword(
-      { currentPassword: "hunter2", newPassword: "new1" },
+      { currentPassword: "hunter2-long-pw", newPassword: "new-password-1" },
       cookie,
     );
     expect(res.status).toBe(200);
@@ -234,14 +263,14 @@ describe("auth routes (multi-user)", () => {
     expect(newToken).toBeTruthy();
 
     // old password no longer works; new one does
-    const oldPw = await runLogin({ username: "admin", password: "hunter2" });
+    const oldPw = await runLogin({ username: "admin", password: "hunter2-long-pw" });
     expect(oldPw.status).toBe(401);
-    const newPw = await runLogin({ username: "admin", password: "new1" });
+    const newPw = await runLogin({ username: "admin", password: "new-password-1" });
     expect(newPw.status).toBe(200);
   });
 
   it("change-password logs out the user's other devices", async () => {
-    await runSetup("admin", "hunter2");
+    await runSetup("admin", "hunter2-long-pw");
     const { getUserByUsername } = await import("@/lib/auth/users");
     const { createSessionToken, verifySessionToken } = await import(
       "@/lib/auth/session"
@@ -256,7 +285,7 @@ describe("auth routes (multi-user)", () => {
 
     // Rotate the password authenticated as device A.
     const res = await runChangePassword(
-      { currentPassword: "hunter2", newPassword: "new1" },
+      { currentPassword: "hunter2-long-pw", newPassword: "new-password-1" },
       `${SESSION_COOKIE}=${tokenA}`,
     );
     expect(res.status).toBe(200);
@@ -269,8 +298,8 @@ describe("auth routes (multi-user)", () => {
   });
 
   it("change-password 401s with no session", async () => {
-    await runSetup("admin", "hunter2");
-    const res = await runChangePassword({ currentPassword: "hunter2", newPassword: "x" });
+    await runSetup("admin", "hunter2-long-pw");
+    const res = await runChangePassword({ currentPassword: "hunter2-long-pw", newPassword: "x" });
     expect(res.status).toBe(401);
   });
 });

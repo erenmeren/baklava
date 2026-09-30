@@ -41,15 +41,19 @@ describe("secret-file", () => {
     expect(readSecretFileSync(file)).toBe(legacy);
   });
 
-  it("backs up a legacy plaintext file once on first encrypted write", () => {
+  it("drops the plaintext pre-encryption backup once the encrypted file reads back", () => {
     fs.writeFileSync(file, JSON.stringify({ plaintext: "yes" }));
     writeSecretFileSync(file, JSON.stringify({ now: "encrypted" }));
-    const bak = `${file}.pre-encryption.bak`;
-    expect(fs.existsSync(bak)).toBe(true);
-    expect(fs.readFileSync(bak, "utf8")).toContain("plaintext");
-    const firstBak = fs.readFileSync(bak, "utf8");
-    writeSecretFileSync(file, JSON.stringify({ now: "again" }));
-    expect(fs.readFileSync(bak, "utf8")).toBe(firstBak);
+    // A plaintext copy of the secrets must not outlive a successful migration.
+    expect(fs.existsSync(`${file}.pre-encryption.bak`)).toBe(false);
+    expect(readSecretFileSync(file)).toContain("encrypted");
+  });
+
+  it("sweeps a plaintext backup left behind by an older version", () => {
+    writeSecretFileSync(file, JSON.stringify({ v: 1 }));
+    fs.writeFileSync(`${file}.pre-encryption.bak`, JSON.stringify({ password: "old" }));
+    writeSecretFileSync(file, JSON.stringify({ v: 2 }));
+    expect(fs.existsSync(`${file}.pre-encryption.bak`)).toBe(false);
   });
 
   it("backs up an undecryptable envelope instead of destroying it (key change)", () => {

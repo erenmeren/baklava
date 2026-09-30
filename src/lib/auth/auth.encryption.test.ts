@@ -99,7 +99,7 @@ describe("auth.json encryption", () => {
     expect(store2.getAuthSecret()).toBe(secret);
     expect(store2.verifyPassword("legacy-pass")).toBe(true);
 
-    // The pre-encryption backup of the plaintext file was written.
-    expect(fs.existsSync(`${file}.pre-encryption.bak`)).toBe(true);
+    // The plaintext backup is removed once the encrypted file reads back.
+    expect(fs.existsSync(`${file}.pre-encryption.bak`)).toBe(false);
   });
 });

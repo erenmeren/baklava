@@ -2,7 +2,7 @@ import os from "node:os";
 import path from "node:path";
 import { scryptSync, randomBytes, timingSafeEqual } from "node:crypto";
 import { readSecretFileSync, writeSecretFileSync } from "../crypto/secret-file";
-import { getLegacyPasswordForMigration } from "./store";
+import { clearLegacyPassword, getLegacyPasswordForMigration } from "./store";
 import { revokeAllExcept } from "./sessions";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -65,21 +65,25 @@ const CACHE_KEY = Symbol.for("baklava.usersStore");
 
 interface Store {
   byId: Map<string, UserRecord>;
+  /** users.json exists but couldn't be parsed. The console stays locked
+   *  (nobody can sign in, and setup stays closed) until an operator fixes it —
+   *  treating it as empty used to reopen first-run setup to anyone. */
+  corrupt?: boolean;
 }
 
 function emptyStore(): Store {
   return { byId: new Map() };
 }
 
-function readFile(): UsersFile | null {
+function readFile(): UsersFile | "corrupt" | null {
   const text = readSecretFileSync(getFile());
   if (text === null) return null;
   try {
     const parsed = JSON.parse(text) as UsersFile;
-    if (!parsed || !Array.isArray(parsed.users)) return { version: 1, users: [] };
+    if (!parsed || !Array.isArray(parsed.users)) return "corrupt";
     return parsed;
   } catch {
-    return { version: 1, users: [] };
+    return "corrupt";
   }
 }
 
@@ -107,6 +111,7 @@ function migrateFromLegacy(store: Store): void {
   };
   store.byId.set(rec.id, rec);
   persist(store);
+  clearLegacyPassword();
   revokeAllExcept(null);
   console.warn(
     "[baklava] migrated to multi-user: admin user 'admin' created from existing password",
@@ -123,6 +128,11 @@ function load(): Store {
   if (file === null) {
     // users.json absent → first load. Attempt one-time legacy migration.
     migrateFromLegacy(store);
+  } else if (file === "corrupt") {
+    store.corrupt = true;
+    console.error(
+      `[baklava] ${getFile()} is unreadable — sign-in and setup are disabled until it is restored or removed.`,
+    );
   } else {
     for (const u of file.users) if (u?.id) store.byId.set(u.id, u);
   }
@@ -175,7 +185,8 @@ export function countAdmins(): number {
 
 /** True when no users exist — the first run needs an initial admin. */
 export function needsSetup(): boolean {
-  return load().byId.size === 0;
+  const store = load();
+  return !store.corrupt && store.byId.size === 0;
 }
 
 export function createUser(input: { username: string; password: string; role: Role }): UserRecord {

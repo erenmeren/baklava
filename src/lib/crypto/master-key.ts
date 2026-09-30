@@ -62,9 +62,28 @@ export function resolveKeyMaterial(opts?: {
 
   const keyFile = path.join(dataDir(), "master.key");
   let fileKey: string;
+  let existing: string | null = null;
   try {
-    fileKey = fs.readFileSync(keyFile, "utf8").trim();
+    existing = fs.readFileSync(keyFile, "utf8").trim();
   } catch {
+    /* absent → generated below */
+  }
+  if (existing !== null) {
+    // An empty file would silently become a zero-length key.
+    if (!existing) {
+      throw new Error(
+        `${keyFile} is empty. Restore it from a backup (or set BAKLAVA_MASTER_KEY); ` +
+          "deleting it makes the existing encrypted files unreadable.",
+      );
+    }
+    fileKey = existing;
+    // 0600 is only applied on creation; tighten a key file that was copied in looser.
+    try {
+      fs.chmodSync(keyFile, 0o600);
+    } catch {
+      /* best effort (e.g. read-only mount) */
+    }
+  } else {
     fileKey = randomBytes(32).toString("base64");
     fs.mkdirSync(dataDir(), { recursive: true, mode: 0o700 });
     fs.writeFileSync(keyFile, fileKey, { mode: 0o600 });

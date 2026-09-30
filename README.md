@@ -81,12 +81,14 @@ Run `npm run baklava:show-key` to display the active master key for safekeeping.
 
 ### The password gate
 
-Because Baklava can read every stored credential and run destructive queries, it sits behind a **single shared password** (one password, no usernames) whenever it's reachable over a network.
+Because Baklava can read every stored credential and run destructive queries, it sits behind a sign-in whenever it's reachable over a network.
 
-- **You create the password on first run** — there is no default to forget or leak.
+- **It listens on `127.0.0.1` by default.** To serve it to your network, start it with `BAKLAVA_HOST=0.0.0.0 npm start` (or `npm run dev -- -H 0.0.0.0`) — and put TLS in front of it.
+- **You create the first admin on first run** — there is no default to forget or leak. The sign-in page asks for a one-time **setup token**, printed in the terminal running Baklava, so nobody else on the network can claim the console before you do (`BAKLAVA_SETUP_TOKEN` pre-sets it for scripted installs).
+- **Passwords need at least 12 characters.**
 - **Change it** anytime in **Settings → Security**, and use **Lock console** in the header to sign out.
 - **Turn the gate off** in **Settings → Security** if you're on a trusted machine and the prompt is just friction. Leave it **on** for anything exposed to a network.
-- Prefer to set it up front? Start with `BAKLAVA_INITIAL_PASSWORD='your-password' npm run dev` to skip the create-password screen.
+- Prefer to set it up front? Start with `BAKLAVA_INITIAL_PASSWORD='your-password' npm run dev` to skip the setup screen (it becomes the `admin` user's password).
 
 The password is hashed (scrypt) and stored in `~/.baklava/auth.json`. It never leaves the server.
 

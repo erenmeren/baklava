@@ -140,7 +140,7 @@ describe("POST /api/users", () => {
   it("creates a user and returns a PublicUser", async () => {
     const ctx = await seed();
     const res = await ctx.collection.POST(
-      jsonReq("http://localhost/api/users", "POST", { username: "carol", password: "pw", role: "member" }, ctx.adminToken),
+      jsonReq("http://localhost/api/users", "POST", { username: "carol", password: "carol-password-1", role: "member" }, ctx.adminToken),
     );
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -149,6 +149,15 @@ describe("POST /api/users", () => {
     expect(body.user.passwordHash).toBeUndefined();
     expect(body.user.salt).toBeUndefined();
     expect(ctx.users.getUserByUsername("carol")).not.toBeNull();
+  });
+
+  it("rejects a password under 12 characters with 400", async () => {
+    const ctx = await seed();
+    const res = await ctx.collection.POST(
+      jsonReq("http://localhost/api/users", "POST", { username: "carol", password: "short-pw", role: "member" }, ctx.adminToken),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/12 characters/);
   });
 
   it("rejects an empty password with 400", async () => {
@@ -162,7 +171,7 @@ describe("POST /api/users", () => {
   it("maps a duplicate username to 409", async () => {
     const ctx = await seed();
     const res = await ctx.collection.POST(
-      jsonReq("http://localhost/api/users", "POST", { username: "bob", password: "pw", role: "member" }, ctx.adminToken),
+      jsonReq("http://localhost/api/users", "POST", { username: "bob", password: "bob-password-12", role: "member" }, ctx.adminToken),
     );
     expect(res.status).toBe(409);
   });
