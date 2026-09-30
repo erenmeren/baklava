@@ -18,7 +18,7 @@ const TECH_IDS = new Set(Object.keys(TECH_META));
  * Used by the proxy to gate direct-by-id access (a member could otherwise hit
  * a connection they can't see by guessing its URL).
  */
-export function connectionIdFromPath(
+function rawConnectionIdFromPath(
   pathname: string,
   techIds: Set<string>
 ): string | null {
@@ -36,6 +36,22 @@ export function connectionIdFromPath(
   m = pathname.match(/^\/([^/]+)\/([^/]+)(?:\/.*)?$/);
   if (m && techIds.has(m[1])) return m[2];
   return null;
+}
+
+/**
+ * `req.nextUrl.pathname` is NOT percent-decoded, but Next decodes route params
+ * before the handler sees them. Matching the raw segment would let
+ * `/api/postgres/%61bc/query` look like an unknown connection here (→ allowed
+ * through) while the handler resolves the real `abc`. So compare the decoded
+ * id — the same string the handler will get. Throws URIError on malformed
+ * escapes; the proxy turns that into a 400.
+ */
+export function connectionIdFromPath(
+  pathname: string,
+  techIds: Set<string>
+): string | null {
+  const raw = rawConnectionIdFromPath(pathname, techIds);
+  return raw === null ? null : decodeURIComponent(raw);
 }
 
 const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
@@ -127,7 +143,12 @@ export function proxy(req: NextRequest): NextResponse {
   // connections a member can't access, but a member could still hit one
   // directly by id — so re-check access here for every connection-scoped path.
   const isApi = pathname.startsWith("/api/");
-  const connId = connectionIdFromPath(pathname, TECH_IDS);
+  let connId: string | null;
+  try {
+    connId = connectionIdFromPath(pathname, TECH_IDS);
+  } catch {
+    return NextResponse.json({ error: "Bad request" }, { status: 400 });
+  }
   if (connId) {
     const conn = getConnection(connId);
     // Unknown connection → let the route 404 normally (don't leak existence via
@@ -162,9 +183,11 @@ export function proxy(req: NextRequest): NextResponse {
 }
 
 export const config = {
-  // Run on everything except Next internals and static assets (incl. the public
-  // /icons and /fonts dirs). RSC/page/API requests are all gated by the fn.
+  // Run on everything except Next internals and the public assets, excluded by
+  // *prefix / exact name*, never by extension: an extension rule also skipped
+  // `/api/kafka/<id>/topics/foo.js` and `/kafka/<id>/topics/foo.css`, i.e. any
+  // route whose last segment is a user-named object ending in `.js`/`.css`/….
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|icons|fonts|.*\\.(?:png|jpg|jpeg|gif|svg|webp|ico|woff|woff2|ttf|css|js|map)$).*)",
+    "/((?!_next/static/|_next/image|icons/|fonts/|brand/|favicon\\.ico$|manifest\\.webmanifest$|icon\\.svg$|apple-icon\\.png$|icon-192\\.png$|icon-512\\.png$|og-image\\.png$|xterm\\.css$).*)",
   ],
 };

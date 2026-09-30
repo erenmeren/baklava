@@ -3,6 +3,7 @@ import { TechGrid } from "@/components/tech-grid";
 import { TECH_META_LIST } from "@/techs/meta-registry";
 import { isDriverInstalled } from "@/techs/presence";
 import { isInstallAllowed } from "@/lib/techs/install";
+import { getCurrentUser } from "@/lib/auth/current-user";
 
 // Always re-read driver-install state on the server: after an in-app install the
 // client calls router.refresh(), and this render must reflect the freshly
@@ -16,7 +17,9 @@ export default async function Home() {
     installed[m.id] = m.optionalDeps.every(isDriverInstalled);
     optionalDeps[m.id] = m.optionalDeps;
   }
-  const canInstall = isInstallAllowed((await headers()).get("host"));
+  const h = await headers();
+  const canInstall =
+    isInstallAllowed(h.get("host")) && getCurrentUser({ headers: h })?.role === "admin";
 
   return (
     <div className="mx-auto max-w-6xl px-6 pt-6 pb-12">

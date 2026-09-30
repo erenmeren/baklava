@@ -1,18 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAuthEnabled, setAuthEnabled } from "@/lib/auth/store";
+import { authErrorResponse, requireAdmin } from "@/lib/auth/current-user";
 
 export const runtime = "nodejs";
 
-// Reaching this route already requires a valid session whenever the gate is
-// enabled (enforced by proxy.ts) — so the gate can only be turned OFF by an
-// authenticated user. Turning it back ON is always allowed (it only adds
-// protection); the user is sent to /login afterwards.
+// Turning the gate OFF makes every visitor the synthetic local admin, so only an
+// admin may flip it. While the gate is already off, getCurrentUser returns that
+// synthetic admin, so turning it back ON keeps working.
 
 export async function GET() {
   return NextResponse.json({ enabled: isAuthEnabled() });
 }
 
 export async function POST(req: NextRequest) {
+  try {
+    requireAdmin(req);
+  } catch (err) {
+    return authErrorResponse(err)!;
+  }
   const body = (await req.json().catch(() => ({}))) as { enabled?: unknown };
   if (typeof body.enabled !== "boolean") {
     return NextResponse.json(

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import {
   deleteConnection,
   getConnection,
+  mergeConfig,
   publicView,
   updateConnection,
 } from "@/lib/connections/store";
@@ -16,6 +17,11 @@ import { dropS3Client } from "@/lib/connections/s3-aws";
 import { dropPostgresPools } from "@/lib/connections/postgres";
 import { dropConnectionGrants, effectiveAccess } from "@/lib/connections/access";
 import { getCurrentUser } from "@/lib/auth/current-user";
+import {
+  hostLocalForbidden,
+  hostLocalReason,
+  touchesLocation,
+} from "@/lib/connections/host-local";
 import { deletePolicy } from "@/lib/ai/policy-store";
 
 export const runtime = "nodejs";
@@ -86,6 +92,16 @@ export async function PATCH(req: Request, ctx: RouteContext) {
       { error: "Nothing to update — provide name or config" },
       { status: 400 }
     );
+  }
+  // Re-pointing a connection at the Baklava host is admin-only, same as creating
+  // one (see host-local.ts). Untouched location keys don't re-trigger it, so a
+  // write grantee can still rename an admin's socket connection.
+  const patchedKeys = [...Object.keys(body.config ?? {}), ...(body.unset ?? [])];
+  if (touchesLocation(existing.tech, patchedKeys) && getCurrentUser(req)?.role !== "admin") {
+    const merged = mergeConfig(existing.config as Record<string, unknown>, body.config ?? {});
+    for (const key of body.unset ?? []) delete merged[key];
+    const reason = hostLocalReason(existing.tech, merged);
+    if (reason) return hostLocalForbidden(reason);
   }
   const updated = updateConnection(id, body);
   if (!updated) {

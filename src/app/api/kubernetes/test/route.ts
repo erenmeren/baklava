@@ -1,9 +1,11 @@
+import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { saveConnection, publicView } from "@/lib/connections/store";
 import type { KubernetesConfig } from "@/lib/connections/types";
 import { formatError } from "@/lib/errors";
 import { dropKubernetesClient, probe } from "@/lib/connections/kubernetes";
 import { getCurrentUser } from "@/lib/auth/current-user";
+import { hostLocalForbidden, hostLocalReason } from "@/lib/connections/host-local";
 
 export const runtime = "nodejs";
 
@@ -47,9 +49,15 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // Even a probe runs host-local configs (kubeconfig exec plugins spawn), so
+  // gate before probing, not just before saving.
+  const user = getCurrentUser(req);
+  const hostLocal = hostLocalReason("kubernetes", body.config);
+  if (hostLocal && user?.role !== "admin") return hostLocalForbidden(hostLocal);
+
   // Probe with a temporary id so the cached client doesn't poison a real
   // record if the user is about to save under a different id.
-  const probeId = `__probe_${Math.random().toString(36).slice(2)}`;
+  const probeId = `__probe_${randomUUID()}`;
   try {
     const result = await probe(probeId, body.config);
     const record = body.save
@@ -58,7 +66,7 @@ export async function POST(req: NextRequest) {
           name: body.name || "Cluster",
           config: body.config,
           status: "ok",
-          ownerId: getCurrentUser(req)?.id,
+          ownerId: user?.id,
         })
       : null;
     return NextResponse.json({

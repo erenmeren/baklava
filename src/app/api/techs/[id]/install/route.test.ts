@@ -3,6 +3,9 @@ import { EventEmitter } from "node:events";
 
 const spawnMock = vi.fn();
 vi.mock("node:child_process", () => ({ spawn: (...a: unknown[]) => spawnMock(...a) }));
+// Driver install/uninstall is admin-only; these tests exercise the other guards.
+const currentUser = vi.fn(() => ({ id: "a", role: "admin" }));
+vi.mock("@/lib/auth/current-user", () => ({ getCurrentUser: () => currentUser() }));
 
 import { GET } from "./route";
 
@@ -28,6 +31,12 @@ beforeEach(() => {
 describe("install route guards", () => {
   it("403 for a non-local host (no spawn)", async () => {
     const res = await GET(makeReq("evil.example.com"), ctx("postgres"));
+    expect(res.status).toBe(403);
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+  it("403 for a non-admin even from localhost (no spawn)", async () => {
+    currentUser.mockReturnValueOnce({ id: "m", role: "member" });
+    const res = await GET(makeReq("localhost:3000"), ctx("postgres"));
     expect(res.status).toBe(403);
     expect(spawnMock).not.toHaveBeenCalled();
   });

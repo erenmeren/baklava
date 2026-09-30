@@ -441,3 +441,81 @@ describe("proxy() write floor on connection-scoped paths", () => {
     expect(res.headers.get("x-middleware-next")).toBe("1");
   });
 });
+
+describe("proxy() percent-encoded connection ids", () => {
+  // nextUrl.pathname stays encoded but Next decodes params for the handler, so
+  // the gate must judge the decoded id or `%61bc` sneaks past as "unknown".
+  const encode = (id: string) =>
+    [...id].map((c) => "%" + c.charCodeAt(0).toString(16).padStart(2, "0")).join("");
+
+  it("decodes the id segment", async () => {
+    const { proxy } = await load();
+    const techIds = new Set(["postgres"]);
+    expect(proxy.connectionIdFromPath("/api/postgres/%61bc/query", techIds)).toBe("abc");
+    expect(proxy.connectionIdFromPath("/postgres/%61bc", techIds)).toBe("abc");
+  });
+
+  it("no grant + fully encoded id → 403", async () => {
+    const ctx = await seed();
+    const res = ctx.proxy.proxy(
+      req(`http://localhost/api/postgres/${encode(ctx.conn.id)}/query`, {
+        token: ctx.strangerToken,
+        method: "POST",
+      }),
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it("read grant + encoded id still hits the write floor", async () => {
+    const ctx = await seed();
+    ctx.access.setGrants(ctx.conn.id, { [ctx.stranger.id]: "read" });
+    const res = ctx.proxy.proxy(
+      req(`http://localhost/api/postgres/${encode(ctx.conn.id)}/query`, {
+        token: ctx.strangerToken,
+        method: "POST",
+      }),
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it("malformed escape in the id → 400", async () => {
+    const ctx = await seed();
+    const res = ctx.proxy.proxy(
+      req("http://localhost/api/postgres/%E0%A4%A/query", { token: ctx.strangerToken }),
+    );
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("proxy matcher", () => {
+  // Next compiles `/(…)` matchers to an anchored regex over the pathname.
+  const matches = async (pathname: string) => {
+    const { proxy } = await load();
+    const src = proxy.config.matcher[0];
+    return new RegExp(`^${src}$`).test(pathname);
+  };
+
+  it.each([
+    "/api/kafka/c1/topics/foo.js",
+    "/api/mysql/c1/databases/d/tables/x.css",
+    "/api/s3/c1/buckets/b/objects/logo.png",
+    "/kafka/c1/topics/foo.js",
+    "/api/auth/security",
+    "/",
+  ])("runs on %s", async (p) => {
+    expect(await matches(p)).toBe(true);
+  });
+
+  it.each([
+    "/_next/static/chunks/main.js",
+    "/_next/image",
+    "/fonts/Geist-Variable.woff2",
+    "/icons/postgres.svg",
+    "/favicon.ico",
+    "/icon.svg",
+    "/xterm.css",
+    "/og-image.png",
+  ])("skips static asset %s", async (p) => {
+    expect(await matches(p)).toBe(false);
+  });
+});

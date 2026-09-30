@@ -3,6 +3,8 @@ import { EventEmitter } from "node:events";
 
 const spawnMock = vi.fn();
 vi.mock("node:child_process", () => ({ spawn: (...a: unknown[]) => spawnMock(...a) }));
+// Driver install/uninstall is admin-only; these tests exercise the other guards.
+vi.mock("@/lib/auth/current-user", () => ({ getCurrentUser: () => ({ id: "a", role: "admin" }) }));
 
 import { GET } from "./route";
 

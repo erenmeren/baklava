@@ -163,6 +163,10 @@ describe("POST /api/docker/test (socket-style config)", () => {
   });
 
   it("returns ok:true with the info payload on success", async () => {
+    // The socket reaches the Baklava host, so only an admin may use it.
+    vi.doMock("@/lib/auth/current-user", () => ({
+      getCurrentUser: () => ({ id: "a", role: "admin" }),
+    }));
     vi.doMock("@/lib/connections/docker", () => ({
       pingDocker: vi.fn(async () => ({
         ServerVersion: "27.0",

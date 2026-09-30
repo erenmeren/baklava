@@ -1,6 +1,7 @@
 import "server-only";
 import { NextResponse } from "next/server";
 import { formatError } from "@/lib/errors";
+import { authErrorResponse, requireAdmin } from "@/lib/auth/current-user";
 import {
   publicSettings,
   saveProvider,
@@ -17,6 +18,13 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  // The provider key decides where every user's chats (and the tool results in
+  // them) are sent, so it is an admin setting.
+  try {
+    requireAdmin(req);
+  } catch (err) {
+    return authErrorResponse(err)!;
+  }
   try {
     const body = (await req.json()) as {
       provider?: ProviderId;

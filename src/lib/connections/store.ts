@@ -1,4 +1,5 @@
 import os from "node:os";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import type { ConnectionRecord, ConnectionStatus, TechId } from "./types";
 import { TECH_META_LIST } from "@/techs/meta-registry";
@@ -86,8 +87,10 @@ function flush(): void {
   persistToDisk([...getStore().byId.values()]);
 }
 
+// The id is the only thing in a connection URL, so it must not be guessable —
+// `Math.random()` + a timestamp was.
 function genId() {
-  return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+  return randomUUID();
 }
 
 export function listConnections(tech?: TechId): AnyRecord[] {
@@ -179,7 +182,7 @@ const SECRET_KEYS = new Set<string>([
   ...EXTRA_SECRET_KEYS,
 ]);
 
-function mergeConfig(
+export function mergeConfig(
   existing: Record<string, unknown>,
   patch: Record<string, unknown>
 ): Record<string, unknown> {
