@@ -152,6 +152,20 @@ export function revokeAllExcept(keepId: string | null): void {
   if (changed) persist(store);
 }
 
+/** Revoke every session of `userId` except `keepId` ("sign out my other devices"). */
+export function revokeUserSessionsExcept(userId: string, keepId: string): void {
+  const store = load();
+  let changed = false;
+  for (const [id, r] of store.byId) {
+    if (r.userId === userId && id !== keepId) {
+      store.byId.delete(id);
+      store.lastPersistById.delete(id);
+      changed = true;
+    }
+  }
+  if (changed) persist(store);
+}
+
 export function listSessions(now: number = Date.now()): SessionRecord[] {
   const store = load();
   if (pruneExpired(store, now)) persist(store);

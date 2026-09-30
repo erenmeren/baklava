@@ -18,7 +18,8 @@ export function ApprovalCard({
   onDecision,
 }: {
   pending: PendingApproval;
-  onDecision: (toolCallId: string, decision: "approve" | "reject") => void;
+  /** `confirm` carries the typed name for high-risk approvals; the server checks it. */
+  onDecision: (toolCallId: string, decision: "approve" | "reject", confirm?: string) => void;
 }) {
   const destructive = pending.category === "destructive";
   const high = pending.risk?.level === "high";
@@ -64,7 +65,11 @@ export function ApprovalCard({
         </div>
       ) : null}
       <div className="flex gap-2 mt-2">
-        <Button size="sm" disabled={!approveEnabled} onClick={() => onDecision(pending.toolCallId, "approve")}>
+        <Button size="sm" disabled={!approveEnabled} onClick={() =>
+            high
+              ? onDecision(pending.toolCallId, "approve", typed.trim())
+              : onDecision(pending.toolCallId, "approve")
+          }>
           Approve
         </Button>
         <Button size="sm" variant="outline" onClick={() => onDecision(pending.toolCallId, "reject")}>

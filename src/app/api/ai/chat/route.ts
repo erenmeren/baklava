@@ -1,4 +1,5 @@
 import "server-only";
+import { randomUUID } from "node:crypto";
 import type { ModelMessage } from "ai";
 import { getConnection } from "@/lib/connections/store";
 import type { TechId } from "@/lib/connections/types";
@@ -11,7 +12,7 @@ import { buildConversationTools, type ConversationConnection } from "@/lib/ai/co
 import { runAgent } from "@/lib/ai/agent";
 import { makeProposePlanTool, PLAN_TOOL_NAME } from "@/lib/ai/plan-tool";
 import type { PreparedTool } from "@/lib/ai/prepared";
-import { createPending } from "@/lib/ai/pending";
+import { createPending, dropPending } from "@/lib/ai/pending";
 import { getConversation, updateConversation } from "@/lib/ai/conversation-store";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { effectiveAccess } from "@/lib/connections/access";
@@ -22,7 +23,6 @@ export const dynamic = "force-dynamic";
 
 interface ChatBody {
   conversationId: string;
-  sessionId: string;
   connections: { id: string; tech: TechId }[];
   userMessage: { role: "user"; content: string };
   planMode?: boolean;
@@ -47,11 +47,11 @@ const PLAN_MODE_DIRECTIVE =
 export function buildPlanAdditions(
   planMode: boolean | undefined,
   base: string,
-  ctx: { sessionId: string; emit: (event: string, data: unknown) => void },
+  ctx: { sessionId: string; userId: string; emit: (event: string, data: unknown) => void },
 ): { systemExtra: string; extraTools: PreparedTool[] } {
   if (!planMode) return { systemExtra: base, extraTools: [] };
   const systemExtra = base ? `${base}\n\n${PLAN_MODE_DIRECTIVE}` : PLAN_MODE_DIRECTIVE;
-  const extraTools = [makeProposePlanTool({ sessionId: ctx.sessionId, emit: ctx.emit })];
+  const extraTools = [makeProposePlanTool({ sessionId: ctx.sessionId, userId: ctx.userId, emit: ctx.emit })];
   return { systemExtra, extraTools };
 }
 
@@ -62,7 +62,11 @@ export async function POST(req: Request) {
   } catch {
     return new Response(JSON.stringify({ error: "Invalid JSON" }), { status: 400 });
   }
-  const { conversationId, sessionId, connections, userMessage, planMode } = body;
+  const { conversationId, connections, userMessage, planMode } = body;
+  // Minted here, never taken from the client: it keys this turn's pending
+  // approvals, its tool-call budget and its audit file. A client-chosen id let
+  // anyone who learned it answer someone else's approvals (and reset limits).
+  const sessionId = randomUUID();
 
   // Acting user (resolved from the session cookie). Behind the auth proxy this
   // should always be present; if it isn't, fail closed — every connection's
@@ -79,6 +83,10 @@ export async function POST(req: Request) {
           conn: { id: rec.id, ownerId: rec.ownerId },
         })
       : "none";
+    // Don't put a connection the user can't see into the prompt or the saved
+    // conversation — its tools would be blocked anyway, but its name and tech
+    // would leak to anyone who supplied the id.
+    if (access === "none") continue;
     resolved.push({
       id: rec.id,
       tech: rec.tech,
@@ -108,9 +116,12 @@ export async function POST(req: Request) {
       const heartbeat = setInterval(() => safeEnqueue(encoder.encode(": ping\n\n")), 15_000);
       req.signal.addEventListener("abort", () => {
         clearInterval(heartbeat);
+        // A decision arriving after the stream is gone must not run the tool.
+        dropPending(sessionId);
         try { controller.close(); } catch {}
       });
       const emit = (event: string, data: unknown) => sse(event, data);
+      sse("session", { sessionId });
 
       const tools = buildConversationTools(resolved, {
         sessionId,
@@ -119,7 +130,9 @@ export async function POST(req: Request) {
         awaitApproval: async (toolCallId, tool, args, connection) => {
           const risk = scoreAction(tool.name, tool.category, args);
           sse("approval-needed", { toolCallId, tool: tool.name, category: tool.category, args, connection, sessionId, risk });
-          return createPending(sessionId, toolCallId);
+          // Same target the card asks the user to type (approval-card.tsx).
+          const confirm = risk.level === "high" ? (connection?.name ?? tool.name) : undefined;
+          return createPending(sessionId, toolCallId, { userId: user?.id ?? "", confirm });
         },
       });
 
@@ -133,6 +146,7 @@ export async function POST(req: Request) {
       // When off, systemExtra/tools are identical to a request without the flag.
       const { systemExtra, extraTools } = buildPlanAdditions(planMode, baseSystemExtra, {
         sessionId,
+        userId: user?.id ?? "",
         emit,
       });
       const agentTools = extraTools.length ? [...tools, ...extraTools] : tools;
@@ -175,6 +189,7 @@ export async function POST(req: Request) {
         sse("error", { error: formatError(err) });
       } finally {
         clearInterval(heartbeat);
+        dropPending(sessionId);
         try { controller.close(); } catch {}
       }
     },

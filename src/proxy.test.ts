@@ -519,3 +519,85 @@ describe("proxy matcher", () => {
     expect(await matches(p)).toBe(false);
   });
 });
+
+describe("proxy() cross-site gate", () => {
+  const make = (url: string, method: string, headers: Record<string, string>) =>
+    new NextRequest(url, { method, headers: { host: "localhost:3000", ...headers } });
+
+  afterEach(() => {
+    delete process.env.BAKLAVA_ALLOWED_ORIGINS;
+    delete process.env.BAKLAVA_TRUST_PROXY;
+  });
+
+  it("refuses a POST from another origin — even with the login gate off", async () => {
+    const { proxy, authStore } = await load();
+    authStore.setAuthEnabled(false);
+    try {
+      const res = proxy.proxy(
+        make("http://localhost:3000/api/postgres/c1/query", "POST", { origin: "http://evil.example" }),
+      );
+      expect(res.status).toBe(403);
+    } finally {
+      authStore.setAuthEnabled(true);
+    }
+  });
+
+  it("refuses a POST from a sibling port (same-site, cookies still sent)", async () => {
+    const { proxy } = await load();
+    const res = proxy.proxy(
+      make("http://localhost:3000/api/auth/security", "POST", { origin: "http://localhost:8080" }),
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it("refuses an API GET labelled cross-site or same-site (EventSource-shaped actions)", async () => {
+    const { proxy } = await load();
+    for (const site of ["cross-site", "same-site"]) {
+      const res = proxy.proxy(
+        make("http://localhost:3000/api/techs/redis/uninstall", "GET", { "sec-fetch-site": site }),
+      );
+      expect(res.status).toBe(403);
+    }
+  });
+
+  it("lets a cross-site top-level navigation to a page through", async () => {
+    const { proxy } = await load();
+    const res = proxy.proxy(make("http://localhost:3000/login", "GET", { "sec-fetch-site": "cross-site" }));
+    expect(res.status).not.toBe(403);
+  });
+
+  it("allows same-origin requests and non-browser clients", async () => {
+    const { proxy } = await load();
+    expect(
+      proxy.crossSiteRejection(
+        make("http://localhost:3000/api/auth/login", "POST", {
+          origin: "http://localhost:3000",
+          "sec-fetch-site": "same-origin",
+        }),
+      ),
+    ).toBeNull();
+    expect(proxy.crossSiteRejection(make("http://localhost:3000/api/auth/login", "POST", {}))).toBeNull();
+  });
+
+  it("refuses Origin: null", async () => {
+    const { proxy } = await load();
+    expect(
+      proxy.crossSiteRejection(make("http://localhost:3000/api/auth/login", "POST", { origin: "null" }))?.status,
+    ).toBe(403);
+  });
+
+  it("honours X-Forwarded-Host only behind a trusted proxy, and BAKLAVA_ALLOWED_ORIGINS", async () => {
+    const { proxy } = await load();
+    const viaProxy = () =>
+      make("http://localhost:3000/api/auth/login", "POST", {
+        origin: "https://ops.example.com",
+        "x-forwarded-host": "ops.example.com",
+      });
+    expect(proxy.crossSiteRejection(viaProxy())?.status).toBe(403);
+    process.env.BAKLAVA_TRUST_PROXY = "1";
+    expect(proxy.crossSiteRejection(viaProxy())).toBeNull();
+    delete process.env.BAKLAVA_TRUST_PROXY;
+    process.env.BAKLAVA_ALLOWED_ORIGINS = "https://ops.example.com";
+    expect(proxy.crossSiteRejection(viaProxy())).toBeNull();
+  });
+});

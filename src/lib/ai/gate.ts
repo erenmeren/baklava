@@ -64,6 +64,7 @@ export function wrapExecute(tool: AiTool, ctx: GateContext) {
     // actually run (after approval), at the one chokepoint.
     const limit = checkRateLimit({
       sessionId: ctx.sessionId,
+      userId: ctx.userId,
       connectionId: ctx.connectionId,
       category: tool.category,
       now: now(),

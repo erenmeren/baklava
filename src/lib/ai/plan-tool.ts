@@ -31,13 +31,16 @@ const DESCRIPTION =
 
 export function makeProposePlanTool(ctx: {
   sessionId: string;
+  /** The acting user — only they may approve the plan. */
+  userId: string;
   emit: (event: string, data: unknown) => void;
   awaitDecision?: (
     toolCallId: string,
     payload: { steps: PlanStep[]; rationale?: string },
   ) => Promise<boolean>;
 }): PreparedTool {
-  const defaultAwait = (toolCallId: string) => createPending(ctx.sessionId, toolCallId);
+  const defaultAwait = (toolCallId: string) =>
+    createPending(ctx.sessionId, toolCallId, { userId: ctx.userId });
   const awaitDecision = ctx.awaitDecision ?? defaultAwait;
 
   return {
@@ -46,7 +49,7 @@ export function makeProposePlanTool(ctx: {
     inputSchema: planInputSchema,
     run: async (args, toolCallId) => {
       const { steps, rationale } = planInputSchema.parse(args);
-      ctx.emit("plan", { toolCallId, steps, rationale });
+      ctx.emit("plan", { toolCallId, sessionId: ctx.sessionId, steps, rationale });
       const approved = await awaitDecision(toolCallId, { steps, rationale });
       return { approved };
     },

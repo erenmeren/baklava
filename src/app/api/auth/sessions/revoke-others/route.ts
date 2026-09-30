@@ -1,25 +1,13 @@
-import { NextRequest, NextResponse } from "next/server";
-import { revokeAllExcept } from "@/lib/auth/sessions";
-import { SESSION_COOKIE, sessionIdFromToken } from "@/lib/auth/session";
+import { NextResponse } from "next/server";
+import { revokeUserSessionsExcept } from "@/lib/auth/sessions";
+import { callerSession } from "@/lib/auth/caller-session";
 
 export const runtime = "nodejs";
 
-function getCookieValue(req: Request, name: string): string | undefined {
-  // NextRequest exposes .cookies; plain Request does not (e.g. in unit tests).
-  const next = req as NextRequest;
-  if (typeof next.cookies?.get === "function") {
-    return next.cookies.get(name)?.value;
-  }
-  const header = req.headers.get("cookie") ?? "";
-  for (const part of header.split(";")) {
-    const [k, ...rest] = part.trim().split("=");
-    if (k.trim() === name) return rest.join("=");
-  }
-  return undefined;
-}
-
+// "Sign out my other devices" — the caller's own sessions, not everyone's.
 export async function POST(req: Request) {
-  const currentId = sessionIdFromToken(getCookieValue(req, SESSION_COOKIE));
-  revokeAllExcept(currentId);
+  const me = callerSession(req);
+  if (!me) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  revokeUserSessionsExcept(me.userId, me.id);
   return NextResponse.json({ ok: true });
 }

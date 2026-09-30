@@ -98,12 +98,73 @@ function isMutating(method: string, url: URL): boolean {
 // so it can verify the HMAC-signed session cookie against the on-disk secret
 // (node:crypto + node:fs) — a real gate, not just a cookie-presence check.
 
+/** Hosts a browser may send a state-changing request from: this one, plus
+ *  the public host a trusted reverse proxy forwards, plus any operator-listed
+ *  origins (`BAKLAVA_ALLOWED_ORIGINS=https://ops.example.com,…`). */
+function allowedHosts(req: NextRequest): Set<string> {
+  const hosts = new Set<string>();
+  const host = req.headers.get("host");
+  if (host) hosts.add(host.toLowerCase());
+  if (process.env.BAKLAVA_TRUST_PROXY === "1") {
+    const fwd = req.headers.get("x-forwarded-host")?.split(",")[0].trim();
+    if (fwd) hosts.add(fwd.toLowerCase());
+  }
+  for (const o of (process.env.BAKLAVA_ALLOWED_ORIGINS ?? "").split(",")) {
+    try {
+      if (o.trim()) hosts.add(new URL(o.trim()).host.toLowerCase());
+    } catch {
+      /* ignore a malformed entry */
+    }
+  }
+  return hosts;
+}
+
+/**
+ * CSRF / cross-site gate. The session cookie is SameSite=Lax, which still
+ * rides along on requests from *same-site* origins — another port on the same
+ * host, a sibling subdomain — and on nothing at all when the login gate is off,
+ * which is exactly when a localhost console is most exposed to a hostile page.
+ * So, before anything else:
+ *
+ * - API calls come only from Baklava's own pages: a browser-labelled
+ *   `Sec-Fetch-Site: cross-site | same-site` is refused (this also covers the
+ *   GET-shaped actions EventSource forces, like driver install and image pull).
+ * - A state-changing request whose `Origin` isn't this host is refused (for
+ *   browsers that don't send Sec-Fetch-*). Requests with neither header are
+ *   non-browser clients, which CSRF can't drive.
+ */
+export function crossSiteRejection(req: NextRequest): NextResponse | null {
+  const forbidden = () =>
+    NextResponse.json({ error: "Cross-site request refused" }, { status: 403 });
+  const site = req.headers.get("sec-fetch-site");
+  if (req.nextUrl.pathname.startsWith("/api/") && (site === "cross-site" || site === "same-site")) {
+    return forbidden();
+  }
+  if (WRITE_METHODS.has(req.method)) {
+    const origin = req.headers.get("origin");
+    if (origin !== null) {
+      let host: string | null = null;
+      try {
+        host = new URL(origin).host.toLowerCase();
+      } catch {
+        /* "null" (sandboxed / privacy-redirected) or garbage */
+      }
+      if (!host || !allowedHosts(req).has(host)) return forbidden();
+    }
+  }
+  return null;
+}
+
 // Reachable without a valid session.
 const PUBLIC_PAGES = ["/login"];
 const PUBLIC_APIS = ["/api/auth/login", "/api/auth/logout"];
 const SETUP_API = "/api/auth/setup";
 
 export function proxy(req: NextRequest): NextResponse {
+  // Runs even with the login gate off — see crossSiteRejection.
+  const crossSite = crossSiteRejection(req);
+  if (crossSite) return crossSite;
+
   // Gate turned off in Settings → let everything through.
   if (!isAuthEnabled()) return NextResponse.next();
 

@@ -6,7 +6,7 @@ export interface AssistantStreamHandlers {
   onTextDelta(text: string): void;
   onToolCall(data: { toolCallId: string; tool: string; args?: { connection?: string } }): void;
   onApprovalNeeded(data: PendingApproval): void;
-  onPlan(data: Omit<ProposedPlan, "sessionId">): void;
+  onPlan(data: ProposedPlan): void;
   onError(message: string): void;
 }
 
@@ -45,7 +45,7 @@ export async function consumeAssistantStream(
           handlers.onApprovalNeeded(data as unknown as PendingApproval);
           break;
         case "plan":
-          handlers.onPlan(data as unknown as Omit<ProposedPlan, "sessionId">);
+          handlers.onPlan(data as unknown as ProposedPlan);
           break;
         case "error":
           handlers.onError(String(data.error ?? "unknown error"));

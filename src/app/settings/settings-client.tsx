@@ -75,13 +75,20 @@ export function SettingsClient() {
         </TabsList>
 
         <TabsContent value="provider" className="outline-none">
-          <ProviderSettings />
+          {isAdmin ? (
+            <ProviderSettings />
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              The model provider and its key are shared by everyone, so only an admin can change them.
+            </p>
+          )}
         </TabsContent>
         <TabsContent value="permissions" className="outline-none">
           <PermissionSettings />
         </TabsContent>
         <TabsContent value="security" className="outline-none space-y-6">
-          <SecuritySettings />
+          {/* Turning the login gate off opens the console to anyone — admin-only. */}
+          {isAdmin ? <SecuritySettings /> : null}
           <ActiveSessions />
           <ChangePasswordSettings />
         </TabsContent>
