@@ -62,11 +62,15 @@ export function sessionCookieOptions(secure: boolean) {
   };
 }
 
-/** Best-effort detection of an HTTPS request behind a proxy or direct. */
+/** Best-effort detection of an HTTPS request behind a proxy or direct.
+ *  `BAKLAVA_SECURE_COOKIES=1` forces the answer to yes, for a TLS-terminating
+ *  proxy that doesn't send X-Forwarded-Proto (the cookie would otherwise go out
+ *  without `Secure`). */
 export function isHttps(req: {
   headers: { get(name: string): string | null };
   url: string;
 }): boolean {
+  if (process.env.BAKLAVA_SECURE_COOKIES === "1") return true;
   const fwd = req.headers.get("x-forwarded-proto");
   if (fwd) return fwd.split(",")[0].trim() === "https";
   try {

@@ -1,7 +1,7 @@
-import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { randomBytes } from "node:crypto";
+import { readSecretFileSync, writeSecretFileSync } from "../crypto/secret-file";
 
 export interface SessionRecord {
   id: string;
@@ -34,7 +34,9 @@ function load(): Store {
   if (g[cacheKey]) return g[cacheKey];
   const byId = new Map<string, SessionRecord>();
   try {
-    const arr = JSON.parse(fs.readFileSync(getFile(), "utf8")) as SessionRecord[];
+    const text = readSecretFileSync(getFile());
+    if (text === null) throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+    const arr = JSON.parse(text) as SessionRecord[];
     if (Array.isArray(arr))
       for (const r of arr) if (r?.id) byId.set(r.id, { ...r, userId: r.userId ?? "" });
   } catch {
@@ -45,10 +47,8 @@ function load(): Store {
 
 function persist(store: Store): void {
   try {
-    fs.mkdirSync(getDataDir(), { recursive: true, mode: 0o700 });
-    const tmp = `${getFile()}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify([...store.byId.values()], null, 2), { mode: 0o600 });
-    fs.renameSync(tmp, getFile());
+    // Encrypted like the other stores: session ids + user ids + devices.
+    writeSecretFileSync(getFile(), JSON.stringify([...store.byId.values()], null, 2));
   } catch (err) {
     console.error(`[baklava] could not persist ${getFile()}:`, err);
   }

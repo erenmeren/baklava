@@ -137,6 +137,17 @@ State-changing requests from another origin — including another port on the sa
 - `BAKLAVA_ALLOWED_ORIGINS=https://ops.example.com,…` lists extra origins allowed to make requests.
 
 Responses carry `frame-ancestors 'none'`, `X-Frame-Options: DENY`, `nosniff` and `Referrer-Policy: same-origin`. Terminate TLS and set HSTS at the proxy.
+If the proxy terminates TLS but doesn't send `X-Forwarded-Proto`, set `BAKLAVA_SECURE_COOKIES=1` so the session cookie is still marked `Secure`.
+
+### Hardening checklist
+
+For anything beyond your own laptop:
+
+- **Keep the sign-in on**, and serve Baklava only over TLS (reverse proxy + HSTS). It binds `127.0.0.1` unless you tell it otherwise.
+- **Set `BAKLAVA_MASTER_KEY`** (or use an OS keychain) instead of relying on `~/.baklava/master.key`, and back up `~/.baklava` together with that key.
+- **Give each connection a least-privilege database user.** The assistant's read-only SQL tools screen out statements that write, but the database role is the real boundary: no superuser / `pg_execute_server_program` on Postgres, no `FILE` / `SUPER` on MySQL, no `sysadmin` on SQL Server for connections the assistant or read-only members use.
+- **Grant members only the connections they need**, and `read` unless they must change things. Only admins can use the host's Docker socket or kubeconfig files.
+- Leave the **AI kill switch** within reach (assistant header) and review a connection's assistant policy before switching it to autonomous.
 
 - Sessions expire after **7 days idle** (sliding) or **30 days absolute**, whichever comes first.
 - Signing out revokes the session server-side — deleting the cookie is not enough for a remote attacker to reuse it.
