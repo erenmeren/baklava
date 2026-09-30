@@ -36,3 +36,15 @@ describe("redisTools", () => {
     expect(r.delKey).toHaveBeenCalledWith("c1", cfg, "k", undefined);
   });
 });
+
+describe("redis_set_ttl escalation", () => {
+  const ttl = () => tools().find((t) => t.name === "redis_set_ttl")!;
+  it("a TTL of 0 or a few minutes is a delete on a timer → destructive", () => {
+    expect(ttl().categoryFor?.({ ttlSeconds: 0 })).toBe("destructive");
+    expect(ttl().categoryFor?.({ ttlSeconds: 299 })).toBe("destructive");
+  });
+  it("a long TTL, or clearing the expiry, stays a write", () => {
+    expect(ttl().categoryFor?.({ ttlSeconds: 3600 })).toBe("write");
+    expect(ttl().categoryFor?.({ ttlSeconds: -1 })).toBe("write");
+  });
+});

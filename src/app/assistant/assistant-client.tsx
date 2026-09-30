@@ -211,9 +211,19 @@ export function AssistantClient() {
 
   const removeConn = useCallback((id: string) => setSetIds((ids) => ids.filter((x) => x !== id)), []);
 
-  const changePolicy = useCallback((id: string, p: PolicyView) => {
-    setPolicies((prev) => ({ ...prev, [id]: p }));
-    void fetch(`/api/ai/connections/${id}/policy`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(p) });
+  const changePolicy = useCallback(async (id: string, p: PolicyView) => {
+    let previous: PolicyView | undefined;
+    setPolicies((prev) => {
+      previous = prev[id];
+      return { ...prev, [id]: p };
+    });
+    // Only the owner or an admin may change it; revert the optimistic update otherwise.
+    const res = await fetch(`/api/ai/connections/${id}/policy`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(p) }).catch(() => null);
+    if (!res?.ok) {
+      setPolicies((prev) => ({ ...prev, [id]: previous ?? prev[id] }));
+      const d = (await res?.json().catch(() => null)) as { error?: string } | null;
+      toast.error("Couldn't change the policy", { description: d?.error });
+    }
   }, []);
 
   const decide = useCallback(async (toolCallId: string, decision: "approve" | "reject", confirm?: string) => {

@@ -49,3 +49,14 @@ describe("kafkaTools", () => {
     expect(k.resetGroupOffsets).toHaveBeenCalledWith(cfg, "g", "t", { kind: "earliest" }, undefined);
   });
 });
+
+describe("kafka_alter_topic_config escalation", () => {
+  const alter = () => tools().find((t) => t.name === "kafka_alter_topic_config")!;
+  it.each(["retention.ms", "retention.bytes", "local.retention.ms", "cleanup.policy", "segment.ms"])(
+    "%s can make the broker delete messages → destructive",
+    (name) => expect(alter().categoryFor?.({ entries: [{ name, value: "1" }] })).toBe("destructive"),
+  );
+  it("other settings stay a write", () => {
+    expect(alter().categoryFor?.({ entries: [{ name: "max.message.bytes", value: "2000000" }] })).toBe("write");
+  });
+});

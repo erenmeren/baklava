@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("@/lib/connections/mongo", () => ({
-  parseEjson: (s: string) => JSON.parse(s),
+  // Async like the real one — a sync mock hid a missing `await` in mongo_aggregate.
+  parseEjson: async (s: string) => JSON.parse(s),
   listDatabases: vi.fn(async () => [{ name: "app" }]),
   listCollections: vi.fn(async () => [{ name: "orders" }]),
   findDocuments: vi.fn(async () => ({ documents: ["{}"], total: 1, skip: 0, limit: 50 })),
@@ -55,6 +56,13 @@ describe("mongoTools", () => {
       t.execute({ database: "app", collection: "orders", pipeline: '[{"$merge":{"into":"x"}}]' }),
     ).rejects.toThrow(/\$out|\$merge|read-only/i);
     expect(mo.runAggregate).not.toHaveBeenCalled();
+  });
+
+  it("mongo_aggregate rejects $out even though parseEjson is async (was never awaited)", async () => {
+    const t = tools().find((x) => x.name === "mongo_aggregate")!;
+    await expect(
+      t.execute({ database: "app", collection: "orders", pipeline: '[{"$match":{}},{"$out":"dump"}]' }),
+    ).rejects.toThrow(/\$out|\$merge/);
   });
 
   it("mongo_aggregate runs a normal pipeline", async () => {

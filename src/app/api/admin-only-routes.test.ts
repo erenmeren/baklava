@@ -139,4 +139,46 @@ describe("host-local connection sources are admin-only", () => {
     const ok = await route.PATCH(post({ name: "renamed" }, "PATCH"), ctx);
     expect(ok.status).toBe(200);
   });
+
+  it("a write *grantee* can't re-point someone else's connection (the saved password would follow)", async () => {
+    const store = await import("@/lib/connections/store");
+    const access = await import("@/lib/connections/access");
+    access._resetAccessCacheForTests();
+    const conn = store.saveConnection({
+      tech: "postgres",
+      name: "prod",
+      config: { host: "db.internal", port: 5432, database: "app", user: "u", password: "s3cret", ssl: true },
+      status: "ok",
+      ownerId: "someone-else",
+    });
+    access.setGrants(conn.id, { [MEMBER.id]: "write" });
+    const route = await import("./connections/[id]/route");
+    const ctx = { params: Promise.resolve({ id: conn.id }) };
+
+    const res = await route.PATCH(post({ config: { host: "evil.example", password: "" } }, "PATCH"), ctx);
+    expect(res.status).toBe(403);
+    expect((await res.json()).error).toMatch(/owner or an admin.*host/);
+    expect(store.getConnection(conn.id)?.config).toMatchObject({ host: "db.internal" });
+
+    // Tuning the connection without moving it is still allowed.
+    const ok = await route.PATCH(post({ config: { database: "reporting", host: "db.internal" } }, "PATCH"), ctx);
+    expect(ok.status).toBe(200);
+  });
+
+  it("a write grantee can't loosen the connection's shared AI policy", async () => {
+    const store = await import("@/lib/connections/store");
+    const conn = store.saveConnection({
+      tech: "postgres",
+      name: "prod",
+      config: { host: "db" },
+      status: "ok",
+      ownerId: "someone-else",
+    });
+    const route = await import("./ai/connections/[id]/policy/route");
+    const res = await route.PUT(
+      post({ mode: "autonomous", write: true, destructive: true }, "PUT"),
+      { params: Promise.resolve({ id: conn.id }) },
+    );
+    expect(res.status).toBe(403);
+  });
 });

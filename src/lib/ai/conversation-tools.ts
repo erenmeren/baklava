@@ -68,7 +68,10 @@ export function buildConversationTools(
       awaitApproval: (toolCallId, tool, args) =>
         base.awaitApproval(toolCallId, tool, args, { id: c.id, name: c.name }),
     };
-    const tools: AiTool[] = buildTools(c.tech, c.id, c.config, c.policy);
+    // Secret values follow the same rule as the HTTP route (GET /yaml/secret):
+    // a `read` grant sees keys, never values — whatever the connection policy says.
+    const policy = { ...c.policy, allowK8sSecretValues: c.policy.allowK8sSecretValues === true && c.access === "write" };
+    const tools: AiTool[] = buildTools(c.tech, c.id, c.config, policy);
     for (const t of tools) {
       entries.push({
         name: t.name,

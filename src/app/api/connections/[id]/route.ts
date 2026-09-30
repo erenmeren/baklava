@@ -22,6 +22,7 @@ import {
   hostLocalReason,
   touchesLocation,
 } from "@/lib/connections/host-local";
+import { changedTargetKeys } from "@/lib/connections/target-keys";
 import { deletePolicy } from "@/lib/ai/policy-store";
 
 export const runtime = "nodejs";
@@ -93,11 +94,25 @@ export async function PATCH(req: Request, ctx: RouteContext) {
       { status: 400 }
     );
   }
+  // A write *grant* lets a member use and tune a connection, not re-point it:
+  // the stored secret survives a blank field, so a new host would receive the
+  // owner's password on the next probe (see target-keys.ts).
+  const user = getCurrentUser(req);
+  const isOwnerOrAdmin = user?.role === "admin" || (!!user && user.id === existing.ownerId);
+  if (!isOwnerOrAdmin) {
+    const changed = changedTargetKeys(existing.config as Record<string, unknown>, body);
+    if (changed.length) {
+      return NextResponse.json(
+        { error: `Only the owner or an admin can change ${changed.join(", ")} on this connection.` },
+        { status: 403 },
+      );
+    }
+  }
   // Re-pointing a connection at the Baklava host is admin-only, same as creating
   // one (see host-local.ts). Untouched location keys don't re-trigger it, so a
   // write grantee can still rename an admin's socket connection.
   const patchedKeys = [...Object.keys(body.config ?? {}), ...(body.unset ?? [])];
-  if (touchesLocation(existing.tech, patchedKeys) && getCurrentUser(req)?.role !== "admin") {
+  if (touchesLocation(existing.tech, patchedKeys) && user?.role !== "admin") {
     const merged = mergeConfig(existing.config as Record<string, unknown>, body.config ?? {});
     for (const key of body.unset ?? []) delete merged[key];
     const reason = hostLocalReason(existing.tech, merged);

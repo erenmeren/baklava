@@ -38,7 +38,8 @@ describe("kubernetesTools", () => {
     const cat = Object.fromEntries(ts.map((t) => [t.name, t.category]));
     const names = ts.map((t) => t.name);
     expect(cat["k8s_pod_logs"]).toBe("read");
-    expect(cat["k8s_apply_yaml"]).toBe("write");
+    // A full replace of any kind (Secrets, RoleBindings, privileged pods).
+    expect(cat["k8s_apply_yaml"]).toBe("destructive");
     expect(cat["k8s_delete_resource"]).toBe("destructive");
     expect(names.some((n) => n.includes("exec"))).toBe(false);
   });
@@ -151,5 +152,14 @@ describe("k8s_pod_http", () => {
 
   it("rejects a port outside the valid range", () => {
     expect(() => tool().inputSchema.parse({ namespace: "d", pod: "p", port: 0 })).toThrow();
+  });
+});
+
+describe("k8s_scale_deployment escalation", () => {
+  const scale = () =>
+    kubernetesTools("c1", cfg as never, DEFAULT_POLICY).find((t) => t.name === "k8s_scale_deployment")!;
+  it("scaling to 0 stops every pod → destructive", () => {
+    expect(scale().categoryFor?.({ replicas: 0 })).toBe("destructive");
+    expect(scale().categoryFor?.({ replicas: 3 })).toBe("write");
   });
 });

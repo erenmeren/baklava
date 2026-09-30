@@ -4,6 +4,20 @@ import { appendAudit } from "./audit";
 import { isKillSwitchOn } from "./kill-switch";
 import { checkRateLimit } from "./limits";
 import type { AiTool } from "./tools/types";
+import type { ToolCategory } from "./permissions";
+
+const RANK: Record<ToolCategory, number> = { read: 0, write: 1, destructive: 2 };
+
+/** The category this particular call runs under (see AiTool.categoryFor). */
+export function effectiveCategory(tool: AiTool, args: Record<string, unknown>): ToolCategory {
+  let dynamic: ToolCategory | undefined;
+  try {
+    dynamic = tool.categoryFor?.(args);
+  } catch {
+    dynamic = "destructive"; // can't tell → treat as the worst case
+  }
+  return dynamic && RANK[dynamic] > RANK[tool.category] ? dynamic : tool.category;
+}
 
 export interface GateContext {
   policy: PermissionPolicy;
@@ -20,16 +34,17 @@ export interface GateContext {
 export function wrapExecute(tool: AiTool, ctx: GateContext) {
   const now = ctx.now ?? (() => Date.now());
   return async (args: Record<string, unknown>, toolCallId = "unknown"): Promise<unknown> => {
+    const category = effectiveCategory(tool, args);
     const base = {
       tool: tool.name,
-      category: tool.category,
+      category,
       connectionId: ctx.connectionId,
       userId: ctx.userId,
       args,
     };
 
     // Global kill switch: pause everything except reads.
-    if (tool.category !== "read" && isKillSwitchOn()) {
+    if (category !== "read" && isKillSwitchOn()) {
       appendAudit(ctx.sessionId, { ...base, decision: "blocked", summary: "kill-switch", at: now() });
       ctx.emit("blocked", { tool: tool.name, reason: "kill-switch" });
       return { error: `AI actions are paused (kill switch is on). Re-enable it in Settings to continue.` };
@@ -38,7 +53,7 @@ export function wrapExecute(tool: AiTool, ctx: GateContext) {
     // Per-user connection access (RBAC). Reads need at least "read"; writes and
     // destructive actions need "write". Fail-closed when access is "none".
     const accessOk =
-      tool.category === "read"
+      category === "read"
         ? ctx.connectionAccess !== "none"
         : ctx.connectionAccess === "write";
     if (!accessOk) {
@@ -47,13 +62,13 @@ export function wrapExecute(tool: AiTool, ctx: GateContext) {
       return { error: `You don't have access to perform "${tool.name}" on this connection.` };
     }
 
-    if (!isAllowed(tool.category, ctx.policy)) {
+    if (!isAllowed(category, ctx.policy)) {
       appendAudit(ctx.sessionId, { ...base, decision: "blocked", at: now() });
       return { error: `Action "${tool.name}" is not permitted by this connection's policy.` };
     }
 
-    if (needsApproval(tool.category, ctx.policy)) {
-      const approved = await ctx.awaitApproval(toolCallId, tool, args);
+    if (needsApproval(category, ctx.policy)) {
+      const approved = await ctx.awaitApproval(toolCallId, { ...tool, category }, args);
       if (!approved) {
         appendAudit(ctx.sessionId, { ...base, decision: "rejected", at: now() });
         return { declined: true, message: `User declined "${tool.name}".` };
@@ -66,7 +81,7 @@ export function wrapExecute(tool: AiTool, ctx: GateContext) {
       sessionId: ctx.sessionId,
       userId: ctx.userId,
       connectionId: ctx.connectionId,
-      category: tool.category,
+      category: category,
       now: now(),
     });
     if (!limit.allowed) {

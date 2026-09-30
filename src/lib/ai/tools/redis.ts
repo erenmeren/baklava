@@ -3,6 +3,8 @@ import type { RedisConfig } from "@/lib/connections/types";
 import { info, listKeys, getKey, setStringValue, setTtl, delKey } from "@/lib/connections/redis";
 import type { AiTool } from "./types";
 
+const SHORT_TTL_S = 300;
+
 export function redisTools(connectionId: string, config: RedisConfig): AiTool[] {
   const dbArg = z.number().int().min(0).optional();
   return [
@@ -40,8 +42,14 @@ export function redisTools(connectionId: string, config: RedisConfig): AiTool[] 
     },
     {
       name: "redis_set_ttl",
-      description: "Set a key's TTL in seconds (negative clears the expiry).",
+      description:
+        "Set a key's TTL in seconds (negative clears the expiry). A TTL under 5 minutes is DESTRUCTIVE — 0 deletes the key now.",
       category: "write",
+      // A short TTL is a delete on a timer.
+      categoryFor: ({ ttlSeconds }) =>
+        typeof ttlSeconds === "number" && ttlSeconds >= 0 && ttlSeconds < SHORT_TTL_S
+          ? "destructive"
+          : "write",
       inputSchema: z.object({ key: z.string(), ttlSeconds: z.number().int(), db: dbArg }),
       execute: async ({ key, ttlSeconds, db }) => {
         await setTtl(connectionId, config, key as string, ttlSeconds as number, db as number | undefined);

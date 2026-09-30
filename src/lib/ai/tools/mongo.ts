@@ -66,7 +66,7 @@ export function mongoTools(connectionId: string, config: MongoConfig): AiTool[] 
       execute: async ({ database, collection, pipeline }) => {
         let stages: unknown;
         try {
-          stages = parseEjson<unknown>(pipeline as string);
+          stages = await parseEjson<unknown>(pipeline as string);
         } catch (e) {
           throw new Error(
             `Invalid pipeline EJSON: ${e instanceof Error ? e.message : String(e)}`,
