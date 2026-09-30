@@ -14,7 +14,9 @@ import { withPool } from "./internal";
 import {
   validateSqlServerIdentifier,
   validateSqlServerDatabaseName,
-  requireNoStatementTerminator,
+  requireSqlServerDataType,
+  requireSqlServerDefaultExpression,
+  requireSqlServerObjectName,
 } from "./sql";
 
 export interface CreateSqlServerColumnInput {
@@ -57,11 +59,11 @@ export async function createSqlServerTable(
     seen.add(key);
     if (!c.dataType.trim()) throw new Error(`Column "${name}" needs a data type`);
 
-    const parts = [`[${name}]`, requireNoStatementTerminator(c.dataType.trim(), "Column type")];
+    const parts = [`[${name}]`, requireSqlServerDataType(c.dataType, "Column type")];
     if (c.identity) parts.push("IDENTITY(1,1)");
     parts.push(c.nullable ? "NULL" : "NOT NULL");
     if (c.default && c.default.trim()) {
-      parts.push(`DEFAULT (${requireNoStatementTerminator(c.default.trim(), "Default expression")})`);
+      parts.push(`DEFAULT (${requireSqlServerDefaultExpression(c.default, "Default expression")})`);
     }
     return parts.join(" ");
   });
@@ -246,12 +248,12 @@ function alterTableSql(
   switch (op.kind) {
     case "addColumn": {
       const col = validateSqlServerIdentifier(op.name, "column name");
-      const t = requireNoStatementTerminator(op.dataType.trim(), "Column type");
+      const t = requireSqlServerDataType(op.dataType, "Column type");
       const parts = [`ALTER TABLE ${fqn} ADD [${col}] ${t}`];
       parts.push(op.nullable ? "NULL" : "NOT NULL");
       if (op.default && op.default.trim()) {
         parts.push(
-          `DEFAULT (${requireNoStatementTerminator(op.default.trim(), "Default expression")})`,
+          `DEFAULT (${requireSqlServerDefaultExpression(op.default, "Default expression")})`,
         );
       }
       return parts.join(" ");
@@ -270,7 +272,7 @@ function alterTableSql(
     }
     case "alterColumn": {
       const col = validateSqlServerIdentifier(op.name, "column name");
-      const t = requireNoStatementTerminator(op.dataType.trim(), "Column type");
+      const t = requireSqlServerDataType(op.dataType, "Column type");
       return `ALTER TABLE ${fqn} ALTER COLUMN [${col}] ${t} ${
         op.nullable ? "NULL" : "NOT NULL"
       }`;
@@ -414,9 +416,9 @@ export async function createSqlServerSynonym(
   if (!input.name.trim()) throw new Error("Synonym name is required");
   const name = validateSqlServerIdentifier(input.name.trim(), "synonym name");
   if (!input.target.trim()) throw new Error("Target object is required");
-  // Targets are 1- to 4-part references with brackets/dots; `;` is the only
-  // character that lets a second statement piggyback, so block it.
-  const target = requireNoStatementTerminator(input.target.trim(), "Target");
+  // T-SQL needs no `;` between statements, so the target is validated as a
+  // 1- to 4-part name rather than just `;`-screened.
+  const target = requireSqlServerObjectName(input.target, "Target");
 
   await withPool(
     config,
@@ -447,7 +449,7 @@ export async function createSqlServerType(
   if (!input.name.trim()) throw new Error("Type name is required");
   const name = validateSqlServerIdentifier(input.name.trim(), "type name");
   if (!input.baseType.trim()) throw new Error("Base type is required");
-  const baseType = requireNoStatementTerminator(input.baseType.trim(), "Base type");
+  const baseType = requireSqlServerDataType(input.baseType, "Base type");
   const nullability = input.nullable ? "NULL" : "NOT NULL";
 
   await withPool(
@@ -485,11 +487,11 @@ export async function createSqlServerTableType(
     if (seen.has(key)) throw new Error(`Duplicate column name "${cname}"`);
     seen.add(key);
     if (!c.dataType.trim()) throw new Error(`Column "${cname}" needs a data type`);
-    const parts = [`[${cname}]`, requireNoStatementTerminator(c.dataType.trim(), "Column type")];
+    const parts = [`[${cname}]`, requireSqlServerDataType(c.dataType, "Column type")];
     parts.push(c.nullable ? "NULL" : "NOT NULL");
     if (c.default && c.default.trim()) {
       parts.push(
-        `DEFAULT (${requireNoStatementTerminator(c.default.trim(), "Default expression")})`,
+        `DEFAULT (${requireSqlServerDefaultExpression(c.default, "Default expression")})`,
       );
     }
     return parts.join(" ");

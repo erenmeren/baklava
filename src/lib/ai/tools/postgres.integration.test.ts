@@ -38,7 +38,7 @@ describe("postgres tools against real PostgreSQL", async () => {
   it.skipIf(!up)("pg_run_sql REJECTS a multi-statement injection against the live server", async () => {
     await expect(
       tool("pg_run_sql").execute({ database: "postgres", sql: "SELECT 1; DROP TABLE IF EXISTS victim" }),
-    ).rejects.toThrow(/cannot contain|terminator|;|multi/i);
+    ).rejects.toThrow(/Read-only query rejected|cannot contain|terminator|;|multi/i);
     // A clean single statement with a trailing ; is allowed (guard strips it).
     const ok = await tool("pg_run_sql").execute({ database: "postgres", sql: "SELECT 42 AS y;" });
     expect(JSON.stringify(ok)).toContain("42");

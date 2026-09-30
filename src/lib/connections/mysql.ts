@@ -1,6 +1,7 @@
 import type { Connection, RowDataPacket } from "mysql2/promise"; // type-only — erased at build, safe when mysql2 absent
 import type { MysqlConfig } from "./types";
 import { withConn, query } from "./mysql-internal";
+import { assertReadOnlySql } from "@/lib/sql/read-only-guard";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MySQL driver
@@ -987,9 +988,10 @@ export interface ReadOnlyResult {
 }
 
 /**
- * Run a single read-only statement enforced by MySQL's READ ONLY transaction.
- * Blocks ';' (no multi-statement injection); writes are rejected by the engine
- * inside `START TRANSACTION READ ONLY`. Used by the AI `mysql_run_sql` tool.
+ * Run a single read-only statement inside `START TRANSACTION READ ONLY`. That
+ * transaction doesn't stop `SELECT … INTO OUTFILE`, LOAD_FILE or SLEEP, and DDL
+ * would implicitly commit out of it, so `assertReadOnlySql` is the guard and
+ * the transaction the backstop. Used by the AI `mysql_run_sql` tool.
  */
 export async function runReadOnlyQuery(
   config: MysqlConfig,
@@ -997,7 +999,7 @@ export async function runReadOnlyQuery(
   sql: string,
   maxRows = 1000,
 ): Promise<ReadOnlyResult> {
-  const single = requireNoStatementTerminator(sql.trim().replace(/;+\s*$/g, ""), "Query");
+  const single = assertReadOnlySql(sql, "mysql");
   return withConn(config, database, async (conn) => {
     const start = Date.now();
     await conn.query("START TRANSACTION READ ONLY");

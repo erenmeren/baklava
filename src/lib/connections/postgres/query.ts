@@ -5,8 +5,9 @@
 import type { Client as PgClient } from "pg"; // type-only — erased at build, safe when pg absent
 import type { PostgresConfig } from "../types";
 import { withClient } from "./client";
-import { quoteIdent, validateIdentifier, requireNoStatementTerminator, splitSqlStatements } from "./sql";
+import { quoteIdent, validateIdentifier, splitSqlStatements } from "./sql";
 import { getPgCursor } from "./internal";
+import { assertReadOnlySql } from "@/lib/sql/read-only-guard";
 
 export interface QueryResult {
   fields: string[];
@@ -267,15 +268,17 @@ export async function runReadOnlyQuery(
   sql: string,
   maxRows = 1000,
 ): Promise<QueryResult> {
-  // Defense-in-depth: the read-only transaction wrapper alone is bypassable via
-  // multi-statement injection ("COMMIT; INSERT …" ends the read-only txn, then
-  // the rest runs read-write). Reject any statement terminator so only a single
-  // read statement can run. This is the reliable guard; the txn is a backstop.
-  const single = requireNoStatementTerminator(sql.trim().replace(/;+\s*$/g, ""), "Query");
+  // The READ ONLY transaction is the backstop, not the guard: `COMMIT; …`
+  // escapes it, and COPY … TO PROGRAM, dblink_exec, lo_export and
+  // pg_terminate_backend all act inside it. `assertReadOnlySql` admits one
+  // read-shaped statement and screens those out.
+  const single = assertReadOnlySql(sql, "postgres");
   return withClient(config, database, async (client) => {
     const start = Date.now();
     await client.query("BEGIN TRANSACTION READ ONLY");
     try {
+      // A read can still pin a backend (pg_sleep is screened; a cartesian join isn't).
+      await client.query("SET LOCAL statement_timeout = '30s'");
       const res = await client.query({ text: single, rowMode: "array" });
       const rows = (res.rows as unknown[][]).slice(0, maxRows);
       return {

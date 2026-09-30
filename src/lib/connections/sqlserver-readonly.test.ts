@@ -5,7 +5,7 @@ const cfg = { host: "203.0.113.1", port: 1, database: "x", user: "u", password: 
 
 describe("sqlserver runReadOnlyQuery guards", () => {
   it("rejects multi-statement injection before connecting", async () => {
-    await expect(runReadOnlyQuery(cfg, "x", "SELECT 1; DROP TABLE t")).rejects.toThrow(/cannot contain/i);
+    await expect(runReadOnlyQuery(cfg, "x", "SELECT 1; DROP TABLE t")).rejects.toThrow(/Read-only query rejected/i);
   });
   it("rejects a write-keyword statement before connecting", async () => {
     await expect(runReadOnlyQuery(cfg, "x", "DELETE FROM t")).rejects.toThrow(/read-only/i);
@@ -13,6 +13,6 @@ describe("sqlserver runReadOnlyQuery guards", () => {
     await expect(runReadOnlyQuery(cfg, "x", "SELECT * INTO t2 FROM t")).rejects.toThrow(/read-only/i);
   });
   it("lets a clean SELECT through the guards (then fails to connect)", async () => {
-    await expect(runReadOnlyQuery(cfg, "x", "SELECT 1")).rejects.not.toThrow(/cannot contain|read-only/i);
+    await expect(runReadOnlyQuery(cfg, "x", "SELECT 1")).rejects.not.toThrow(/Read-only query rejected/i);
   }, 20000);
 });
