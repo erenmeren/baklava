@@ -5,6 +5,7 @@ import { registerSession } from "@/lib/connections/terminal-sessions";
 import type { DockerConfig } from "@/lib/connections/types";
 import { formatError } from "@/lib/errors";
 import type { Duplex } from "node:stream";
+import { getCurrentUser } from "@/lib/auth/current-user";
 
 export const runtime = "nodejs";
 
@@ -38,6 +39,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
     const session = registerSession({
       connectionId: id,
       containerId: cid,
+      userId: getCurrentUser(req)?.id ?? "",
       exec,
       stream: stream as unknown as Duplex,
     });

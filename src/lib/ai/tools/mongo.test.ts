@@ -7,6 +7,9 @@ vi.mock("@/lib/connections/mongo", () => ({
   listCollections: vi.fn(async () => [{ name: "orders" }]),
   findDocuments: vi.fn(async () => ({ documents: ["{}"], total: 1, skip: 0, limit: 50 })),
   runAggregate: vi.fn(async () => ({ documents: [], truncated: false })),
+  assertNoServerJs: (v: unknown) => {
+    if (JSON.stringify(v).includes('"$where"')) throw new Error("server-side JavaScript");
+  },
   sampleSchema: vi.fn(async () => ({ sampleSize: 1, fields: [] })),
   listIndexes: vi.fn(async () => []),
   insertDocument: vi.fn(async () => ({ insertedId: "1" })),
@@ -63,6 +66,14 @@ describe("mongoTools", () => {
     await expect(
       t.execute({ database: "app", collection: "orders", pipeline: '[{"$match":{}},{"$out":"dump"}]' }),
     ).rejects.toThrow(/\$out|\$merge/);
+  });
+
+  it("mongo_aggregate refuses server-side JavaScript", async () => {
+    const t = tools().find((x) => x.name === "mongo_aggregate")!;
+    await expect(
+      t.execute({ database: "app", collection: "orders", pipeline: '[{"$match":{"$where":"while(1){}"}}]' }),
+    ).rejects.toThrow(/server-side JavaScript/);
+    expect(mo.runAggregate).not.toHaveBeenCalled();
   });
 
   it("mongo_aggregate runs a normal pipeline", async () => {

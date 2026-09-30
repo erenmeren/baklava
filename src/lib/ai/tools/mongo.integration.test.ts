@@ -67,4 +67,23 @@ describe("mongo tools against real MongoDB", async () => {
     expect(names).not.toContain("evil_out");
     expect(names).not.toContain("evil_merge");
   }, 20000);
+
+  it.skipIf(!up)("server-side JavaScript is refused before it reaches mongod", async () => {
+    await expect(
+      tool("mongo_find").execute({ database: DB, collection: COLL, filter: '{"$where":"while(true){}"}' }),
+    ).rejects.toThrow(/server-side JavaScript/);
+    await expect(
+      tool("mongo_aggregate").execute({
+        database: DB,
+        collection: COLL,
+        pipeline: '[{"$match":{"$expr":{"$function":{"body":"function(){return true}","args":[],"lang":"js"}}}}]',
+      }),
+    ).rejects.toThrow(/server-side JavaScript/);
+  });
+
+  it.skipIf(!up)("the $out guard now holds against a live server (parseEjson is awaited)", async () => {
+    await expect(
+      tool("mongo_aggregate").execute({ database: DB, collection: COLL, pipeline: '[{"$out":"stolen"}]' }),
+    ).rejects.toThrow(/\$out|\$merge/);
+  });
 });

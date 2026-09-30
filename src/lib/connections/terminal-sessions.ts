@@ -11,6 +11,9 @@ export interface TerminalSession {
   id: string;
   connectionId: string;
   containerId: string;
+  /** Who opened it. Only they may attach, type, resize or close it — a read
+   *  grant on the connection must not let a member watch someone's shell. */
+  userId: string;
   exec: ExecLike;
   stream: Duplex;
   // Pre-buffered output for clients that haven't connected yet (or reconnect).

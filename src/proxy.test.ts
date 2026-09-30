@@ -340,8 +340,6 @@ describe("proxy() write floor on connection-scoped paths", () => {
     ["qdrant vector search", (id: string) => `/api/qdrant/${id}/collections/docs/search`],
     ["mongo distinct", (id: string) => `/api/mongo/${id}/databases/app/collections/users/distinct`],
     ["mongo explain", (id: string) => `/api/mongo/${id}/databases/app/collections/users/explain`],
-    ["docker fs list", (id: string) => `/api/docker/${id}/containers/abc/fs/list`],
-    ["docker fs cat", (id: string) => `/api/docker/${id}/containers/abc/fs/cat`],
   ] as const;
 
   for (const [label, path] of READ_SHAPED) {
@@ -377,6 +375,10 @@ describe("proxy() write floor on connection-scoped paths", () => {
     ["postgres explain (ANALYZE)", (id: string) => `/api/postgres/${id}/databases/app/explain`],
     ["mongo aggregate ($out can write)", (id: string) => `/api/mongo/${id}/databases/app/collections/users/aggregate`],
     ["redis command", (id: string) => `/api/redis/${id}/command`],
+    // Both run `docker exec` inside the container (as its user, often root):
+    // /run/secrets and /proc/1/environ are one `cat` away.
+    ["docker fs list (exec)", (id: string) => `/api/docker/${id}/containers/abc/fs/list`],
+    ["docker fs cat (exec)", (id: string) => `/api/docker/${id}/containers/abc/fs/cat`],
   ] as const;
 
   for (const [label, path] of NOT_READ_SHAPED) {
@@ -599,5 +601,25 @@ describe("proxy() cross-site gate", () => {
     delete process.env.BAKLAVA_TRUST_PROXY;
     process.env.BAKLAVA_ALLOWED_ORIGINS = "https://ops.example.com";
     expect(proxy.crossSiteRejection(viaProxy())).toBeNull();
+  });
+});
+
+describe("proxy() write-shaped GETs", () => {
+  it("a read grant can't pull an image through the EventSource GET", async () => {
+    const ctx = await seed();
+    const docker = ctx.store.saveConnection({
+      tech: "docker",
+      name: "d",
+      config: { mode: "tcp", host: "10.0.0.2" } as unknown as Record<string, unknown>,
+      status: "ok",
+      ownerId: ctx.owner.id,
+    });
+    ctx.access.setGrants(docker.id, { [ctx.stranger.id]: "read" });
+    const pull = ctx.proxy.proxy(
+      req(`http://localhost/api/docker/${docker.id}/images/pull-stream?ref=alpine`, { token: ctx.strangerToken }),
+    );
+    expect(pull.status).toBe(403);
+    const list = ctx.proxy.proxy(req(`http://localhost/api/docker/${docker.id}/images`, { token: ctx.strangerToken }));
+    expect(list.status).not.toBe(403);
   });
 });

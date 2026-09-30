@@ -66,13 +66,14 @@ const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
  * looking the part: `/query` and `redis/<id>/command` run free-form statements;
  * `kafka/.../messages` produces; `postgres/.../explain` defaults to EXPLAIN
  * ANALYZE, which executes the statement; `mongo/.../aggregate` accepts a
- * pipeline that may end in `$out`/`$merge`.
+ * pipeline that may end in `$out`/`$merge`; docker `fs/list` / `fs/cat` run
+ * `docker exec` in the container, so a file read there is an exec (secrets
+ * under /run/secrets, /proc/1/environ).
  */
 const READ_SHAPED_POSTS: RegExp[] = [
   /^\/api\/kafka\/[^/]+\/topics\/[^/]+\/search$/,
   /^\/api\/qdrant\/[^/]+\/collections\/[^/]+\/search$/,
   /^\/api\/mongo\/[^/]+\/databases\/[^/]+\/collections\/[^/]+\/(?:distinct|explain)$/,
-  /^\/api\/docker\/[^/]+\/containers\/[^/]+\/fs\/(?:list|cat)$/,
 ];
 
 /**
@@ -82,8 +83,17 @@ const READ_SHAPED_POSTS: RegExp[] = [
  */
 const MONGO_DOCUMENTS = /^\/api\/mongo\/[^/]+\/databases\/[^/]+\/collections\/[^/]+\/documents$/;
 
+/**
+ * The reverse of READ_SHAPED_POSTS: GETs that change things, because
+ * EventSource can only GET. Pulling an image writes to the Docker host and
+ * spends the stored registry credentials. (The k8s pod proxy checks `write`
+ * in its handler.)
+ */
+const WRITE_SHAPED_GETS: RegExp[] = [/^\/api\/docker\/[^/]+\/images\/pull-stream$/];
+
 /** True when the request mutates the connection or its resources. */
 function isMutating(method: string, url: URL): boolean {
+  if (method === "GET" && WRITE_SHAPED_GETS.some((re) => re.test(url.pathname))) return true;
   if (!WRITE_METHODS.has(method)) return false;
   if (method !== "POST") return true;
   const { pathname } = url;

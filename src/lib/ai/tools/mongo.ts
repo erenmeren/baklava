@@ -6,6 +6,7 @@ import {
   listCollections,
   findDocuments,
   runAggregate,
+  assertNoServerJs,
   sampleSchema,
   listIndexes,
   insertDocument,
@@ -86,6 +87,7 @@ export function mongoTools(connectionId: string, config: MongoConfig): AiTool[] 
             "aggregate is read-only: $out / $merge stages are not allowed.",
           );
         }
+        assertNoServerJs(stages, "Pipeline");
         return runAggregate(
           connectionId,
           config,

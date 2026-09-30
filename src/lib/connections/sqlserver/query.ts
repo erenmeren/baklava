@@ -242,7 +242,9 @@ export async function getSqlServerEstimatedPlan(
     config,
     async (pool) => {
       // SHOWPLAN_XML must be its own batch; the plan comes back as a single
-      // XML column from the *next* batch.
+      // XML column from the *next* batch. It's a per-connection setting, so the
+      // pool is pinned to one connection below — on a second connection the
+      // query would simply *execute*.
       await pool.request().batch("SET SHOWPLAN_XML ON");
       const res = await pool.request().batch(query);
       await pool.request().batch("SET SHOWPLAN_XML OFF").catch(() => undefined);
@@ -343,6 +345,6 @@ export async function getSqlServerEstimatedPlan(
 
       return { root, totalCost, missingIndexes, rawXml: xml };
     },
-    { database: db, requestTimeoutMs: 30_000 },
+    { database: db, requestTimeoutMs: 30_000, singleConnection: true },
   );
 }

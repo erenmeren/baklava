@@ -3,6 +3,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { ModelMessage } from "ai";
+import { randomUUID } from "node:crypto";
+import { readSecretFileSync, writeSecretFileSync } from "@/lib/crypto/secret-file";
 
 export interface Conversation {
   id: string;
@@ -42,7 +44,9 @@ function loadAll(): Map<string, Conversation> {
     for (const f of fs.readdirSync(dir())) {
       if (!f.endsWith(".json")) continue;
       try {
-        const c = JSON.parse(fs.readFileSync(path.join(dir(), f), "utf8")) as Conversation;
+        const text = readSecretFileSync(path.join(dir(), f));
+        if (text === null) continue;
+        const c = JSON.parse(text) as Conversation;
         if (c?.id) {
           // Legacy rows (pre per-user scoping) have no userId. Normalise to ""
           // so the strict-ownership filter treats them as ownerless → invisible
@@ -62,19 +66,19 @@ function loadAll(): Map<string, Conversation> {
   return byId;
 }
 
+// Conversations hold query results and tool output, so they're encrypted at
+// rest like the rest of ~/.baklava (plaintext files from older versions still
+// load, and are sealed on their next write).
 function persist(c: Conversation): void {
   try {
-    fs.mkdirSync(dir(), { recursive: true, mode: 0o700 });
-    const tmp = `${file(c.id)}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(c, null, 2), { mode: 0o600 });
-    fs.renameSync(tmp, file(c.id));
+    writeSecretFileSync(file(c.id), JSON.stringify(c, null, 2));
   } catch (err) {
     console.error("[baklava] could not persist conversation:", err);
   }
 }
 
 function genId(): string {
-  return Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 6);
+  return randomUUID();
 }
 
 export function createConversation(input: {
