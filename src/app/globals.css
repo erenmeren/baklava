@@ -556,6 +556,36 @@
   .group:hover .etch-neon > span {
     animation-play-state: running;
   }
+  /* Etched label: same recess as the icon — dark glass with a shadowed
+     top edge and a lit bottom edge. On hover the same three neon lights
+     run through the letters. */
+  .etch-text {
+    color: oklch(0.13 0.02 230 / 0.88);
+    text-shadow:
+      0 1px 0 oklch(1 0 0 / 0.38),
+      0 -1px 0 oklch(0 0 0 / 0.55);
+    transition: color 280ms ease, text-shadow 280ms ease;
+  }
+  .group:hover .etch-text {
+    color: transparent;
+    text-shadow: none;
+    background-color: oklch(0.86 0.19 158 / 0.55);
+    background-image:
+      radial-gradient(circle, oklch(0.97 0.18 160) 0%, transparent 24%),
+      radial-gradient(circle, oklch(0.92 0.13 230) 0%, transparent 24%),
+      radial-gradient(circle, oklch(0.97 0.18 125) 0%, transparent 24%);
+    background-size: 300% 300%;
+    background-repeat: no-repeat;
+    -webkit-background-clip: text;
+    background-clip: text;
+    filter:
+      drop-shadow(0 0 2px oklch(0.86 0.19 158 / 0.8))
+      drop-shadow(0 0 8px oklch(0.78 0.15 230 / 0.45));
+    animation: etch-flow 1.8s ease-in-out infinite alternate;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .group:hover .etch-text { animation: none; }
+  }
   @keyframes etch-flow {
     0% { background-position: 0% 0%, 100% 0%, 50% 100%; }
     50% { background-position: 100% 60%, 0% 70%, 20% 0%; }

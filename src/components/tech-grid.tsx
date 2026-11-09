@@ -199,7 +199,7 @@ export function TechGrid({
                 </span>
               </div>
 
-              <h3 className="text-[15px] font-medium tracking-tight">
+              <h3 className="etch-text text-[15px] font-semibold tracking-tight">
                 {tech.name}
               </h3>
 
