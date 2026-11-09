@@ -58,7 +58,7 @@ import type {
 } from "@/lib/kubernetes/row-types";
 
 let _k8sMod: typeof import("@kubernetes/client-node") | null = null;
-async function getK8s(): Promise<typeof import("@kubernetes/client-node")> {
+export async function getK8s(): Promise<typeof import("@kubernetes/client-node")> {
   try {
     return (_k8sMod ??= await import("@kubernetes/client-node"));
   } catch {
@@ -75,7 +75,7 @@ async function getK8s(): Promise<typeof import("@kubernetes/client-node")> {
 // so editing the connection invalidates automatically.
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface ClientBundle {
+export interface ClientBundle {
   hash: string;
   kc: KubeConfig;
   core: CoreV1Api;
@@ -129,7 +129,7 @@ async function buildKubeConfig(cfg: KubernetesConfig): Promise<KubeConfig> {
   return kc;
 }
 
-async function bundleFor(connectionId: string, cfg: KubernetesConfig): Promise<ClientBundle> {
+export async function bundleFor(connectionId: string, cfg: KubernetesConfig): Promise<ClientBundle> {
   const cache = getCache();
   const hash = hashConfig(cfg);
   const cached = cache.get(connectionId);
