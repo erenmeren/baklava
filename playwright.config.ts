@@ -29,7 +29,9 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
-  workers: process.env.CI ? 2 : undefined,
+  // One `next dev` serves every worker; at the default (half the cores) its
+  // first-visit compiles starve the earliest tests past their timeouts.
+  workers: 2,
   reporter: process.env.CI ? [["list"], ["html", { open: "never" }]] : "list",
   timeout: 30_000,
   expect: { timeout: 5_000 },

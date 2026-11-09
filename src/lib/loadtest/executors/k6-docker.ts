@@ -84,6 +84,9 @@ export class K6DockerExecutor implements Executor {
         AttachStdout: true,
         AttachStderr: true,
         Tty: true,
+        // workDir is mkdtemp's 0700 (the script can carry auth headers), so
+        // run k6 as the owning uid — the image's own user can't read it.
+        ...(process.getuid ? { User: `${process.getuid()}:${process.getgid?.() ?? 0}` } : {}),
         HostConfig: {
           ExtraHosts: ["host.docker.internal:host-gateway"],
           Binds: [`${workDir}:/work:ro`],
