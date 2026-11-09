@@ -1,3 +1,4 @@
+import net from "node:net";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { SESSION_COOKIE, verifySessionToken } from "@/lib/auth/session";
@@ -93,7 +94,8 @@ const WRITE_SHAPED_GETS: RegExp[] = [/^\/api\/docker\/[^/]+\/images\/pull-stream
 
 /** True when the request mutates the connection or its resources. */
 function isMutating(method: string, url: URL): boolean {
-  if (method === "GET" && WRITE_SHAPED_GETS.some((re) => re.test(url.pathname))) return true;
+  // Next serves HEAD with the GET handler, so HEAD acts exactly like GET.
+  if ((method === "GET" || method === "HEAD") && WRITE_SHAPED_GETS.some((re) => re.test(url.pathname))) return true;
   if (!WRITE_METHODS.has(method)) return false;
   if (method !== "POST") return true;
   const { pathname } = url;
@@ -114,19 +116,63 @@ function isMutating(method: string, url: URL): boolean {
 function allowedHosts(req: NextRequest): Set<string> {
   const hosts = new Set<string>();
   const host = req.headers.get("host");
-  if (host) hosts.add(host.toLowerCase());
-  if (process.env.BAKLAVA_TRUST_PROXY === "1") {
-    const fwd = req.headers.get("x-forwarded-host")?.split(",")[0].trim();
-    if (fwd) hosts.add(fwd.toLowerCase());
-  }
+  // The request's own Host only counts once it passes the rebinding check.
+  if (host && hostRejection(req) === null) hosts.add(host.toLowerCase());
+  const fwd = forwardedHost(req);
+  if (fwd) hosts.add(fwd);
+  for (const h of allowedOriginHosts()) hosts.add(h);
+  return hosts;
+}
+
+/** The first X-Forwarded-Host, only behind a trusted reverse proxy. */
+function forwardedHost(req: NextRequest): string | null {
+  if (process.env.BAKLAVA_TRUST_PROXY !== "1") return null;
+  return req.headers.get("x-forwarded-host")?.split(",")[0].trim().toLowerCase() || null;
+}
+
+/** `host` (name[:port]) of each `BAKLAVA_ALLOWED_ORIGINS` entry. */
+function allowedOriginHosts(): string[] {
+  const hosts: string[] = [];
   for (const o of (process.env.BAKLAVA_ALLOWED_ORIGINS ?? "").split(",")) {
     try {
-      if (o.trim()) hosts.add(new URL(o.trim()).host.toLowerCase());
+      if (o.trim()) hosts.push(new URL(o.trim()).host.toLowerCase());
     } catch {
       /* ignore a malformed entry */
     }
   }
   return hosts;
+}
+
+const hostnameOf = (host: string): string | null => {
+  try {
+    return new URL(`http://${host}`).hostname;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * DNS-rebinding gate. A hostile page can re-point its own name (evil.com) at
+ * 127.0.0.1; the browser then treats Baklava as same-origin with evil.com and
+ * the Origin / Sec-Fetch checks all pass — with the login gate off that is the
+ * built-in local admin. Rebinding needs a DNS name, so the Host header must be
+ * `localhost`, an IP literal, the trusted proxy's X-Forwarded-Host, or a host
+ * from BAKLAVA_ALLOWED_ORIGINS.
+ */
+export function hostRejection(req: NextRequest): NextResponse | null {
+  const host = (req.headers.get("host") ?? req.nextUrl.host).toLowerCase();
+  const name = hostnameOf(host);
+  if (name === "localhost" || (name && net.isIP(name.replace(/^\[|\]$/g, "")))) return null;
+  if (host === forwardedHost(req)) return null;
+  if (name && allowedOriginHosts().some((h) => hostnameOf(h) === name)) return null;
+  return NextResponse.json(
+    {
+      error:
+        `Host "${host}" is not allowed. Open Baklava via localhost or an IP address, ` +
+        "or add this origin to BAKLAVA_ALLOWED_ORIGINS (e.g. https://ops.example.com).",
+    },
+    { status: 421 },
+  );
 }
 
 /**
@@ -171,7 +217,9 @@ const PUBLIC_APIS = ["/api/auth/login", "/api/auth/logout"];
 const SETUP_API = "/api/auth/setup";
 
 export function proxy(req: NextRequest): NextResponse {
-  // Runs even with the login gate off — see crossSiteRejection.
+  // Both run even with the login gate off — see hostRejection / crossSiteRejection.
+  const badHost = hostRejection(req);
+  if (badHost) return badHost;
   const crossSite = crossSiteRejection(req);
   if (crossSite) return crossSite;
 

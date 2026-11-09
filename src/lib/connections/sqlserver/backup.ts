@@ -66,7 +66,7 @@ export async function backupSqlServerDatabase(
   }
   // A UNC path (\\host\share, //host/share) makes SQL Server authenticate to
   // that host as its service account — handing its NTLM hash to whoever named it.
-  if (/^(?:\\\\|\/\/)/.test(path.trim())) {
+  if (/^[\\/]{2}/.test(path.trim())) {
     throw new Error("Backups to network (UNC) paths aren't allowed; use a path on the server.");
   }
   await withPool(

@@ -607,7 +607,7 @@ function StatBlock({
       <div className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
         {label}
       </div>
-      <div className="font-mono text-sm">{value}</div>
+      <div className="font-mono text-sm neon-text text-sky-300">{value}</div>
       {sub ? (
         <div className="text-[10px] font-mono text-muted-foreground">
           {sub}

@@ -1,6 +1,9 @@
 import os from "node:os";
 import path from "node:path";
 import { readSecretFileSync, writeSecretFileSync } from "@/lib/crypto/secret-file";
+import { hostLocalReason } from "./host-local";
+// Circular (store imports getGrants from here) but only used at call time.
+import { getConnection } from "./store";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Per-user connection access grants (RBAC).
@@ -102,8 +105,21 @@ export function effectiveAccess(args: {
 }): "none" | "read" | "write" {
   const { user, conn } = args;
   if (user.role === "admin") return "write";
-  if (conn.ownerId && conn.ownerId === user.id) return "write";
-  return getCache().grants[conn.id]?.[user.id] ?? "none";
+  const level =
+    conn.ownerId && conn.ownerId === user.id
+      ? "write"
+      : (getCache().grants[conn.id]?.[user.id] ?? "none");
+  // A host-local connection (Docker socket, kubeconfig path / exec / *-file)
+  // runs with the Baklava host's privileges — `write` there is root on the
+  // host (bind-mount `/`, read the master key). Non-admins get read at most.
+  if (level === "write" && isHostLocal(conn.id)) return "read";
+  return level;
+}
+
+/** True when the stored connection reaches into the Baklava host. */
+export function isHostLocal(connectionId: string): boolean {
+  const rec = getConnection(connectionId);
+  return !!rec && hostLocalReason(rec.tech, rec.config) !== null;
 }
 
 /** Test-only: drop the globalThis-cached grant map. */

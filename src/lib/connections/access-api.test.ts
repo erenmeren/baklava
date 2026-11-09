@@ -202,6 +202,22 @@ describe("GET /api/connections/[id]/access", () => {
     expect(body.grants).toEqual([{ userId: ctx.stranger.id, username: "stranger", level: "read" }]);
     expect(Array.isArray(body.users)).toBe(true);
     expect(body.users.length).toBe(3);
+    // A non-admin owner sees only who to grant to — no roles, no disabled flags.
+    for (const u of body.users) expect(Object.keys(u).sort()).toEqual(["id", "username"]);
+  });
+
+  it("hides disabled users from a non-admin owner, but not from an admin", async () => {
+    const ctx = await seed();
+    ctx.users.updateUser(ctx.stranger.id, { disabled: true });
+    const url = `http://localhost/api/connections/${ctx.ownedConn.id}/access`;
+    const params = { params: Promise.resolve({ id: ctx.ownedConn.id }) };
+    const asOwner = await (await ctx.accessRoute.GET(get(url, ctx.ownerToken), params)).json();
+    expect(asOwner.users.map((u: { username: string }) => u.username)).not.toContain("stranger");
+    const asAdmin = await (await ctx.accessRoute.GET(get(url, ctx.adminToken), params)).json();
+    expect(asAdmin.users.find((u: { username: string }) => u.username === "stranger")).toMatchObject({
+      role: "member",
+      disabled: true,
+    });
   });
 
   it("200 for an admin", async () => {
@@ -259,6 +275,32 @@ describe("PUT /api/connections/[id]/access", () => {
     const body = await res.json();
     expect(body.ok).toBe(true);
     expect(ctx.access.getGrants(ctx.ownedConn.id)).toEqual({ [ctx.stranger.id]: "write" });
+  });
+
+  it("400 when granting write on a host-local (socket-mode Docker) connection", async () => {
+    const ctx = await seed();
+    const sock = ctx.store.saveConnection({
+      tech: "docker",
+      name: "host-docker",
+      config: { mode: "socket", socketPath: "/var/run/docker.sock" } as unknown as Record<string, unknown>,
+      status: "ok",
+      ownerId: ctx.admin.id,
+    });
+    const put = (level: string) =>
+      ctx.accessRoute.PUT(
+        jsonReq(
+          `http://localhost/api/connections/${sock.id}/access`,
+          "PUT",
+          { grants: { [ctx.stranger.id]: level } },
+          ctx.adminToken,
+        ),
+        { params: Promise.resolve({ id: sock.id }) },
+      );
+    const res = await put("write");
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/read/i);
+    expect(ctx.access.getGrants(sock.id)).toEqual({});
+    expect((await put("read")).status).toBe(200);
   });
 
   it("403 for a stranger", async () => {

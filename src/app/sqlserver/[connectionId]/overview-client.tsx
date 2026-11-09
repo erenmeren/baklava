@@ -568,7 +568,15 @@ function KpiTile({
         </span>
       </div>
       <div className="mt-1 flex items-baseline gap-2">
-        <span className="text-xl font-semibold tabular-nums tracking-tight truncate">
+        <span
+          className={cn(
+            "text-xl font-semibold tabular-nums tracking-tight truncate neon-text",
+            tone === "alert" && "text-red-400",
+            tone === "warn" && "text-amber-400",
+            tone === "ok" && "text-emerald-300",
+            tone !== "alert" && tone !== "warn" && tone !== "ok" && "text-sky-300",
+          )}
+        >
           {value}
         </span>
       </div>

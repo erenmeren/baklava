@@ -10,8 +10,7 @@ import { reachable } from "@/test/integration-helpers";
  *
  * The postgres and sqlserver blocks have run green against real services
  * (docker containers `baklava-postgres` / `baklava-sqlserver`, seeded per
- * `seed/postgres.sh` / `seed/sqlserver.sh`) in both chromium-light and
- * chromium-dark, including `clickThroughTabs` on a seeded demo table.
+ * `seed/postgres.sh` / `seed/sqlserver.sh`), including `clickThroughTabs` on a seeded demo table.
  *
  * The mysql block was un-fixme'd in Phase 2 Task 14, once `compose.yaml`
  * gained a mysql service and `seed/mysql.sh` gave it a named `demo` database

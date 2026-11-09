@@ -16,6 +16,8 @@ export interface ExecuteRunOptions {
   signal?: AbortSignal;
   /** Injectable for tests; defaults to the real engine. */
   runner?: Runner;
+  /** See RunOptions.allowInternalTargets. */
+  allowInternalTargets?: boolean;
 }
 
 /**
@@ -39,6 +41,7 @@ export async function executeRun(
     const result = await runner(config, {
       env,
       signal: opts.signal,
+      allowInternalTargets: opts.allowInternalTargets,
       onProgress: (p) => events.onProgress(p.line),
     });
     events.onResult(result);

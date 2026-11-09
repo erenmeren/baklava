@@ -21,7 +21,6 @@ import { sectionsFor } from "@/lib/command-palette/sections";
 import { workspaceHref, parseWorkspacePath } from "@/lib/connections/first-page";
 import { getTech } from "@/lib/tech-catalog";
 import { onOpenCommandPalette } from "@/lib/command-palette/palette-events";
-import { useTheme } from "@/components/theme-provider";
 import type { ConnectionRecord, TechId } from "@/lib/connections/types";
 import { connectionSummaries } from "@/lib/connections/summaries";
 
@@ -47,7 +46,6 @@ export function GlobalCommandPalette() {
   // `open` as the reload token: refetch the connection list each time the
   // palette opens so newly-added/removed connections show up without a reload.
   const { connections } = useConnections(open);
-  const { resolvedTheme, setTheme } = useTheme();
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -216,16 +214,6 @@ export function GlobalCommandPalette() {
           <CommandItem value="action home" onSelect={() => go("/")}>
             <Icon name="Home" />
             <span>Go to home</span>
-          </CommandItem>
-          <CommandItem
-            value="action toggle theme"
-            onSelect={() => {
-              setOpen(false);
-              setTheme(resolvedTheme === "dark" ? "light" : "dark");
-            }}
-          >
-            <Icon name="SunMoon" />
-            <span>Toggle theme</span>
           </CommandItem>
         </CommandGroup>
       </CommandList>

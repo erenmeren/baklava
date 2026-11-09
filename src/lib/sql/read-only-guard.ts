@@ -123,17 +123,19 @@ function codeOnly(sql: string, dialect: ReadOnlyDialect): string {
     if (ch === "-" && next === "-") {
       // MySQL only treats `-- ` (dash dash whitespace) as a comment; `--1` is
       // arithmetic there. Treating it as code is the conservative reading.
-      if (dialect === "mysql" && !/\s/.test(sql[i + 2] ?? " ")) {
+      // Only ASCII whitespace/control counts: `\s` would also accept NBSP.
+      if (dialect === "mysql" && !/[\x00-\x20]/.test(sql[i + 2] ?? " ")) {
         out += ch;
         i++;
         continue;
       }
-      while (i < n && sql[i] !== "\n") i++;
+      // Postgres ends a line comment at `\r` as well as `\n`.
+      while (i < n && sql[i] !== "\n" && sql[i] !== "\r") i++;
       out += " ";
       continue;
     }
     if (ch === "#" && dialect === "mysql") {
-      while (i < n && sql[i] !== "\n") i++;
+      while (i < n && sql[i] !== "\n" && sql[i] !== "\r") i++;
       out += " ";
       continue;
     }
@@ -141,11 +143,22 @@ function codeOnly(sql: string, dialect: ReadOnlyDialect): string {
       if (dialect === "mysql" && (sql[i + 2] === "!" || sql[i + 2] === "+")) {
         reject("MySQL executable comments are not supported");
       }
-      const end = sql.indexOf("*/", i + 2);
-      if (end < 0) reject("unterminated comment");
-      // Postgres and T-SQL nest block comments; ending at the first `*/`
-      // only ever exposes *more* text to the denylist, never less.
-      i = end + 2;
+      // Postgres and T-SQL nest block comments (`/* /* */ */` is one
+      // comment); MySQL ends at the first `*/`. Ending early would hide the
+      // text after the real end, e.g. a quote that swallows `; COMMIT; …`.
+      const nests = dialect !== "mysql";
+      let depth = 1;
+      i += 2;
+      while (depth > 0) {
+        if (i >= n) reject("unterminated comment");
+        if (sql[i] === "*" && sql[i + 1] === "/") {
+          depth--;
+          i += 2;
+        } else if (nests && sql[i] === "/" && sql[i + 1] === "*") {
+          depth++;
+          i += 2;
+        } else i++;
+      }
       out += " ";
       continue;
     }

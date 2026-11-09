@@ -652,9 +652,11 @@ function KpiTile({
       <div className="mt-1 flex items-baseline justify-between gap-2">
         <div
           className={cn(
-            "font-semibold tabular-nums text-lg leading-none tracking-tight",
+            "font-semibold tabular-nums text-lg leading-none tracking-tight neon-text",
             tone === "alert" && "text-red-600 dark:text-red-400",
             tone === "warn" && "text-amber-600 dark:text-amber-400",
+            tone === "ok" && "text-emerald-300",
+            tone === "neutral" && "text-sky-300",
           )}
           style={{
             fontFamily: "var(--font-jetbrains-mono), ui-monospace, monospace",

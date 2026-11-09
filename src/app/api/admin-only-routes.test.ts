@@ -147,7 +147,7 @@ describe("host-local connection sources are admin-only", () => {
     const conn = store.saveConnection({
       tech: "postgres",
       name: "prod",
-      config: { host: "db.internal", port: 5432, database: "app", user: "u", password: "s3cret", ssl: true },
+      config: { host: "10.0.0.20", port: 5432, database: "app", user: "u", password: "s3cret", ssl: true },
       status: "ok",
       ownerId: "someone-else",
     });
@@ -158,10 +158,10 @@ describe("host-local connection sources are admin-only", () => {
     const res = await route.PATCH(post({ config: { host: "evil.example", password: "" } }, "PATCH"), ctx);
     expect(res.status).toBe(403);
     expect((await res.json()).error).toMatch(/owner or an admin.*host/);
-    expect(store.getConnection(conn.id)?.config).toMatchObject({ host: "db.internal" });
+    expect(store.getConnection(conn.id)?.config).toMatchObject({ host: "10.0.0.20" });
 
     // Tuning the connection without moving it is still allowed.
-    const ok = await route.PATCH(post({ config: { database: "reporting", host: "db.internal" } }, "PATCH"), ctx);
+    const ok = await route.PATCH(post({ config: { database: "reporting", host: "10.0.0.20" } }, "PATCH"), ctx);
     expect(ok.status).toBe(200);
   });
 

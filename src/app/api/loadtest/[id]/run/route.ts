@@ -54,7 +54,9 @@ export async function POST(req: Request, ctx: RouteContext) {
             onResult: (result) => safeEnqueue(sse("result", result)),
             onError: (message) => safeEnqueue(sse("error", { message })),
           },
-          { signal: req.signal },
+          // Only admins may aim a load test at loopback / private addresses
+          // (the Docker API on localhost:2375, internal services…).
+          { signal: req.signal, allowInternalTargets: user.role === "admin" },
         );
         safeEnqueue(sse("done", { runId: run.id, status: run.status }));
       } catch (err) {

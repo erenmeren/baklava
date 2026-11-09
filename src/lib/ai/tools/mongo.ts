@@ -138,8 +138,9 @@ export function mongoTools(connectionId: string, config: MongoConfig): AiTool[] 
     {
       name: "mongo_replace_document",
       description:
-        "Replace one document matching the filter (both EJSON strings).",
-      category: "write",
+        "Replace one document matching the filter (both EJSON strings). DESTRUCTIVE: fields not in the new document are lost; pin the filter to _id.",
+      // Static, not per-filter: a non-empty filter like {"_id":{"$exists":true}} is as broad as {}.
+      category: "destructive",
       inputSchema: ns.extend({ filter: z.string(), document: z.string() }),
       execute: async ({ database, collection, filter, document }) =>
         replaceDocument(

@@ -128,6 +128,8 @@ export class SchemaRegistryClient {
     const p = (async () => {
       const r = await fetch(`${this.url}/schemas/ids/${id}`, {
         headers: this.headers(),
+        // Only the configured URL was egress-checked; a 3xx is !ok below.
+        redirect: "manual",
       });
       if (!r.ok) {
         throw new SchemaRegistryError(
@@ -159,7 +161,7 @@ export class SchemaRegistryClient {
 
   /** Get the latest subjects on the registry — used by the connection form. */
   async listSubjects(): Promise<string[]> {
-    const r = await fetch(`${this.url}/subjects`, { headers: this.headers() });
+    const r = await fetch(`${this.url}/subjects`, { headers: this.headers(), redirect: "manual" });
     if (!r.ok) {
       throw new SchemaRegistryError(
         `listSubjects failed (HTTP ${r.status})`,

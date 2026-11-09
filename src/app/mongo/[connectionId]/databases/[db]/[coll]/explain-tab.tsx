@@ -213,9 +213,10 @@ function Card({
       </div>
       <div
         className={cn(
-          "font-mono text-lg mt-1 tabular-nums",
+          "font-mono text-lg mt-1 tabular-nums neon-text",
           tone === "good" && "text-emerald-700 dark:text-emerald-300",
           tone === "bad" && "text-rose-700 dark:text-rose-300",
+          tone !== "good" && tone !== "bad" && "text-sky-300",
         )}
       >
         {value}

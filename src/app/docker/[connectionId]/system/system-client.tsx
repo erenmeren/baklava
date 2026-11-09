@@ -262,7 +262,7 @@ function Kpi({
           {label}
         </span>
       </div>
-      <div className="text-2xl font-semibold tracking-tight">{value}</div>
+      <div className="text-2xl font-semibold tracking-tight neon-text text-sky-300">{value}</div>
       {sub ? (
         <div className="text-[11px] text-muted-foreground font-mono">
           {sub}

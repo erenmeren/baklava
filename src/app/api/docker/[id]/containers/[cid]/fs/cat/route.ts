@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getConnection } from "@/lib/connections/store";
-import { fsCat } from "@/lib/connections/docker";
+import { fsCat, dockerErrorStatus } from "@/lib/connections/docker";
 import type { DockerConfig } from "@/lib/connections/types";
 import { formatError } from "@/lib/errors";
 
@@ -28,6 +28,6 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
     );
     return NextResponse.json(result);
   } catch (err) {
-    return NextResponse.json({ error: formatError(err) }, { status: 502 });
+    return NextResponse.json({ error: formatError(err) }, { status: dockerErrorStatus(err) });
   }
 }

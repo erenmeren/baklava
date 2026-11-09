@@ -623,3 +623,78 @@ describe("proxy() write-shaped GETs", () => {
     expect(list.status).not.toBe(403);
   });
 });
+
+describe("proxy() HEAD on write-shaped GETs", () => {
+  it("a read grant can't pull an image with HEAD either (Next serves HEAD with GET)", async () => {
+    const ctx = await seed();
+    const docker = ctx.store.saveConnection({
+      tech: "docker",
+      name: "d",
+      config: { mode: "tcp", host: "10.0.0.2" } as unknown as Record<string, unknown>,
+      status: "ok",
+      ownerId: ctx.owner.id,
+    });
+    ctx.access.setGrants(docker.id, { [ctx.stranger.id]: "read" });
+    const res = ctx.proxy.proxy(
+      req(`http://localhost/api/docker/${docker.id}/images/pull-stream?ref=alpine`, {
+        token: ctx.strangerToken,
+        method: "HEAD",
+      }),
+    );
+    expect(res.status).toBe(403);
+  });
+});
+
+describe("proxy() Host-header gate (DNS rebinding)", () => {
+  const make = (host: string, path = "/api/auth/login", method = "POST", headers: Record<string, string> = {}) =>
+    new NextRequest(`http://${host}${path}`, {
+      method,
+      headers: { host, origin: `http://${host}`, "sec-fetch-site": "same-origin", ...headers },
+    });
+
+  afterEach(() => {
+    delete process.env.BAKLAVA_ALLOWED_ORIGINS;
+    delete process.env.BAKLAVA_TRUST_PROXY;
+  });
+
+  it("refuses a rebound DNS name even with the login gate off, on pages and API", async () => {
+    const { proxy, authStore } = await load();
+    authStore.setAuthEnabled(false);
+    try {
+      const api = proxy.proxy(make("evil.com:3000"));
+      expect(api.status).toBe(421);
+      expect(await api.text()).toMatch(/BAKLAVA_ALLOWED_ORIGINS/);
+      expect(proxy.proxy(make("evil.com:3000", "/", "GET")).status).toBe(421);
+    } finally {
+      authStore.setAuthEnabled(true);
+    }
+  });
+
+  it.each(["localhost:3000", "127.0.0.1:3000", "10.0.0.5:3000", "[::1]:3000", "localhost"])(
+    "lets Host %s through",
+    async (host) => {
+      const { proxy } = await load();
+      expect(proxy.proxy(make(host)).status).not.toBe(421);
+      expect(proxy.crossSiteRejection(make(host))).toBeNull();
+    },
+  );
+
+  it("allows a host listed in BAKLAVA_ALLOWED_ORIGINS", async () => {
+    const { proxy } = await load();
+    process.env.BAKLAVA_ALLOWED_ORIGINS = "https://ops.example.com";
+    expect(proxy.proxy(make("ops.example.com")).status).not.toBe(421);
+  });
+
+  it("allows the X-Forwarded-Host only behind a trusted proxy", async () => {
+    const { proxy } = await load();
+    const viaProxy = () => make("ops.example.com", "/", "GET", { "x-forwarded-host": "ops.example.com" });
+    expect(proxy.proxy(viaProxy()).status).toBe(421);
+    process.env.BAKLAVA_TRUST_PROXY = "1";
+    expect(proxy.proxy(viaProxy()).status).not.toBe(421);
+  });
+
+  it("crossSiteRejection no longer trusts an arbitrary Host as same-origin", async () => {
+    const { proxy } = await load();
+    expect(proxy.crossSiteRejection(make("evil.com:3000"))?.status).toBe(403);
+  });
+});

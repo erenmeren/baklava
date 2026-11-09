@@ -1,6 +1,7 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import type { ModelMessage } from "ai";
+import { z } from "zod";
 import { getConnection } from "@/lib/connections/store";
 import type { TechId } from "@/lib/connections/types";
 import { getSettings } from "@/lib/ai/settings";
@@ -27,6 +28,13 @@ interface ChatBody {
   userMessage: { role: "user"; content: string };
   planMode?: boolean;
 }
+
+// Plain text only. The ai SDK downloads URLs found in image/file parts on the
+// server (hostname-string check, no DNS), so a parts array is an SSRF vector.
+const UserMessageSchema = z.object({
+  role: z.literal("user"),
+  content: z.string().min(1).max(100_000),
+}).strict();
 
 const PLAN_MODE_DIRECTIVE =
   `PLAN MODE: Before performing ANY write or destructive action, you MUST first call ` +
@@ -62,7 +70,12 @@ export async function POST(req: Request) {
   } catch {
     return new Response(JSON.stringify({ error: "Invalid JSON" }), { status: 400 });
   }
-  const { conversationId, connections, userMessage, planMode } = body;
+  const { conversationId, connections, planMode } = body;
+  const parsed = UserMessageSchema.safeParse(body?.userMessage);
+  if (!parsed.success) {
+    return new Response(JSON.stringify({ error: "userMessage must be { role: \"user\", content: <non-empty string> }" }), { status: 400 });
+  }
+  const userMessage: ModelMessage = parsed.data;
   // Minted here, never taken from the client: it keys this turn's pending
   // approvals, its tool-call budget and its audit file. A client-chosen id let
   // anyone who learned it answer someone else's approvals (and reset limits).
@@ -158,7 +171,7 @@ export async function POST(req: Request) {
       const viewerId = user?.id ?? "";
       const stored = getConversation(conversationId, viewerId);
       const priorMessages = stored?.messages ?? [];
-      const turnMessages: ModelMessage[] = [...priorMessages, userMessage as ModelMessage];
+      const turnMessages: ModelMessage[] = [...priorMessages, userMessage];
 
       // Persist the user's message up front so it survives even if this turn
       // errors mid-stream — the assistant reply (if any) is folded in on success.

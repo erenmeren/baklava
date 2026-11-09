@@ -1075,8 +1075,8 @@ function DetailStats({
           </div>
           <div
             className={cn(
-              "mt-1.5 font-semibold tabular-nums text-2xl tracking-tight",
-              it.tone === "alert" && "text-red-600 dark:text-red-400",
+              "mt-1.5 font-semibold tabular-nums text-2xl tracking-tight neon-text",
+              it.tone === "alert" ? "text-red-600 dark:text-red-400" : "text-sky-300",
             )}
             style={{
               fontFamily:
@@ -1134,8 +1134,8 @@ function MemberAssignmentGrid({ members }: { members: Member[] }) {
               <div className="text-right shrink-0">
                 <div
                   className={cn(
-                    "font-mono text-lg tabular-nums",
-                    skewed && "text-amber-600 dark:text-amber-400",
+                    "font-mono text-lg tabular-nums neon-text",
+                    skewed ? "text-amber-600 dark:text-amber-400" : "text-emerald-300",
                   )}
                 >
                   {m.partitionCount}

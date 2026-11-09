@@ -16,7 +16,6 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { useTheme } from "@/components/theme-provider";
 
 interface BaseProps {
   open: boolean;
@@ -47,7 +46,6 @@ SELECT
 export function ViewEditorDialog(props: Props) {
   const { open, onOpenChange, connectionId, database, schema, onSuccess, mode } =
     props;
-  const { resolvedTheme } = useTheme();
 
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
@@ -158,7 +156,7 @@ export function ViewEditorDialog(props: Props) {
               value={code}
               onChange={setCode}
               extensions={extensions}
-              theme={resolvedTheme === "dark" ? "dark" : "light"}
+              theme="dark"
               basicSetup={{
                 lineNumbers: true,
                 highlightActiveLine: true,

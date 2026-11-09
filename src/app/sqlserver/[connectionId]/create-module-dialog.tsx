@@ -28,7 +28,6 @@ import { cn } from "@/lib/utils";
 import { editorTheme } from "@/lib/sql/editor-theme";
 import { smartSqlCompletions } from "@/lib/sql/editor-completions";
 import { SQLSERVER_KEYWORDS, SQLSERVER_TYPES } from "@/lib/sql/dialect-keywords";
-import { useTheme } from "@/components/theme-provider";
 import {
   DialogBrandStripe,
   ctaGlow,
@@ -159,7 +158,6 @@ export function CreateModuleDialog({
   const [edited, setEdited] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { resolvedTheme } = useTheme();
 
   useEffect(() => {
     if (!open) {
@@ -303,7 +301,7 @@ export function CreateModuleDialog({
                   setEdited(true);
                 }}
                 extensions={extensions}
-                theme={resolvedTheme === "dark" ? "dark" : "light"}
+                theme="dark"
                 basicSetup={{
                   lineNumbers: true,
                   highlightActiveLine: true,

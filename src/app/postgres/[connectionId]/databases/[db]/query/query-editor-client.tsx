@@ -17,7 +17,6 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { useTheme } from "@/components/theme-provider";
 import {
   ExplainPlanViewer,
   type ExplainPlanRoot,
@@ -181,7 +180,6 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [hydrated, setHydrated] = useState(false);
   const [searchPath, setSearchPath] = useState<string | null>(null);
-  const { resolvedTheme } = useTheme();
   const isMac = useIsMac();
   const kbd = runHint(isMac);
 
@@ -596,7 +594,7 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
             value={sqlText}
             onChange={setSqlText}
             extensions={extensions}
-            theme={resolvedTheme === "dark" ? "dark" : "light"}
+            theme="dark"
             basicSetup={{
               lineNumbers: true,
               highlightActiveLine: true,

@@ -41,7 +41,7 @@ And the **PostgreSQL** workspace feels like pgAdmin — a live health dashboard,
 
 ![PostgreSQL workspace — live dashboard and schema tree](docs/images/05-postgres.png)
 
-**3. Jump anywhere with ⌘K.** Press **⌘K / Ctrl+K** (or the search pill in the header) to hop to any connection, section, or object, or to run quick actions like adding a connection or toggling the theme.
+**3. Jump anywhere with ⌘K.** Press **⌘K / Ctrl+K** (or the search pill in the header) to hop to any connection, section, or object, or to run quick actions like adding a connection.
 
 ![The ⌘K command palette](docs/images/03-palette.png)
 
@@ -135,6 +135,8 @@ State-changing requests from another origin — including another port on the sa
 
 - `BAKLAVA_TRUST_PROXY=1` trusts `X-Forwarded-Host` (for the origin check) and `X-Forwarded-For` (adds a per-client login throttle). Only set it when the proxy overwrites those headers.
 - `BAKLAVA_ALLOWED_ORIGINS=https://ops.example.com,…` lists extra origins allowed to make requests.
+
+Every request's `Host` must be `localhost`, an IP literal, the trusted proxy's `X-Forwarded-Host`, or a host listed in `BAKLAVA_ALLOWED_ORIGINS`; anything else gets **421** (this blocks DNS-rebinding attacks). If you open Baklava by a DNS name (e.g. `http://ops.internal:3000`) without a trusted proxy, add it to `BAKLAVA_ALLOWED_ORIGINS`. Under `BAKLAVA_TRUST_PROXY=1`, make sure the proxy forwards only its own server name as `X-Forwarded-Host`.
 
 Responses carry `frame-ancestors 'none'`, `X-Frame-Options: DENY`, `nosniff` and `Referrer-Policy: same-origin`. Terminate TLS and set HSTS at the proxy.
 If the proxy terminates TLS but doesn't send `X-Forwarded-Proto`, set `BAKLAVA_SECURE_COOKIES=1` so the session cookie is still marked `Secure`.

@@ -297,6 +297,27 @@ describe("auth routes (multi-user)", () => {
     expect(verifySessionToken(freshToken)).toBe(true);
   });
 
+  it("change-password throttles current-password guesses on the account bucket", async () => {
+    const throttle = await import("@/lib/auth/login-throttle");
+    throttle._resetLoginThrottleForTests();
+    try {
+      const setup = await runSetup("admin", "hunter2-long-pw");
+      const cookie = `${SESSION_COOKIE}=${cookieToken(setup)}`;
+      for (let i = 0; i < throttle.MAX_PER_ACCOUNT; i++) {
+        const bad = await runChangePassword({ currentPassword: "wrong", newPassword: "another-long-pw" }, cookie);
+        expect(bad.status).toBe(401);
+      }
+      // Even the right password is refused once the bucket is full.
+      const res = await runChangePassword(
+        { currentPassword: "hunter2-long-pw", newPassword: "another-long-pw" },
+        cookie,
+      );
+      expect(res.status).toBe(429);
+    } finally {
+      throttle._resetLoginThrottleForTests();
+    }
+  });
+
   it("change-password 401s with no session", async () => {
     await runSetup("admin", "hunter2-long-pw");
     const res = await runChangePassword({ currentPassword: "hunter2-long-pw", newPassword: "x" });

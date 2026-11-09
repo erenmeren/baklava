@@ -6,7 +6,6 @@ import { sql, MSSQL } from "@codemirror/lang-sql";
 import { Button } from "@/components/ui/button";
 import { WorkspacePage } from "@/components/workspace/workspace-page";
 import { cn } from "@/lib/utils";
-import { useTheme } from "@/components/theme-provider";
 import { toast } from "sonner";
 import {
   AlertCircle,
@@ -88,7 +87,6 @@ function formatTimestamp(ms: number): string {
 }
 
 export function QueryEditorClient({ connectionId, db, queryId }: Props) {
-  const { resolvedTheme } = useTheme();
   const defaultSql = `-- ${db}\nSELECT\n  *\nFROM\n  `;
   const [sqlText, setSqlText] = useState(defaultSql);
   const [hydrated, setHydrated] = useState(false);
@@ -415,7 +413,7 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
             value={sqlText}
             onChange={setSqlText}
             extensions={extensions}
-            theme={resolvedTheme === "dark" ? "dark" : "light"}
+            theme="dark"
             basicSetup={{
               lineNumbers: true,
               highlightActiveLine: true,

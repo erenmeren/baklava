@@ -279,7 +279,11 @@ export async function runReadOnlyQuery(
     try {
       // A read can still pin a backend (pg_sleep is screened; a cartesian join isn't).
       await client.query("SET LOCAL statement_timeout = '30s'");
-      const res = await client.query({ text: single, rowMode: "array" });
+      // Extended protocol: Parse rejects a second statement, so even a guard
+      // bypass can't `COMMIT` out of READ ONLY. (`values: []` would NOT switch
+      // protocol; @types/pg lacks `queryMode`, hence the non-literal object.)
+      const q = { text: single, rowMode: "array" as const, queryMode: "extended" };
+      const res = await client.query(q);
       const rows = (res.rows as unknown[][]).slice(0, maxRows);
       return {
         fields: res.fields.map((f) => f.name),

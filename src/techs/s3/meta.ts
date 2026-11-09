@@ -4,7 +4,8 @@ import { blobProvider } from "@/lib/command-palette/infra-providers";
 import type { S3Config, ConnectionRecord } from "@/lib/connections/types";
 
 const schema = z.object({
-  region: z.string(),
+  // Becomes part of the endpoint host (see endpointFor in s3-aws.ts).
+  region: z.string().regex(/^[a-z0-9-]+$/),
   accessKeyId: z.string(),
   secretAccessKey: z.string(),
   sessionToken: z.string().optional(),

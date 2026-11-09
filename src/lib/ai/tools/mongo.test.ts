@@ -36,6 +36,8 @@ describe("mongoTools", () => {
     expect(m["mongo_aggregate"]).toBe("read");
     expect(m["mongo_insert_document"]).toBe("write");
     expect(m["mongo_delete_document"]).toBe("destructive");
+    // Replacement drops every field not in the new document; a broad filter picks an arbitrary one.
+    expect(m["mongo_replace_document"]).toBe("destructive");
     expect(m["mongo_drop_collection"]).toBe("destructive");
   });
 

@@ -17,7 +17,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { AlertTriangle, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { useTheme } from "@/components/theme-provider";
 
 interface BaseProps {
   open: boolean;
@@ -58,7 +57,6 @@ $function$;
 export function FunctionEditorDialog(props: Props) {
   const { open, onOpenChange, connectionId, database, schema, onSuccess, mode } =
     props;
-  const { resolvedTheme } = useTheme();
 
   const [code, setCode] = useState("");
   const [originalCode, setOriginalCode] = useState("");
@@ -197,7 +195,7 @@ export function FunctionEditorDialog(props: Props) {
               value={code}
               onChange={setCode}
               extensions={extensions}
-              theme={resolvedTheme === "dark" ? "dark" : "light"}
+              theme="dark"
               basicSetup={{
                 lineNumbers: true,
                 highlightActiveLine: true,

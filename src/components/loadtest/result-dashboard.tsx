@@ -16,7 +16,7 @@ function Metric({ label, value, sub }: { label: string; value: string; sub?: str
   return (
     <Card className="p-4">
       <div className="text-[11px] uppercase tracking-wider text-muted-foreground">{label}</div>
-      <div className="mt-1 text-2xl font-semibold tabular-nums">{value}</div>
+      <div className="mt-1 text-2xl font-semibold tabular-nums neon-text text-sky-300">{value}</div>
       {sub ? <div className="text-xs text-muted-foreground mt-0.5">{sub}</div> : null}
     </Card>
   );

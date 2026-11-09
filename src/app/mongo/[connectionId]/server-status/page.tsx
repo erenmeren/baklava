@@ -101,7 +101,7 @@ export default async function ServerStatusPage({ params }: Props) {
             <div className="text-[9px] uppercase tracking-[0.22em] text-muted-foreground">
               {c.label}
             </div>
-            <div className="font-mono text-lg mt-1 tabular-nums">{c.value}</div>
+            <div className="font-mono text-lg mt-1 tabular-nums neon-text text-sky-300">{c.value}</div>
             {c.sub ? (
               <div className="text-[11px] text-muted-foreground mt-0.5">{c.sub}</div>
             ) : null}

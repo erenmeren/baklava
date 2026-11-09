@@ -100,7 +100,7 @@ describe("POST /api/postgres/test", () => {
       postJson({
         name: "p",
         config: {
-          host: "x",
+          host: "10.0.0.9",
           port: 5432,
           database: "d",
           user: "u",
@@ -125,7 +125,7 @@ describe("POST /api/postgres/test", () => {
         name: "Saved PG",
         save: true,
         config: {
-          host: "h",
+          host: "10.0.0.8",
           port: 5432,
           database: "d",
           user: "u",
@@ -206,7 +206,7 @@ describe("POST /api/docker/test (socket-style config)", () => {
     const res = await route.POST(
       postJson({
         name: "d",
-        config: { mode: "tcp", host: "x", port: 2375 },
+        config: { mode: "tcp", host: "10.0.0.9", port: 2375 },
       }),
     );
     const body = await res.json();
