@@ -1,8 +1,10 @@
 "use client";
 
 import type { K8sList } from "@/lib/kubernetes/list";
-import { ResourceTable, type Column } from "../resource-table";
+import { ResourceTable, type Column, type RowAction } from "../resource-table";
 import { formatAge, type CronJobRow } from "@/lib/kubernetes/row-types";
+import { useK8s } from "../k8s-context";
+import { CronJobDialog } from "./cronjob-actions";
 
 const COLUMNS: Column<CronJobRow>[] = [
   {
@@ -59,6 +61,20 @@ const COLUMNS: Column<CronJobRow>[] = [
 ];
 
 export function CronJobsView({ list }: { list: K8sList<CronJobRow> }) {
+  const { connectionId } = useK8s();
+  const rowActions: RowAction<CronJobRow>[] = (["trigger", "suspend"] as const).map((action) => ({
+    key: action === "trigger" ? "T" : "P",
+    label: action === "trigger" ? "run now" : "suspend/resume",
+    render: ({ row, close, refresh }) => (
+      <CronJobDialog
+        connectionId={connectionId}
+        row={row}
+        action={action}
+        close={close}
+        refresh={refresh}
+      />
+    ),
+  }));
   return (
     <ResourceTable
       resource="CronJobs"
@@ -69,6 +85,7 @@ export function CronJobsView({ list }: { list: K8sList<CronJobRow> }) {
       remaining={list.remaining}
       columns={COLUMNS}
       actions={{ edit: true, delete: true }}
+      rowActions={rowActions}
     />
   );
 }

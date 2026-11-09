@@ -5,6 +5,7 @@ import { ResourceTable, type Column, type RowAction } from "../resource-table";
 import { useK8s } from "../k8s-context";
 import { PodProxyOverlay } from "./pod-proxy-overlay";
 import { StatusPill } from "../status-pill";
+import { UsageCell, UsageHistoryProvider, useUsageHistory } from "../usage-history";
 import { formatAge, type PodRow } from "@/lib/kubernetes/row-types";
 
 const COLUMNS: Column<PodRow>[] = [
@@ -77,7 +78,7 @@ const COLUMNS: Column<PodRow>[] = [
   },
   {
     label: "node",
-    width: "w-72",
+    width: "w-48",
     cell: (r) => (
       <span className="text-muted-foreground truncate" title={r.node}>
         {r.node}
@@ -89,18 +90,14 @@ const COLUMNS: Column<PodRow>[] = [
     label: "cpu",
     width: "w-16",
     align: "right",
-    cell: (r) => (
-      <span className="text-cyan-600 dark:text-cyan-400">{r.cpuUsage ?? "—"}</span>
-    ),
+    cell: (r) => <UsageCell row={r} metric="cpu" />,
     value: (r) => r.cpuUsage ?? "",
   },
   {
     label: "mem",
     width: "w-20",
     align: "right",
-    cell: (r) => (
-      <span className="text-cyan-600 dark:text-cyan-400">{r.memUsage ?? "—"}</span>
-    ),
+    cell: (r) => <UsageCell row={r} metric="mem" />,
     value: (r) => r.memUsage ?? "",
   },
   {
@@ -163,6 +160,7 @@ function describePod(p: PodRow): string {
 
 export function PodsView({ list }: { list: K8sList<PodRow> }) {
   const { connectionId } = useK8s();
+  const usage = useUsageHistory(list.rows);
   const rowActions: RowAction<PodRow>[] = [
     {
       key: "F",
@@ -173,17 +171,19 @@ export function PodsView({ list }: { list: K8sList<PodRow> }) {
     },
   ];
   return (
-    <ResourceTable
-      resource="Pods"
-      shortName="po"
-      kind="pod"
-      rows={list.rows}
-      truncated={list.truncated}
-      remaining={list.remaining}
-      columns={COLUMNS}
-      rowActions={rowActions}
-      actions={{ logs: true, shell: true, edit: true, delete: true }}
-      describeYaml={describePod}
-    />
+    <UsageHistoryProvider value={usage}>
+      <ResourceTable
+        resource="Pods"
+        shortName="po"
+        kind="pod"
+        rows={list.rows}
+        truncated={list.truncated}
+        remaining={list.remaining}
+        columns={COLUMNS}
+        rowActions={rowActions}
+        actions={{ logs: true, shell: true, edit: true, delete: true }}
+        describeYaml={describePod}
+      />
+    </UsageHistoryProvider>
   );
 }

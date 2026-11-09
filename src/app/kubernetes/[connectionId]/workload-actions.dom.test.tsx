@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { RestartDialog, ScaleDialog } from "./deployment-actions";
+import { RestartDialog, ScaleDialog } from "./workload-actions";
 import type { DeploymentRow } from "@/lib/kubernetes/row-types";
 
 const ROW: DeploymentRow = {
@@ -136,5 +136,45 @@ describe("RestartDialog", () => {
 
     expect(await screen.findByText(/forbidden/i)).toBeTruthy();
     expect(close).not.toHaveBeenCalled();
+  });
+});
+
+describe("non-deployment workloads", () => {
+  let stub: ReturnType<typeof stubEndpoint>;
+  beforeEach(() => {
+    stub = stubEndpoint(ok);
+  });
+  afterEach(() => stub.restore());
+
+  it("scales a statefulset through the shared workloads route", async () => {
+    render(
+      <ScaleDialog
+        connectionId="conn-1"
+        row={{ namespace: "demo", name: "ledger", ready: "1/1" }}
+        kind="statefulset"
+        close={vi.fn()}
+        refresh={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Scale statefulset")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /scale/i }));
+    await waitFor(() => expect(stub.calls.length).toBe(1));
+    expect(stub.calls[0][0]).toBe("/api/kubernetes/conn-1/workloads/statefulset/demo/ledger");
+  });
+
+  it("restarts a daemonset through the shared workloads route", async () => {
+    render(
+      <RestartDialog
+        connectionId="conn-1"
+        row={{ namespace: "demo", name: "log-shipper" }}
+        kind="daemonset"
+        close={vi.fn()}
+        refresh={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /restart log-shipper/i }));
+    await waitFor(() => expect(stub.calls.length).toBe(1));
+    expect(stub.calls[0][0]).toBe("/api/kubernetes/conn-1/workloads/daemonset/demo/log-shipper");
+    expect(JSON.parse(String(stub.calls[0][1]?.body))).toEqual({ action: "restart" });
   });
 });

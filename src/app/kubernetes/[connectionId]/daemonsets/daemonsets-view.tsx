@@ -1,8 +1,11 @@
 "use client";
 
 import type { K8sList } from "@/lib/kubernetes/list";
-import { ResourceTable, type Column } from "../resource-table";
+import { ResourceTable, type Column, type RowAction } from "../resource-table";
 import { formatAge, type DaemonSetRow } from "@/lib/kubernetes/row-types";
+import { useK8s } from "../k8s-context";
+import { LogOverlay } from "../log-overlay";
+import { RestartDialog } from "../workload-actions";
 
 const COLUMNS: Column<DaemonSetRow>[] = [
   {
@@ -68,6 +71,36 @@ const COLUMNS: Column<DaemonSetRow>[] = [
 ];
 
 export function DaemonSetsView({ list }: { list: K8sList<DaemonSetRow> }) {
+  const { connectionId } = useK8s();
+  const rowActions: RowAction<DaemonSetRow>[] = [
+    {
+      key: "R",
+      label: "restart",
+      danger: true,
+      render: ({ row, close, refresh }) => (
+        <RestartDialog
+          connectionId={connectionId}
+          row={row}
+          kind="daemonset"
+          close={close}
+          refresh={refresh}
+        />
+      ),
+    },
+    {
+      key: "L",
+      label: "all logs",
+      render: ({ row, close }) => (
+        <LogOverlay
+          connectionId={connectionId}
+          namespace={row.namespace}
+          pod={row.name}
+          workload="daemonset"
+          onClose={close}
+        />
+      ),
+    },
+  ];
   return (
     <ResourceTable
       resource="DaemonSets"
@@ -78,6 +111,7 @@ export function DaemonSetsView({ list }: { list: K8sList<DaemonSetRow> }) {
       remaining={list.remaining}
       columns={COLUMNS}
       actions={{ edit: true, delete: true }}
+      rowActions={rowActions}
     />
   );
 }

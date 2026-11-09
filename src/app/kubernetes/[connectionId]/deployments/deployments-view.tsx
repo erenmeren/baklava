@@ -4,7 +4,9 @@ import type { K8sList } from "@/lib/kubernetes/list";
 import { ResourceTable, type Column, type RowAction } from "../resource-table";
 import { formatAge, type DeploymentRow } from "@/lib/kubernetes/row-types";
 import { useK8s } from "../k8s-context";
-import { RestartDialog, ScaleDialog } from "./deployment-actions";
+import { RestartDialog, ScaleDialog } from "../workload-actions";
+import { LogOverlay } from "../log-overlay";
+import { RolloutOverlay } from "./rollout-overlay";
 
 const COLUMNS: Column<DeploymentRow>[] = [
   {
@@ -121,6 +123,31 @@ export function DeploymentsView({ list }: { list: K8sList<DeploymentRow> }) {
           row={row}
           close={close}
           refresh={refresh}
+        />
+      ),
+    },
+    {
+      key: "H",
+      label: "history",
+      render: ({ row, close, refresh }) => (
+        <RolloutOverlay
+          connectionId={connectionId}
+          row={row}
+          close={close}
+          refresh={refresh}
+        />
+      ),
+    },
+    {
+      key: "L",
+      label: "all logs",
+      render: ({ row, close }) => (
+        <LogOverlay
+          connectionId={connectionId}
+          namespace={row.namespace}
+          pod={row.name}
+          workload="deployment"
+          onClose={close}
         />
       ),
     },

@@ -4,6 +4,7 @@ import type { K8sList } from "@/lib/kubernetes/list";
 import { ResourceTable, type Column, type RowAction } from "../resource-table";
 import { useK8s } from "../k8s-context";
 import { CordonDialog, DrainDialog } from "./node-actions";
+import { UsageCell, UsageHistoryProvider, useUsageHistory } from "../usage-history";
 import { formatAge, type NodeRow } from "@/lib/kubernetes/row-types";
 import { cn } from "@/lib/utils";
 
@@ -53,11 +54,7 @@ const COLUMNS: Column<NodeRow>[] = [
     label: "cpu",
     width: "w-20",
     align: "right",
-    cell: (r) => (
-      <span className="text-cyan-600 dark:text-cyan-400 tabular-nums">
-        {r.cpuUsage ?? "—"}
-      </span>
-    ),
+    cell: (r) => <UsageCell row={r} metric="cpu" />,
     value: (r) => r.cpuUsage ?? "",
   },
   {
@@ -86,11 +83,7 @@ const COLUMNS: Column<NodeRow>[] = [
     label: "memory",
     width: "w-24",
     align: "right",
-    cell: (r) => (
-      <span className="text-cyan-600 dark:text-cyan-400 tabular-nums">
-        {r.memUsage ?? "—"}
-      </span>
-    ),
+    cell: (r) => <UsageCell row={r} metric="mem" />,
     value: (r) => r.memUsage ?? "",
   },
   {
@@ -155,6 +148,7 @@ type Row = NodeRow & { namespace?: string };
 
 export function NodesView({ list }: { list: K8sList<NodeRow> }) {
   const { connectionId } = useK8s();
+  const usage = useUsageHistory(list.rows);
   const rowActions: RowAction<Row>[] = [
     {
       key: "C",
@@ -173,16 +167,18 @@ export function NodesView({ list }: { list: K8sList<NodeRow> }) {
     },
   ];
   return (
-    <ResourceTable
-      resource="Nodes"
-      shortName="no"
-      kind="node"
-      rows={list.rows as Row[]}
-      truncated={list.truncated}
-      remaining={list.remaining}
-      columns={COLUMNS as Column<Row>[]}
-      actions={{ edit: true }}
-      rowActions={rowActions}
-    />
+    <UsageHistoryProvider value={usage}>
+      <ResourceTable
+        resource="Nodes"
+        shortName="no"
+        kind="node"
+        rows={list.rows as Row[]}
+        truncated={list.truncated}
+        remaining={list.remaining}
+        columns={COLUMNS as Column<Row>[]}
+        actions={{ edit: true }}
+        rowActions={rowActions}
+      />
+    </UsageHistoryProvider>
   );
 }

@@ -40,7 +40,8 @@ async function openWorkspace(page: Page) {
     timeout: 20_000,
   });
   await dialog.getByRole("button", { name: /^open$/i }).first().click();
-  await expect(page).toHaveURL(/\/kubernetes\/[^/]+\/pods/, { timeout: 15_000 });
+  // "Open" lands on the workspace root, which is the cluster overview.
+  await expect(page).toHaveURL(/\/kubernetes\/[^/?]+(\/pods)?(\?|$)/, { timeout: 15_000 });
 }
 
 /**
@@ -69,27 +70,43 @@ test.describe("kubernetes workspace", () => {
   });
 
   test("browses every resource screen without an error state", async ({ page }) => {
-    // Fourteen live round-trips plus the connection setup — well past the
+    // ~30 live round-trips plus the connection setup — well past the
     // 30s default, and the workspace auto-refreshes, so "load" never settles.
-    test.setTimeout(180_000);
+    test.setTimeout(300_000);
     await openWorkspace(page);
 
     // Every screen in the sidebar catalogue (src/lib/kubernetes/commands.ts).
     const screens = [
       "pods",
       "deployments",
+      "replicasets",
       "statefulsets",
       "daemonsets",
       "jobs",
       "cronjobs",
+      "hpas",
+      "pdbs",
       "services",
       "ingresses",
+      "networkpolicies",
       "configmaps",
       "secrets",
+      "resourcequotas",
+      "limitranges",
       "pvcs",
+      "pvs",
+      "storageclasses",
+      "serviceaccounts",
+      "roles",
+      "rolebindings",
+      "clusterroles",
+      "clusterrolebindings",
       "namespaces",
       "nodes",
       "events",
+      "crds",
+      // The generic custom-resource page, for the demo CRD the seed installs.
+      "crd/demo.baklava.dev/widgets",
     ];
     const base = new URL(page.url()).pathname.replace(/\/pods$/, "");
 
@@ -113,6 +130,22 @@ test.describe("kubernetes workspace", () => {
     await page.goto(`${base}/deployments?ns=kube-system`);
     await expect(page.getByText(/selected/i).first()).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText("storefront", { exact: true })).toHaveCount(0);
+  });
+
+  test("lists a custom resource with its CRD's printer columns", async ({ page }) => {
+    await openWorkspace(page);
+    const base = new URL(page.url()).pathname.replace(/\/pods$/, "");
+
+    await page.goto(`${base}/crd/demo.baklava.dev/widgets?ns=demo`);
+    await expect(page.getByText("large-red").first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("small-blue").first()).toBeVisible();
+    await expect(page.getByText("color", { exact: true }).first()).toBeVisible();
+    // The sidebar's "Custom resources" group links the installed CRD.
+    await expect(page.getByRole("link", { name: "Widget", exact: true })).toBeVisible();
+
+    // An identity that isn't an installed CRD is a 404, not an API call.
+    const res = await page.goto(`${base}/crd/demo.baklava.dev/nopes?ns=demo`);
+    expect(res?.status()).toBe(404);
   });
 
   test("describe reads the cluster: the failing pod's reason and its events", async ({
@@ -140,6 +173,18 @@ test.describe("kubernetes workspace", () => {
     await page.keyboard.press("y");
     await expect(page.getByText(/FEATURE_FLAGS/)).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText(/kind: ConfigMap/)).toBeVisible();
+  });
+
+  test("overview lists broken-image under needs attention", async ({ page }) => {
+    await openWorkspace(page);
+    const base = new URL(page.url()).pathname.replace(/\/pods$/, "");
+    await page.goto(`${base}?ns=*`);
+    const attention = page.getByRole("list", { name: "needs attention" });
+    await expect(attention.getByText("broken-image")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("Pods by phase")).toBeVisible();
+    // k3s bundles metrics-server, so cluster usage renders a percentage.
+    await expect(page.getByText(/^\d+%$/).first()).toBeVisible({ timeout: 15_000 });
+    await expectNoErrorBanner(page);
   });
 
   test("nodes screen reports real usage from metrics-server", async ({ page }) => {

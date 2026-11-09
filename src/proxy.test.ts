@@ -226,6 +226,23 @@ describe("proxy() connection-access gate", () => {
     expect(res.headers.get("x-middleware-next")).toBe("1");
   });
 
+  it("member with no grant opening a k8s watch stream → 403", async () => {
+    const ctx = await seed();
+    const res = ctx.proxy.proxy(
+      req(`http://localhost/api/kubernetes/${ctx.conn.id}/watch/secrets?ns=*`, { token: ctx.strangerToken }),
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it("member with a read grant opening a k8s watch stream → passes", async () => {
+    const ctx = await seed();
+    ctx.access.setGrants(ctx.conn.id, { [ctx.stranger.id]: "read" });
+    const res = ctx.proxy.proxy(
+      req(`http://localhost/api/kubernetes/${ctx.conn.id}/watch/pods`, { token: ctx.strangerToken }),
+    );
+    expect(res.headers.get("x-middleware-next")).toBe("1");
+  });
+
   it("member with no grant hitting another's /api/dashboard/<id>/health → 403", async () => {
     const ctx = await seed();
     const res = ctx.proxy.proxy(
@@ -300,6 +317,31 @@ describe("proxy() write floor on connection-scoped paths", () => {
       }),
     );
     expect(res.status).toBe(403);
+  });
+
+  it("rollout undo, workload restart and cronjob trigger need write — read grant → 403", async () => {
+    const ctx = await seed();
+    ctx.access.setGrants(ctx.conn.id, { [ctx.stranger.id]: "read" });
+    for (const path of [
+      "deployments/demo/api/rollout",
+      "workloads/statefulset/demo/ledger",
+      "cronjobs/demo/nightly-report",
+    ]) {
+      const res = ctx.proxy.proxy(
+        req(`http://localhost/api/kubernetes/${ctx.conn.id}/${path}`, {
+          token: ctx.strangerToken,
+          method: "POST",
+        }),
+      );
+      expect(res.status, path).toBe(403);
+    }
+    // the history and aggregated-log reads stay open to a read grant
+    for (const path of ["deployments/demo/api/rollout", "workloads/deployment/demo/api/logs"]) {
+      const res = ctx.proxy.proxy(
+        req(`http://localhost/api/kubernetes/${ctx.conn.id}/${path}`, { token: ctx.strangerToken }),
+      );
+      expect(res.headers.get("x-middleware-next"), path).toBe("1");
+    }
   });
 
   it("owner POSTing to their own connection → passes", async () => {

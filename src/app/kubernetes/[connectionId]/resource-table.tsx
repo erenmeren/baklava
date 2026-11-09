@@ -9,6 +9,7 @@ import { LogOverlay } from "./log-overlay";
 import { ConfirmOverlay } from "./confirm-overlay";
 import { ShellOverlay } from "./shell-overlay";
 import { EditOverlay } from "./edit-overlay";
+import { useK8sWatch } from "./use-k8s-watch";
 
 export interface Column<T> {
   /** Header label. Rendered uppercase in the head row. */
@@ -87,15 +88,21 @@ export function ResourceTable<T extends { name: string; namespace?: string }>({
   resource,
   shortName,
   kind,
-  rows,
+  rows: serverRows,
   columns,
   actions = {},
-  truncated = false,
-  remaining = null,
+  truncated: serverTruncated = false,
+  remaining: serverRemaining = null,
   rowActions,
   describeYaml,
 }: ResourceTableProps<T>) {
   const k8s = useK8s();
+  // Server rows, kept current by the watch stream (k9s-style live table).
+  const { rows, truncated, remaining, status: liveStatus } = useK8sWatch(
+    k8s.connectionId,
+    k8s.namespace,
+    { rows: serverRows, truncated: serverTruncated, remaining: serverRemaining },
+  );
   const router = useRouter();
   // `?select=<name>` lets the command palette (and any other deep link) land
   // on a specific row — the workspace has no per-object route to point at.
@@ -311,15 +318,24 @@ export function ResourceTable<T extends { name: string; namespace?: string }>({
   }, [scrollToSelection]);
 
   // Compute the grid-template-columns string from the column defs.
+  // The flexible column (usually `name`) never collapses below FLEX_MIN —
+  // with many fixed columns it used to get 0px and the names vanished.
+  const FLEX_MIN = "12rem";
   const gridTemplate = columns
-    .map((c) => c.width ?? "minmax(0, 1fr)")
+    .map((c) => c.width ?? `minmax(${FLEX_MIN}, 1fr)`)
     // Tailwind w-* utilities don't compose cleanly into grid-template, so we
     // emit either a raw token (when `width` is something like "minmax(...)"
     // or "200px") or rely on tailwind classes on individual cells below.
     // For simplicity all `width: string` inputs are treated as opaque tokens
     // that look like "200px" / "12rem" / "1fr".
-    .map((w) => (w === "minmax(0, 1fr)" ? w : w.startsWith("w-") ? toToken(w) : w))
+    .map((w) => (w.startsWith("minmax(") ? w : w.startsWith("w-") ? toToken(w) : w))
     .join(" ");
+  // Every row is its own grid, so they share one explicit min-width (the
+  // columns' floor + gaps + padding); narrower than that, the table scrolls
+  // sideways as a whole instead of squeezing a column away.
+  const minTableWidth = `calc(${columns
+    .map((c) => (c.width == null ? FLEX_MIN : c.width.startsWith("w-") ? toToken(c.width) : c.width))
+    .join(" + ")} + ${(columns.length - 1) * 0.75}rem + 2rem)`;
 
   function toToken(twWidth: string): string {
     // tailwind w-32 → 8rem; w-[120px] → 120px. Use CSS calc for safety.
@@ -378,6 +394,19 @@ export function ResourceTable<T extends { name: string; namespace?: string }>({
             </button>
           </span>
         ) : null}
+        {liveStatus === "live" ? (
+          <span
+            className="flex items-center gap-1 text-[10px] uppercase tracking-[0.22em] text-emerald-600 dark:text-emerald-400"
+            title="Rows update as the cluster changes"
+          >
+            <span aria-hidden className="size-1.5 rounded-full bg-current animate-pulse" />
+            live
+          </span>
+        ) : liveStatus !== "off" ? (
+          <span className="text-[10px] uppercase tracking-[0.22em] text-amber-600 dark:text-amber-400">
+            {liveStatus === "connecting" ? "connecting…" : "reconnecting…"}
+          </span>
+        ) : null}
         <span className="ml-auto text-[10px] text-muted-foreground">
           {shortName ? (
             <>
@@ -387,6 +416,8 @@ export function ResourceTable<T extends { name: string; namespace?: string }>({
         </span>
       </div>
 
+      <div className="flex-1 min-h-0 overflow-x-auto flex flex-col">
+      <div className="flex-1 min-h-0 flex flex-col" style={{ minWidth: minTableWidth }}>
       {/* Header */}
       <div
         className="px-4 py-1.5 text-[10px] uppercase tracking-[0.18em] text-muted-foreground border-b border-border/60 bg-muted/30"
@@ -456,6 +487,8 @@ export function ResourceTable<T extends { name: string; namespace?: string }>({
             );
           })
         )}
+      </div>
+      </div>
       </div>
 
       {/* Action hint row — k9s-style footer */}

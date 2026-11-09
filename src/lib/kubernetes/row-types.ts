@@ -195,3 +195,135 @@ export function formatAge(seconds: number): string {
   const d = Math.floor(h / 24);
   return `${d}d`;
 }
+
+export interface HpaRow {
+  namespace: string;
+  name: string;
+  /** "Deployment/storefront" */
+  target: string;
+  minReplicas: number;
+  maxReplicas: number;
+  current: number;
+  desired: number;
+  /** "cpu 45%/80%, memory 120Mi/256Mi" */
+  metrics: string;
+  ageSeconds: number;
+}
+
+export interface ReplicaSetRow {
+  namespace: string;
+  name: string;
+  /** Controlling owner, "Deployment/storefront", or "—". */
+  owner: string;
+  desired: number;
+  current: number;
+  ready: number;
+  images: string;
+  ageSeconds: number;
+}
+
+export interface ServiceAccountRow {
+  namespace: string;
+  name: string;
+  /** How many Secrets the account references — names only, never values. */
+  secrets: number;
+  ageSeconds: number;
+}
+
+/** Role or ClusterRole — namespace is absent on the cluster-scoped kind. */
+export interface RoleRow {
+  namespace?: string;
+  name: string;
+  rules: number;
+  /** "get,list pods,services; * deployments" */
+  summary: string;
+  ageSeconds: number;
+}
+
+/** RoleBinding or ClusterRoleBinding. */
+export interface RoleBindingRow {
+  namespace?: string;
+  name: string;
+  /** "ClusterRole/view" */
+  role: string;
+  /** "User/alice, ServiceAccount/demo/default" */
+  subjects: string;
+  ageSeconds: number;
+}
+
+export interface NetworkPolicyRow {
+  namespace: string;
+  name: string;
+  podSelector: string;
+  policyTypes: string;
+  ingressRules: number;
+  egressRules: number;
+  ageSeconds: number;
+}
+
+export interface PvRow {
+  name: string;
+  capacity: string;
+  accessModes: string;
+  reclaimPolicy: string;
+  status: string;
+  /** "namespace/name" of the bound claim, or "—". */
+  claim: string;
+  storageClass: string;
+  ageSeconds: number;
+}
+
+export interface StorageClassRow {
+  name: string;
+  provisioner: string;
+  isDefault: boolean;
+  reclaimPolicy: string;
+  bindingMode: string;
+  allowExpansion: boolean;
+  ageSeconds: number;
+}
+
+export interface PdbRow {
+  namespace: string;
+  name: string;
+  minAvailable: string;
+  maxUnavailable: string;
+  currentHealthy: number;
+  desiredHealthy: number;
+  disruptionsAllowed: number;
+  ageSeconds: number;
+}
+
+export interface ResourceQuotaRow {
+  namespace: string;
+  name: string;
+  /** "pods 3/10, requests.cpu 50m/1" */
+  usage: string;
+  ageSeconds: number;
+}
+
+export interface LimitRangeRow {
+  namespace: string;
+  name: string;
+  /** "Container default cpu=500m; defaultRequest cpu=100m" */
+  limits: string;
+  ageSeconds: number;
+}
+
+export interface CrdRow {
+  name: string;
+  group: string;
+  kind: string;
+  plural: string;
+  scope: string;
+  versions: string;
+  ageSeconds: number;
+}
+
+/** One instance of a custom resource; `cells` follow the CRD's printer columns. */
+export interface CustomResourceRow {
+  namespace?: string;
+  name: string;
+  cells: string[];
+  ageSeconds: number;
+}

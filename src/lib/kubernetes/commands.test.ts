@@ -15,6 +15,10 @@ describe("resolveCommand", () => {
     expect(resolveCommand("pvc")).toEqual({ kind: "navigate", target: "pvcs" });
     expect(resolveCommand("no")).toEqual({ kind: "navigate", target: "nodes" });
     expect(resolveCommand("ev")).toEqual({ kind: "navigate", target: "events" });
+    expect(resolveCommand("hpa")).toEqual({ kind: "navigate", target: "hpas" });
+    expect(resolveCommand("netpol")).toEqual({ kind: "navigate", target: "networkpolicies" });
+    expect(resolveCommand("sa")).toEqual({ kind: "navigate", target: "serviceaccounts" });
+    expect(resolveCommand("crd")).toEqual({ kind: "navigate", target: "crds" });
   });
 
   it("ignores case and surrounding whitespace", () => {
@@ -57,18 +61,38 @@ describe("resolveCommand", () => {
     expect(K8S_RESOURCES.map((r) => r.path)).toEqual([
       "pods",
       "deployments",
+      "replicasets",
       "statefulsets",
       "daemonsets",
       "jobs",
       "cronjobs",
+      "hpas",
+      "pdbs",
       "services",
       "ingresses",
+      "networkpolicies",
       "configmaps",
       "secrets",
+      "resourcequotas",
+      "limitranges",
       "pvcs",
+      "pvs",
+      "storageclasses",
+      "serviceaccounts",
+      "roles",
+      "rolebindings",
+      "clusterroles",
+      "clusterrolebindings",
       "namespaces",
       "nodes",
       "events",
+      "crds",
+    ]);
+  });
+
+  it("keeps the digit hotkeys on the original eight screens", () => {
+    expect(K8S_RESOURCES.filter((r) => r.hotkey).map((r) => r.hotkey)).toEqual([
+      "1", "2", "3", "4", "5", "6", "7", "8",
     ]);
   });
 
