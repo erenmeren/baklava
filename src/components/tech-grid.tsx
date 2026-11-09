@@ -150,7 +150,7 @@ export function TechGrid({
           const tile = (
             <div
               className={cn(
-                "group relative aspect-square rounded-xl border border-border bg-card p-5",
+                "group glass-tile relative aspect-square rounded-xl p-5",
                 "flex flex-col items-center justify-center gap-3 text-center",
                 isAvailable && !driverMissing
                   ? "tile-neon hover:border-border/80 cursor-pointer"
@@ -183,17 +183,20 @@ export function TechGrid({
                 ) : null}
               </span>
 
-              <div className="size-20 grid place-items-center transition-transform duration-200 group-hover:scale-105">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={techIconUrl(tech)}
-                  alt=""
-                  width={64}
-                  height={64}
-                  draggable={false}
-                  aria-hidden
-                  className="size-16 select-none dark:brightness-0 dark:invert"
-                />
+              {/* The icon is etched into the glass: its silhouette (a CSS mask
+                  of the SVG) is a dark recess with lit/shadowed rims; on hover
+                  neon light runs through the recess from three points. */}
+              <div
+                aria-hidden
+                className="etch size-16"
+                style={{ "--icon": `url(${techIconUrl(tech)})` } as React.CSSProperties}
+              >
+                <span className="etch-shade" />
+                <span className="etch-rim" />
+                <span className="etch-cut" />
+                <span className="etch-neon">
+                  <span />
+                </span>
               </div>
 
               <h3 className="text-[15px] font-medium tracking-tight">
