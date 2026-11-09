@@ -153,11 +153,11 @@
   --sidebar-ring: oklch(0.84 0.19 160);
 
   /* The fixed glow behind everything. */
-  --glow-a: oklch(0.70 0.19 162 / 0.70);
-  --glow-b: oklch(0.62 0.19 245 / 0.70);
-  --glow-c: oklch(0.78 0.15 180 / 0.32);
-  --glow-d: oklch(0.55 0.15 205 / 0.60);
-  --glow-e: oklch(0.50 0.20 285 / 0.40);
+  --glow-a: oklch(0.74 0.21 158 / 0.80);
+  --glow-b: oklch(0.66 0.21 250 / 0.80);
+  --glow-c: oklch(0.80 0.16 190 / 0.50);
+  --glow-d: oklch(0.62 0.17 215 / 0.70);
+  --glow-e: oklch(0.58 0.24 300 / 0.55);
   /* Film grain (SVG turbulence), shared by the backdrop and glass. */
   --grain: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.07 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
 }
@@ -191,16 +191,16 @@
     background:
       radial-gradient(40% 35% at 18% 78%, var(--glow-a), transparent 70%),
       radial-gradient(38% 34% at 85% 15%, var(--glow-b), transparent 70%),
-      radial-gradient(26% 24% at 58% 52%, var(--glow-c), transparent 70%),
+      radial-gradient(34% 30% at 55% 55%, var(--glow-c), transparent 70%),
       radial-gradient(34% 30% at 40% 18%, var(--glow-d), transparent 70%),
       radial-gradient(30% 28% at 82% 82%, var(--glow-e), transparent 70%);
-    animation: mesh-drift 48s ease-in-out infinite alternate;
+    animation: mesh-drift 32s ease-in-out infinite alternate;
     will-change: transform;
   }
   body::after {
     inset: 0;
     background:
-      radial-gradient(120% 90% at 50% 40%, transparent 50%, oklch(0.07 0.012 240 / 0.85) 100%),
+      radial-gradient(120% 90% at 50% 40%, transparent 58%, oklch(0.07 0.012 240 / 0.70) 100%),
       var(--grain);
     background-size: auto, 160px 160px;
     opacity: 1;
