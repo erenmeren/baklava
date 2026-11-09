@@ -1,4 +1,5 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import dns from "node:dns/promises";
 import { egressRejection, targetHostsOf } from "./connection-targets";
 
 describe("targetHostsOf", () => {
@@ -12,11 +13,46 @@ describe("targetHostsOf", () => {
     ["minio", { endpoint: "minio.lan:9000" }, ["minio.lan"]],
     [
       "kubernetes",
-      { source: "inline", kubeconfigYaml: "clusters:\n- cluster: { server: 'https://169.254.169.254:6443' }" },
+      { source: "inline", kubeconfigYaml: "clusters:\n- name: c\n  cluster: { server: 'https://169.254.169.254:6443' }" },
       ["169.254.169.254"],
     ],
     ["docker", { mode: "tcp", host: "10.0.0.2", port: 2375 }, ["10.0.0.2"]],
-  ])("%s", (tech, cfg, hosts) => expect(targetHostsOf(tech, cfg)).toEqual(hosts));
+  ])("%s", async (tech, cfg, hosts) => expect(await targetHostsOf(tech, cfg)).toEqual(hosts));
+
+  // client-node parses with js-yaml, which honours merge keys; a literal read
+  // of cluster.server saw nothing here while the driver connected to b.server.
+  it("kubernetes: follows YAML merge keys the way the driver does", async () => {
+    const yaml = [
+      "base: &b",
+      "  server: http://169.254.169.254/latest",
+      "clusters:",
+      "- name: c",
+      "  cluster:",
+      "    <<: *b",
+      "contexts:",
+      "- name: x",
+      "  context: { cluster: c, user: u }",
+      "users:",
+      "- name: u",
+      "  user: {}",
+      "current-context: x",
+    ].join("\n");
+    expect(await targetHostsOf("kubernetes", { source: "inline", kubeconfigYaml: yaml })).toEqual(["169.254.169.254"]);
+    expect(await egressRejection("kubernetes", { source: "inline", kubeconfigYaml: yaml })).not.toBeNull();
+  });
+
+  it("kubernetes: includes the cluster proxy-url host", async () => {
+    const yaml = "clusters:\n- name: c\n  cluster: { server: 'https://10.0.0.1:6443', proxy-url: 'http://169.254.169.254:80' }";
+    expect(await targetHostsOf("kubernetes", { source: "inline", kubeconfigYaml: yaml })).toEqual([
+      "10.0.0.1",
+      "169.254.169.254",
+    ]);
+  });
+
+  it("kubernetes: a kubeconfig the driver can't load is rejected", async () => {
+    const res = await egressRejection("kubernetes", { source: "inline", kubeconfigYaml: "clusters: [ {" });
+    expect(res?.status).toBe(400);
+  });
 });
 
 describe("egressRejection", () => {
@@ -34,7 +70,30 @@ describe("egressRejection", () => {
     expect(await egressRejection("mysql", { host: "192.168.1.20" })).toBeNull();
   });
 
-  it("leaves an unresolvable name for the driver to report", async () => {
-    expect(await egressRejection("postgres", { host: "no-such-host.invalid" })).toBeNull();
+  // Fail closed: an unresolved name can't be judged, and could resolve to a
+  // blocked range by the time the driver looks it up.
+  it("refuses an unresolvable name", async () => {
+    const res = await egressRejection("postgres", { host: "no-such-host.invalid" });
+    expect(res?.status).toBe(400);
+    expect((await res!.json()).error).toMatch(/could not resolve no-such-host\.invalid/i);
+  });
+
+});
+
+describe("egressRejection: mongodb+srv", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("judges the SRV targets, not the (A-record-less) SRV name", async () => {
+    const srv = vi.spyOn(dns, "resolveSrv").mockResolvedValue([
+      { name: "169.254.169.254", port: 27017, priority: 0, weight: 0 },
+    ]);
+    const res = await egressRejection("mongo", { uri: "mongodb+srv://cluster0.example.net/db" });
+    expect(srv).toHaveBeenCalledWith("_mongodb._tcp.cluster0.example.net");
+    expect(res?.status).toBe(400);
+  });
+
+  it("lets a good SRV target through", async () => {
+    vi.spyOn(dns, "resolveSrv").mockResolvedValue([{ name: "10.0.0.7", port: 27017, priority: 0, weight: 0 }]);
+    expect(await egressRejection("mongo", { uri: "mongodb+srv://cluster0.example.net/db" })).toBeNull();
   });
 });

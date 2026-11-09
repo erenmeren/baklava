@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getConnection } from "@/lib/connections/store";
-import { removeImage } from "@/lib/connections/docker";
+import { removeImage, dockerErrorStatus } from "@/lib/connections/docker";
 import type { DockerConfig } from "@/lib/connections/types";
 import { formatError } from "@/lib/errors";
 
@@ -21,6 +21,6 @@ export async function DELETE(req: NextRequest, ctx: RouteContext) {
     await removeImage(record.config as DockerConfig, decodeURIComponent(imgId), force);
     return NextResponse.json({ ok: true });
   } catch (err) {
-    return NextResponse.json({ error: formatError(err) }, { status: 502 });
+    return NextResponse.json({ error: formatError(err) }, { status: dockerErrorStatus(err) });
   }
 }

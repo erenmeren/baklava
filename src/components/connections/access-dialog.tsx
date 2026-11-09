@@ -24,12 +24,13 @@ import {
 type AccessLevel = "read" | "write";
 type Choice = "none" | AccessLevel;
 
+// role / disabled / createdAt are only sent to admins.
 interface PublicUser {
   id: string;
   username: string;
-  role: "admin" | "member";
-  disabled: boolean;
-  createdAt: number;
+  role?: "admin" | "member";
+  disabled?: boolean;
+  createdAt?: number;
 }
 
 interface AccessResponse {

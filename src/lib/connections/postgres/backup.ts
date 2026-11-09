@@ -23,6 +23,14 @@ function sqlTextLiteral(v: unknown): string {
   return `'${String(v).replace(/'/g, "''")}'`;
 }
 
+/**
+ * Flatten a value for a `-- …` comment line. A quoted identifier can hold a
+ * newline, which would end the comment and plant SQL that runs on restore.
+ */
+function commentText(v: string): string {
+  return v.replace(/[\r\n]+/g, " ");
+}
+
 export interface DumpOptions {
   /** Restrict to these schemas; default = all non-system schemas. */
   schemas?: string[];
@@ -69,7 +77,7 @@ export async function* streamDatabaseDump(
     }
 
     const stamp = new Date().toISOString();
-    yield `-- Baklava SQL dump\n-- database: ${database}\n-- generated: ${stamp}\n-- schemas: ${schemas.join(", ") || "(none)"}\n\n`;
+    yield `-- Baklava SQL dump\n-- database: ${commentText(database)}\n-- generated: ${stamp}\n-- schemas: ${commentText(schemas.join(", ")) || "(none)"}\n\n`;
     yield `BEGIN;\n\n`;
 
     // The dump is emitted in three sections so foreign keys never constrain
@@ -161,7 +169,7 @@ export async function* streamDatabaseDump(
           .filter((i) => !i.isPrimary && !constraintNames.has(i.name))
           .map((i) => (i.definition.endsWith(";") ? i.definition : i.definition + ";"));
 
-        yield `-- table ${schema}.${table}\n${[create, ...indexLines].join("\n\n")}\n\n`;
+        yield `-- table ${commentText(`${schema}.${table}`)}\n${[create, ...indexLines].join("\n\n")}\n\n`;
 
         tablePlans.push({
           schema,
@@ -194,7 +202,7 @@ export async function* streamDatabaseDump(
           });
           if (batch.rows.length === 0) break;
           if (!wroteAny) {
-            yield `-- data ${plan.schema}.${plan.table}\n`;
+            yield `-- data ${commentText(`${plan.schema}.${plan.table}`)}\n`;
             wroteAny = true;
           }
           const values = (batch.rows as unknown[][])

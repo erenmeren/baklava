@@ -4,7 +4,8 @@ import { blobProvider } from "@/lib/command-palette/infra-providers";
 import type { R2Config, ConnectionRecord } from "@/lib/connections/types";
 
 const schema = z.object({
-  accountId: z.string(),
+  // Becomes the endpoint's host label (see endpointFor in r2.ts).
+  accountId: z.string().regex(/^[A-Za-z0-9-]+$/),
   accessKeyId: z.string(),
   secretAccessKey: z.string(),
   bucket: z.string().optional(),

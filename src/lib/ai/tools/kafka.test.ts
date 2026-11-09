@@ -56,7 +56,25 @@ describe("kafka_alter_topic_config escalation", () => {
     "%s can make the broker delete messages → destructive",
     (name) => expect(alter().categoryFor?.({ entries: [{ name, value: "1" }] })).toBe("destructive"),
   );
-  it("other settings stay a write", () => {
-    expect(alter().categoryFor?.({ entries: [{ name: "max.message.bytes", value: "2000000" }] })).toBe("write");
+  it.each([
+    "remote.storage.enable",
+    "remote.log.delete.on.disable",
+    "unclean.leader.election.enable",
+    "min.insync.replicas",
+    "max.message.bytes",
+    "min.compaction.lag.ms",
+    "some.future.key",
+    "Compression.type",
+  ])("%s is not on the safe allowlist → destructive", (name) =>
+    expect(alter().categoryFor?.({ entries: [{ name, value: "1" }] })).toBe("destructive"),
+  );
+  it("only allowlisted settings stay a write", () => {
+    expect(alter().categoryFor?.({ entries: [{ name: "compression.type", value: "zstd" }] })).toBe("write");
+    expect(alter().categoryFor?.({ entries: [{ name: "index.interval.bytes", value: "4096" }] })).toBe("write");
+  });
+  it("one unsafe key in a batch escalates the whole call", () => {
+    expect(
+      alter().categoryFor?.({ entries: [{ name: "compression.type", value: "lz4" }, { name: "min.insync.replicas", value: "1" }] }),
+    ).toBe("destructive");
   });
 });

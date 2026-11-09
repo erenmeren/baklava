@@ -99,3 +99,31 @@ describe("assertReadOnlySql — T-SQL needs no ';' between statements", () => {
 it("returns the statement without its trailing ';'", () => {
   expect(assertReadOnlySql("SELECT 1 ;; ", "postgres")).toBe("SELECT 1");
 });
+
+describe("assertReadOnlySql — comment boundaries match the server's lexer", () => {
+  it.each<[ReadOnlyDialect, string]>([
+    ["postgres", "SELECT 1 --\r; COMMIT; DROP TABLE users"],
+    ["sqlserver", "SELECT 1 --\rDROP TABLE dbo.x"],
+    ["mysql", "SELECT 1 -- \r; DELETE FROM t"],
+    ["mysql", "SELECT 1 #\r; DELETE FROM t"],
+  ])("line comments end at \\r too (%s)", (d, sql) => bad(sql, d));
+
+  it.each<[ReadOnlyDialect, string]>([
+    ["postgres", "SELECT 1 /* /* */ ' */ ; COMMIT; DROP TABLE victim -- '"],
+    ["sqlserver", "SELECT 1 /* /* */ ' */ COMMIT DROP TABLE dbo.x -- '"],
+    ["postgres", "SELECT 1 /* /* */"],
+  ])("block comments nest (%s)", (d, sql) => bad(sql, d));
+
+  it("nested comments that close still pass", () => {
+    ok("SELECT 1 /* a /* b */ c */ FROM t", "postgres");
+    ok("SELECT 1 /* a /* b */ c */ FROM t", "sqlserver");
+  });
+
+  it("MySQL block comments do not nest", () => {
+    ok("SELECT 1 /* /* */ FROM t", "mysql");
+  });
+
+  it("MySQL `--` needs ASCII whitespace, not NBSP", () => {
+    bad("SELECT 1 -- ; DELETE FROM t", "mysql");
+  });
+});

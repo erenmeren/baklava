@@ -51,6 +51,33 @@ describe("effectiveAccess", () => {
   });
 });
 
+describe("effectiveAccess on host-local connections", () => {
+  const save = (tech: "docker" | "kubernetes" | "postgres", config: Record<string, unknown>) =>
+    saveConnection({ tech, name: "x", config, status: "ok", ownerId: member.id });
+
+  it("caps a non-admin at read on a socket-mode Docker connection, even the owner", () => {
+    const c = save("docker", { mode: "socket", socketPath: "/var/run/docker.sock" });
+    setGrants(c.id, { [other.id]: "write" });
+    expect(effectiveAccess({ user: other, conn: { id: c.id, ownerId: c.ownerId } })).toBe("read");
+    expect(effectiveAccess({ user: member, conn: { id: c.id, ownerId: c.ownerId } })).toBe("read");
+    expect(effectiveAccess({ user: admin, conn: { id: c.id, ownerId: c.ownerId } })).toBe("write");
+  });
+
+  it("caps a kubeconfig-path Kubernetes connection too", () => {
+    const c = save("kubernetes", { source: "path", kubeconfigPath: "~/.kube/config" });
+    setGrants(c.id, { [other.id]: "write" });
+    expect(effectiveAccess({ user: other, conn: { id: c.id, ownerId: c.ownerId } })).toBe("read");
+  });
+
+  it("leaves a none grant at none and a TCP Docker connection uncapped", () => {
+    const sock = save("docker", { mode: "socket" });
+    expect(effectiveAccess({ user: other, conn: { id: sock.id, ownerId: sock.ownerId } })).toBe("none");
+    const tcp = save("docker", { mode: "tcp", host: "10.0.0.2" });
+    setGrants(tcp.id, { [other.id]: "write" });
+    expect(effectiveAccess({ user: other, conn: { id: tcp.id, ownerId: tcp.ownerId } })).toBe("write");
+  });
+});
+
 describe("grants round-trip", () => {
   it("setGrants then getGrants returns the map", () => {
     setGrants("c1", { [member.id]: "read", [other.id]: "write" });

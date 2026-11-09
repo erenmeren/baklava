@@ -9,6 +9,11 @@ import {
   isHttps,
 } from "@/lib/auth/session";
 import { passwordProblem } from "@/lib/auth/password-policy";
+import {
+  clearLoginFailures,
+  isLoginThrottled,
+  recordLoginFailure,
+} from "@/lib/auth/login-throttle";
 
 export const runtime = "nodejs";
 
@@ -31,12 +36,22 @@ export async function POST(req: NextRequest) {
   const currentPassword =
     typeof body.currentPassword === "string" ? body.currentPassword : "";
 
+  // Same per-account bucket as /api/auth/login, so an open tab can't be used
+  // to guess the current password faster than the login form allows.
+  if (isLoginThrottled(user.username, req.headers)) {
+    return NextResponse.json(
+      { error: "Too many attempts — wait a few minutes and try again." },
+      { status: 429 },
+    );
+  }
   if (!verifyUserPassword(user, currentPassword)) {
+    recordLoginFailure(user.username, req.headers);
     return NextResponse.json(
       { error: "Current password is incorrect" },
       { status: 401 },
     );
   }
+  clearLoginFailures(user.username);
 
   if (!newPassword) {
     return NextResponse.json({ error: "Enter a new password" }, { status: 400 });

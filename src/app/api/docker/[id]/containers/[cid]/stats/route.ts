@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getConnection } from "@/lib/connections/store";
-import { readContainerStats } from "@/lib/connections/docker";
+import { readContainerStats, dockerErrorStatus } from "@/lib/connections/docker";
 import type { DockerConfig } from "@/lib/connections/types";
 import { formatError } from "@/lib/errors";
 
@@ -20,6 +20,6 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
     const stats = await readContainerStats(record.config as DockerConfig, cid);
     return NextResponse.json(stats);
   } catch (err) {
-    return NextResponse.json({ error: formatError(err) }, { status: 502 });
+    return NextResponse.json({ error: formatError(err) }, { status: dockerErrorStatus(err) });
   }
 }

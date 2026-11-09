@@ -57,7 +57,8 @@ describe("GET /api/kubernetes/[id]/proxy/[ns]/[name]", () => {
     connId = store.saveConnection({
       tech: "kubernetes",
       name: "prod",
-      config: { source: "path" },
+      // Inline, not a host path: a host-local connection caps non-admins at read.
+      config: { source: "inline", kubeconfigYaml: "apiVersion: v1\nkind: Config\n" },
       status: "ok",
       ownerId: owner.id,
     }).id;

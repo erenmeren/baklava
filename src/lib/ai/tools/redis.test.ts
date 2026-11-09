@@ -4,7 +4,7 @@ vi.mock("@/lib/connections/redis", () => ({
   info: vi.fn(async () => ({ server: {} })),
   listKeys: vi.fn(async () => ({ keys: [], scanned: 0, truncated: false })),
   getKey: vi.fn(async () => ({ key: "k", type: "string", ttl: -1, size: 1, value: { kind: "string", value: "v" } })),
-  setStringValue: vi.fn(async () => undefined),
+  setStringValue: vi.fn(async () => true),
   setTtl: vi.fn(async () => undefined),
   delKey: vi.fn(async () => undefined),
 }));
@@ -46,5 +46,30 @@ describe("redis_set_ttl escalation", () => {
   it("a long TTL, or clearing the expiry, stays a write", () => {
     expect(ttl().categoryFor?.({ ttlSeconds: 3600 })).toBe("write");
     expect(ttl().categoryFor?.({ ttlSeconds: -1 })).toBe("write");
+  });
+});
+
+describe("redis_set_string overwrite guard", () => {
+  beforeEach(() => vi.clearAllMocks());
+  const set = () => tools().find((t) => t.name === "redis_set_string")!;
+  it("escalates to destructive only with overwrite: true", () => {
+    expect(set().categoryFor?.({ key: "k", value: "v" })).toBe("write");
+    expect(set().categoryFor?.({ key: "k", value: "v", overwrite: false })).toBe("write");
+    expect(set().categoryFor?.({ key: "k", value: "v", overwrite: true })).toBe("destructive");
+  });
+  it("refuses to replace an existing key without overwrite (atomic SET NX)", async () => {
+    vi.mocked(r.setStringValue).mockResolvedValueOnce(false);
+    await expect(set().execute({ key: "k", value: "v", db: 2 })).rejects.toThrow(/already exists/);
+    expect(r.setStringValue).toHaveBeenCalledWith("c1", cfg, "k", "v", 2, { nx: true });
+  });
+  it("writes a missing key without overwrite", async () => {
+    vi.mocked(r.setStringValue).mockResolvedValueOnce(true);
+    await expect(set().execute({ key: "k", value: "v" })).resolves.toEqual({ ok: true, key: "k" });
+    expect(r.setStringValue).toHaveBeenCalledWith("c1", cfg, "k", "v", undefined, { nx: true });
+  });
+  it("replaces an existing key with overwrite: true, without NX", async () => {
+    vi.mocked(r.setStringValue).mockResolvedValueOnce(true);
+    await set().execute({ key: "k", value: "v", overwrite: true });
+    expect(r.setStringValue).toHaveBeenCalledWith("c1", cfg, "k", "v", undefined, { nx: false });
   });
 });

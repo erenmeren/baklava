@@ -16,9 +16,11 @@ async function getIoredis(): Promise<typeof import("ioredis")> {
 // ─────────────────────────────────────────────────────────────────────────────
 // Client cache
 //
-// One persistent client per connection so commands don't pay TCP+auth on every
-// request. Keyed by id + structural hash of the config — editing the
-// connection invalidates lazily on the next call.
+// One persistent client per (connection, db) so commands don't pay TCP+auth on
+// every request. Keyed by id + db + structural hash of the config — editing the
+// connection invalidates lazily on the next call. The db is fixed at connect
+// time (ioredis `db` option): a SELECT on a client shared by every user of the
+// connection would race concurrent requests and leak into later ones.
 // ─────────────────────────────────────────────────────────────────────────────
 
 type Client = Redis | Cluster;
@@ -65,7 +67,10 @@ function parseSeedNodes(spec: string): { host: string; port: number }[] {
     });
 }
 
-async function buildClient(cfg: RedisConfig): Promise<{ client: Client; isCluster: boolean }> {
+async function buildClient(
+  cfg: RedisConfig,
+  db: number,
+): Promise<{ client: Client; isCluster: boolean }> {
   const { default: RedisConstructor, Cluster: ClusterConstructor } = await getIoredis();
   if (cfg.mode === "cluster") {
     const seeds = parseSeedNodes(cfg.nodes ?? "");
@@ -91,7 +96,7 @@ async function buildClient(cfg: RedisConfig): Promise<{ client: Client; isCluste
     port: cfg.port ?? 6379,
     username: cfg.username || undefined,
     password: cfg.password || undefined,
-    db: cfg.db ?? 0,
+    db,
     tls: cfg.tls ? {} : undefined,
     lazyConnect: true,
     maxRetriesPerRequest: 1,
@@ -100,10 +105,17 @@ async function buildClient(cfg: RedisConfig): Promise<{ client: Client; isCluste
   return { client, isCluster: false };
 }
 
-async function bundleFor(connectionId: string, cfg: RedisConfig): Promise<ClientBundle> {
+async function bundleFor(
+  connectionId: string,
+  cfg: RedisConfig,
+  db?: number,
+): Promise<ClientBundle> {
   const cache = getCache();
   const hash = hashConfig(cfg);
-  const cached = cache.get(connectionId);
+  // Cluster has only db 0.
+  const resolvedDb = cfg.mode === "cluster" ? 0 : (db ?? cfg.db ?? 0);
+  const cacheKey = `${connectionId}\0${resolvedDb}`;
+  const cached = cache.get(cacheKey);
   if (cached && cached.hash === hash) return cached;
   if (cached) {
     try {
@@ -112,25 +124,26 @@ async function bundleFor(connectionId: string, cfg: RedisConfig): Promise<Client
       // ignore
     }
   }
-  const { client, isCluster } = await buildClient(cfg);
+  const { client, isCluster } = await buildClient(cfg, resolvedDb);
   // Suppress unhandled error noise — every command handler already inspects
   // promise rejections and surfaces them through formatError.
   client.on("error", () => {});
   const bundle: ClientBundle = { hash, client, isCluster };
-  cache.set(connectionId, bundle);
+  cache.set(cacheKey, bundle);
   return bundle;
 }
 
 export function dropRedisClient(connectionId: string): void {
   const cache = getCache();
-  const cached = cache.get(connectionId);
-  if (!cached) return;
-  try {
-    cached.client.disconnect();
-  } catch {
-    // ignore
+  for (const [key, cached] of cache) {
+    if (!key.startsWith(`${connectionId}\0`)) continue;
+    try {
+      cached.client.disconnect();
+    } catch {
+      // ignore
+    }
+    cache.delete(key);
   }
-  cache.delete(connectionId);
 }
 
 async function ensureConnected(client: Client): Promise<void> {
@@ -272,13 +285,10 @@ export async function listKeys(
   cfg: RedisConfig,
   options: { pattern?: string; db?: number } = {},
 ): Promise<KeysPage> {
-  const b = await bundleFor(connectionId, cfg);
+  const db = options.db ?? cfg.db ?? 0;
+  const b = await bundleFor(connectionId, cfg, db);
   await ensureConnected(b.client);
   const pattern = options.pattern?.trim() || "*";
-  const db = options.db ?? cfg.db ?? 0;
-  if (!b.isCluster && db !== (cfg.db ?? 0)) {
-    await (b.client as Redis).select(db);
-  }
   const seen = new Set<string>();
   let scanned = 0;
   let truncated = false;
@@ -425,11 +435,8 @@ export async function getKey(
   rawKey: string,
   db?: number,
 ): Promise<KeyDetail> {
-  const b = await bundleFor(connectionId, cfg);
+  const b = await bundleFor(connectionId, cfg, db);
   await ensureConnected(b.client);
-  if (!b.isCluster && typeof db === "number") {
-    await (b.client as Redis).select(db);
-  }
   const type = ((await b.client.type(rawKey)) as RedisType) ?? "none";
   const [ttl, size] = await Promise.all([
     b.client.ttl(rawKey).catch(() => -1),
@@ -527,11 +534,8 @@ export async function delKey(
   key: string,
   db?: number,
 ): Promise<void> {
-  const b = await bundleFor(connectionId, cfg);
+  const b = await bundleFor(connectionId, cfg, db);
   await ensureConnected(b.client);
-  if (!b.isCluster && typeof db === "number") {
-    await (b.client as Redis).select(db);
-  }
   await b.client.del(key);
 }
 
@@ -542,11 +546,8 @@ export async function setTtl(
   ttlSeconds: number,
   db?: number,
 ): Promise<void> {
-  const b = await bundleFor(connectionId, cfg);
+  const b = await bundleFor(connectionId, cfg, db);
   await ensureConnected(b.client);
-  if (!b.isCluster && typeof db === "number") {
-    await (b.client as Redis).select(db);
-  }
   if (ttlSeconds < 0) {
     await b.client.persist(key);
   } else {
@@ -560,13 +561,13 @@ export async function setStringValue(
   key: string,
   value: string,
   db?: number,
-): Promise<void> {
-  const b = await bundleFor(connectionId, cfg);
+  opts: { nx?: boolean } = {},
+): Promise<boolean> {
+  const b = await bundleFor(connectionId, cfg, db);
   await ensureConnected(b.client);
-  if (!b.isCluster && typeof db === "number") {
-    await (b.client as Redis).select(db);
-  }
-  await b.client.set(key, value);
+  // NX makes "only if absent" atomic; Redis answers null when the key existed.
+  const res = opts.nx ? await b.client.set(key, value, "NX") : await b.client.set(key, value);
+  return res === "OK";
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -582,6 +583,11 @@ export async function runCommand(
 ): Promise<unknown> {
   if (args.length === 0) throw new Error("Command is required");
   const head = args[0].toUpperCase();
+  if (head === "SELECT") {
+    // The CLI runs on the connection's shared client; SELECT would re-point it
+    // for every other request. Scope a key read/write with the db selector.
+    throw new Error("SELECT is not supported here — the CLI runs on the connection's default database");
+  }
   if (FORBIDDEN_AT_CLI.has(head)) {
     throw new Error(
       `${head} blocks the connection — use the dedicated panel instead`,
@@ -733,6 +739,14 @@ export interface AclSummary {
   list: string[];
 }
 
+/** `#<sha256>` is a password hash, `><password>` a plaintext password: drop both. */
+function redactAclRule(rule: string): string {
+  return rule
+    .split(" ")
+    .map((t) => (t.startsWith("#") || t.startsWith(">") ? `${t[0]}<redacted>` : t))
+    .join(" ");
+}
+
 export async function getAcl(
   connectionId: string,
   cfg: RedisConfig,
@@ -747,7 +761,7 @@ export async function getAcl(
     .catch(() => [] as unknown[])) as unknown[];
   return {
     whoami,
-    list: Array.isArray(list) ? list.map(String) : [],
+    list: Array.isArray(list) ? list.map((r) => redactAclRule(String(r))) : [],
   };
 }
 
@@ -773,7 +787,7 @@ export function subscribePubSub(
   let clientRef: Client | null = null;
   (async () => {
     try {
-      const { client } = await buildClient(cfg);
+      const { client } = await buildClient(cfg, cfg.db ?? 0);
       clientRef = client;
       client.on("error", (err: Error) => {
         output.write(
@@ -838,7 +852,7 @@ export interface MonitorStream {
 }
 
 export async function startMonitor(cfg: RedisConfig): Promise<MonitorStream> {
-  const { client } = await buildClient(cfg);
+  const { client } = await buildClient(cfg, cfg.db ?? 0);
   const output = new PassThrough({ objectMode: false });
   client.on("error", (err: Error) => {
     output.write(

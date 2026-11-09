@@ -1,6 +1,7 @@
 import "server-only";
-import YAML from "yaml";
+import dns from "node:dns/promises";
 import { assertHostAllowed, EgressBlockedError } from "./egress";
+import { formatError } from "@/lib/errors";
 import type { TechId } from "@/lib/connections/types";
 
 /** Host part of "host:port", "[v6]:port" or a URL; null when there is none. */
@@ -25,19 +26,22 @@ function mongoHosts(uri: string): string[] {
   return m ? m[1].split(",").map(hostOf).filter((h): h is string => !!h) : [];
 }
 
-function kubeServers(yaml: string): string[] {
-  try {
-    const doc = YAML.parse(yaml) as { clusters?: Array<{ cluster?: { server?: unknown } }> } | null;
-    return (doc?.clusters ?? [])
-      .map((c) => (typeof c?.cluster?.server === "string" ? hostOf(c.cluster.server) : null))
-      .filter((h): h is string => !!h);
-  } catch {
-    return [];
-  }
+/**
+ * Parse with the driver's own loader (js-yaml under client-node), so merge
+ * keys / anchors resolve exactly as they will at connect time. Throws when the
+ * driver couldn't load it either.
+ */
+async function kubeServers(yaml: string): Promise<string[]> {
+  const { KubeConfig } = await import("@kubernetes/client-node");
+  const kc = new KubeConfig();
+  kc.loadFromString(yaml);
+  return kc.clusters.flatMap((c) => [hostOf(c.server), c.proxyUrl ? hostOf(c.proxyUrl) : null]).filter(
+    (h): h is string => !!h,
+  );
 }
 
-/** Every host a connection config would make the server connect to. */
-export function targetHostsOf(tech: TechId, config: unknown): string[] {
+/** Every host a connection config would make the server connect to. Throws on an unloadable kubeconfig. */
+export async function targetHostsOf(tech: TechId, config: unknown): Promise<string[]> {
   const c = (config ?? {}) as Record<string, unknown>;
   const str = (v: unknown) => (typeof v === "string" ? v : "");
   const hosts: (string | null)[] = [];
@@ -60,7 +64,7 @@ export function targetHostsOf(tech: TechId, config: unknown): string[] {
       hosts.push(hostOf(str(c.endpoint)));
       break;
     case "kubernetes":
-      if (c.source === "inline") hosts.push(...kubeServers(str(c.kubeconfigYaml)));
+      if (c.source === "inline") hosts.push(...(await kubeServers(str(c.kubeconfigYaml))));
       break;
   }
   return [...new Set(hosts.filter((h): h is string => !!h))];
@@ -73,17 +77,34 @@ export function targetHostsOf(tech: TechId, config: unknown): string[] {
  * says and echo the error back, which made every `/test` route an SSRF and
  * port-scan oracle. Private and loopback targets stay allowed: reaching the
  * databases on your own network is the product. A name that doesn't resolve
- * is left for the driver to report.
+ * is refused: it can't be judged, and fails closed.
  */
 export async function egressRejection(tech: TechId, config: unknown): Promise<Response | null> {
-  for (const host of targetHostsOf(tech, config)) {
+  const reject = (error: string) => Response.json({ ok: false, error }, { status: 400 });
+  let hosts: string[];
+  try {
+    hosts = await targetHostsOf(tech, config);
+  } catch (err) {
+    return reject(`Invalid kubeconfig: ${formatError(err)}`);
+  }
+  const c = (config ?? {}) as Record<string, unknown>;
+  // A mongodb+srv name is an SRV record (often with no A record); the driver
+  // connects to the SRV targets, so those are what gets judged.
+  const srv = tech === "mongo" && typeof c.uri === "string" && /^mongodb\+srv:/i.test(c.uri);
+  for (const host of hosts) {
+    let names: string[];
     try {
-      await assertHostAllowed(host);
-    } catch (err) {
-      if (err instanceof EgressBlockedError && err.category !== "unresolved") {
-        return Response.json({ ok: false, error: err.message }, { status: 400 });
+      names = srv ? (await dns.resolveSrv(`_mongodb._tcp.${host}`)).map((r) => r.name) : [host];
+    } catch {
+      return reject(`Could not resolve ${host}`);
+    }
+    for (const name of names) {
+      try {
+        await assertHostAllowed(name);
+      } catch (err) {
+        if (err instanceof EgressBlockedError && err.category !== "unresolved") return reject(err.message);
+        return reject(`Could not resolve ${name}`);
       }
-      // DNS failure / unresolved: not our call to make.
     }
   }
   return null;

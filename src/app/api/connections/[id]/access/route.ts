@@ -1,7 +1,7 @@
 import { requireUser, authErrorResponse } from "@/lib/auth/current-user";
 import { getUserById, listUsers, publicUser } from "@/lib/auth/users";
 import { getConnection } from "@/lib/connections/store";
-import { getGrants, setGrants, type AccessLevel } from "@/lib/connections/access";
+import { getGrants, isHostLocal, setGrants, type AccessLevel } from "@/lib/connections/access";
 
 export const runtime = "nodejs";
 
@@ -45,7 +45,14 @@ export async function GET(req: Request, ctx: RouteContext) {
       ownerId: conn!.ownerId ?? null,
       ownerUsername: owner?.username ?? null,
       grants,
-      users: listUsers().map(publicUser),
+      // Owners only need someone to grant to; roles and disabled flags stay
+      // admin-only so a member can't enumerate the user directory.
+      users:
+        gate.user.role === "admin"
+          ? listUsers().map(publicUser)
+          : listUsers()
+              .filter((u) => !u.disabled)
+              .map((u) => ({ id: u.id, username: u.username })),
     });
   } catch (err) {
     return authErrorResponse(err) ?? Response.json({ error: "Internal error" }, { status: 500 });
@@ -74,6 +81,15 @@ export async function PUT(req: Request, ctx: RouteContext) {
         return Response.json({ error: `Unknown user ${userId}` }, { status: 400 });
       }
       clean[userId] = level;
+    }
+    if (Object.values(clean).includes("write") && isHostLocal(id)) {
+      return Response.json(
+        {
+          error:
+            "This connection runs with the Baklava host's privileges (Docker socket or host kubeconfig) — only admins can write to it. Grant read instead.",
+        },
+        { status: 400 },
+      );
     }
 
     setGrants(id, clean);

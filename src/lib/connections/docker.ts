@@ -21,18 +21,69 @@ async function getDockerode(): Promise<DockerConstructor> {
   }
 }
 
+/** A container/image/network/volume/exec id that failed validation — routes answer 400. */
+export class InvalidDockerIdError extends Error {
+  constructor(kind: string, id: string) {
+    super(`Invalid ${kind} id: ${JSON.stringify(id)}`);
+    this.name = "InvalidDockerIdError";
+  }
+}
+
+/** HTTP status for an error thrown by a docker helper: 400 for a bad id, 502 otherwise. */
+export function dockerErrorStatus(err: unknown): number {
+  return err instanceof InvalidDockerIdError ? 400 : 502;
+}
+
+const NAME_OR_ID = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
+// name[:port](/component)*[:tag][@algo:hex] — no empty or dot-led segment, no
+// `?` / `#` / `%` / whitespace.
+const IMAGE_REF =
+  /^[A-Za-z0-9][A-Za-z0-9_.-]*(?::[0-9]+)?(?:\/[A-Za-z0-9][A-Za-z0-9_.-]*)*(?::[A-Za-z0-9_][A-Za-z0-9_.-]*)?(?:@[A-Za-z0-9]+:[A-Fa-f0-9]+)?$/;
+
+function checkId(kind: string, id: string, re: RegExp): string {
+  if (typeof id !== "string" || !re.test(id) || id.includes("..")) {
+    throw new InvalidDockerIdError(kind, String(id));
+  }
+  return id;
+}
+
+/**
+ * dockerode builds request paths by raw concatenation (`'/containers/' + id +
+ * '/json?'`) and Next decodes `%2F` in route params, so an id like
+ * `../swarm?` would reach a different Engine endpoint. Every getX goes through
+ * here, so no helper (or compose / loadtest caller) can skip the check.
+ */
+function guardIds(client: Docker): Docker {
+  const c = client as unknown as Record<string, (id: string) => unknown>;
+  for (const [method, kind, re] of [
+    ["getContainer", "container", NAME_OR_ID],
+    ["getNetwork", "network", NAME_OR_ID],
+    ["getVolume", "volume", NAME_OR_ID],
+    ["getExec", "exec", NAME_OR_ID],
+    ["getImage", "image", IMAGE_REF],
+  ] as const) {
+    const orig = c[method].bind(client);
+    c[method] = (id: string) => orig(checkId(kind, id, re));
+  }
+  return client;
+}
+
 export async function createDockerClient(config: DockerConfig): Promise<Docker> {
   const Dockerode = await getDockerode();
   if (config.mode === "tcp") {
-    return new Dockerode({
-      host: config.host,
-      port: config.port,
-      protocol: config.protocol ?? "http",
-    });
+    return guardIds(
+      new Dockerode({
+        host: config.host,
+        port: config.port,
+        protocol: config.protocol ?? "http",
+      }),
+    );
   }
-  return new Dockerode({
-    socketPath: config.socketPath || "/var/run/docker.sock",
-  });
+  return guardIds(
+    new Dockerode({
+      socketPath: config.socketPath || "/var/run/docker.sock",
+    }),
+  );
 }
 
 export async function pingDocker(config: DockerConfig): Promise<{

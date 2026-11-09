@@ -15,6 +15,9 @@ export interface RunOptions {
   signal?: AbortSignal;
   /** Source of secret env vars (defaults to process.env). */
   env?: Record<string, string | undefined>;
+  /** Allow loopback / private targets (default true). Only admins get this:
+   *  a load test sends arbitrary method/body/headers, e.g. to localhost:2375. */
+  allowInternalTargets?: boolean;
 }
 
 export async function runLoadTest(
@@ -27,7 +30,11 @@ export async function runLoadTest(
   // Private/loopback stay allowed (the localhost→host.docker.internal rewrite
   // is the intended "test my local service" path).
   const targetHost = new URL(normalizeBaseUrl(config.target.baseUrl)).hostname;
-  const ips = await assertHostAllowed(targetHost);
+  const internal = opts.allowInternalTargets !== false;
+  const ips = await assertHostAllowed(targetHost.replace(/^\[|\]$/g, ""), {
+    allowPrivate: internal,
+    allowLoopback: internal,
+  });
   // Pin a real hostname to the address we just checked (see script-gen). IP
   // literals need no pin, and a localhost target is rewritten to
   // host.docker.internal, which only resolves inside the k6 container.
@@ -40,7 +47,13 @@ export async function runLoadTest(
   // If an operator allow-listed an address inside a blocked range, that range
   // can't be blacklisted wholesale — fall back to not following redirects.
   const { cidrs, carvedOut } = blockedCidrsHonouringAllowList();
-  const script = generateK6Script(config, { pinnedHosts, blockedCidrs: cidrs, noRedirects: carvedOut });
+  // k6's blacklist only covers the always-blocked ranges, so when internal
+  // targets are off a redirect could still lead inside — don't follow any.
+  const script = generateK6Script(config, {
+    pinnedHosts,
+    blockedCidrs: cidrs,
+    noRedirects: carvedOut || !internal,
+  });
 
   const env = opts.env ?? process.env;
   const secrets: Record<string, string> = {};

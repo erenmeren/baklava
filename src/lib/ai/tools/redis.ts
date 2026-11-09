@@ -32,11 +32,22 @@ export function redisTools(connectionId: string, config: RedisConfig): AiTool[] 
     },
     {
       name: "redis_set_string",
-      description: "Set a string key's value.",
+      description:
+        "Set a string key's value. Refuses to replace an existing key (of any type) unless overwrite is true.",
       category: "write",
-      inputSchema: z.object({ key: z.string(), value: z.string(), db: dbArg }),
-      execute: async ({ key, value, db }) => {
-        await setStringValue(connectionId, config, key as string, value as string, db as number | undefined);
+      // SET replaces any existing key, whatever its type — a hash or stream is gone.
+      categoryFor: ({ overwrite }) => (overwrite === true ? "destructive" : "write"),
+      inputSchema: z.object({
+        key: z.string(),
+        value: z.string(),
+        db: dbArg,
+        overwrite: z.boolean().optional().describe("Replace the key if it already exists. DESTRUCTIVE."),
+      }),
+      execute: async ({ key, value, db, overwrite }) => {
+        const written = await setStringValue(connectionId, config, key as string, value as string, db as number | undefined, {
+          nx: overwrite !== true,
+        });
+        if (!written) throw new Error(`"${key}" already exists; pass overwrite: true to replace it.`);
         return { ok: true, key };
       },
     },

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getConnection } from "@/lib/connections/store";
-import { removeNetwork } from "@/lib/connections/docker";
+import { removeNetwork, dockerErrorStatus } from "@/lib/connections/docker";
 import type { DockerConfig } from "@/lib/connections/types";
 import { formatError } from "@/lib/errors";
 
@@ -20,6 +20,6 @@ export async function DELETE(_req: NextRequest, ctx: RouteContext) {
     await removeNetwork(record.config as DockerConfig, decodeURIComponent(netId));
     return NextResponse.json({ ok: true });
   } catch (err) {
-    return NextResponse.json({ error: formatError(err) }, { status: 502 });
+    return NextResponse.json({ error: formatError(err) }, { status: dockerErrorStatus(err) });
   }
 }

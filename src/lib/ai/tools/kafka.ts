@@ -18,8 +18,12 @@ import {
 } from "@/lib/connections/kafka";
 import type { AiTool } from "./types";
 
-// Topic configs whose new value can make the broker delete existing messages.
-const DATA_DROPPING_CONFIG = /^(?:local\.)?retention\.|^cleanup\.policy$|^segment\.|^delete\.retention\.ms$/;
+// Allowlist, not denylist: too many topic configs can delete messages (retention,
+// cleanup, segment, compaction lag, remote.log.delete.on.disable), lose them
+// (unclean.leader.election.enable, min.insync.replicas) or reject producers
+// (max.message.bytes). Only keys that affect encoding / index density of NEW
+// writes and can't drop, lose or refuse data stay a plain write.
+const SAFE_TOPIC_CONFIG = new Set(["compression.type", "index.interval.bytes"]);
 
 export function kafkaTools(_connectionId: string, config: KafkaConfig): AiTool[] {
   return [
@@ -122,11 +126,11 @@ export function kafkaTools(_connectionId: string, config: KafkaConfig): AiTool[]
     {
       name: "kafka_alter_topic_config",
       description:
-        "Set topic config entries (e.g. retention.ms). Retention, cleanup and segment settings are DESTRUCTIVE — lowering them deletes messages.",
+        "Set topic config entries (e.g. retention.ms). DESTRUCTIVE unless every entry is compression.type or index.interval.bytes — retention, cleanup, segment, replication and size settings can delete, lose or reject messages.",
       category: "write",
       categoryFor: ({ entries }) =>
-        Array.isArray(entries) &&
-        entries.some((e) => DATA_DROPPING_CONFIG.test(String((e as { name?: unknown })?.name ?? "")))
+        !Array.isArray(entries) ||
+        entries.some((e) => !SAFE_TOPIC_CONFIG.has(String((e as { name?: unknown })?.name ?? "")))
           ? "destructive"
           : "write",
       inputSchema: z.object({

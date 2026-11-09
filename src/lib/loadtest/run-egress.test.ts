@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { runLoadTest } from "./run-load-test";
 
 const cfg = {
@@ -56,3 +56,30 @@ describe("loadtest egress — what k6 is told", () => {
     expect(optionsOf(c.script()).hosts).toBeUndefined();
   });
 });
+
+describe("loadtest egress — internal targets refused when not allowed", () => {
+  const executor = { run: vi.fn(async () => ({ summary: {} }) as never) };
+  afterEach(() => executor.run.mockClear());
+
+  it.each(["http://localhost:2375", "http://127.0.0.1:2375", "http://10.0.0.5", "http://[::1]:8080", "http://192.168.1.1"])(
+    "refuses %s before running k6",
+    async (baseUrl) => {
+      await expect(
+        runLoadTest({ ...cfg, target: { baseUrl } }, { executor: executor as never, allowInternalTargets: false }),
+      ).rejects.toThrow(/blocked/i);
+      expect(executor.run).not.toHaveBeenCalled();
+    },
+  );
+
+  it("a public target still runs, without following redirects (a 30x could point inside)", async () => {
+    let script = "";
+    const ex = { run: async (s: string) => ((script = s), { summary: {} }) as never };
+    await runLoadTest(
+      { ...cfg, target: { baseUrl: "http://8.8.8.8" } },
+      { executor: ex as never, allowInternalTargets: false },
+    ).catch(() => {});
+    const o = JSON.parse(script.match(/export const options = (\{[\s\S]*?\n\});/)![1]);
+    expect(o.maxRedirects).toBe(0);
+  });
+});
+
