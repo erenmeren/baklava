@@ -187,6 +187,25 @@ test.describe("kubernetes workspace", () => {
     await expectNoErrorBanner(page);
   });
 
+  test("topology shows the node, its workloads, and the orbit view", async ({ page }) => {
+    await openWorkspace(page);
+    const base = new URL(page.url()).pathname.replace(/\/pods$/, "");
+    await page.goto(`${base}?ns=*`);
+    await page.getByRole("link", { name: "Topology" }).click();
+    await expect(page).toHaveURL(/\/topology/);
+    // The sidebar link lands in the connection's namespace; the seed lives in demo.
+    await page.goto(`${base}/topology?ns=demo`);
+    // Single-node k3s labels its node control-plane.
+    const card = page.getByRole("button", { name: /control-plane/ }).first();
+    await expect(card).toBeVisible({ timeout: 15_000 });
+    await card.click();
+    await expect(card).toHaveAttribute("aria-expanded", "true");
+    await expect(page.getByRole("row", { name: /demo\/storefront/ })).toBeVisible();
+    await page.getByRole("button", { name: "Orbit" }).click();
+    await expect(page.getByRole("img", { name: "cluster orbit" })).toBeVisible();
+    await expectNoErrorBanner(page);
+  });
+
   test("nodes screen reports real usage from metrics-server", async ({ page }) => {
     await openWorkspace(page);
     const base = new URL(page.url()).pathname.replace(/\/pods$/, "");

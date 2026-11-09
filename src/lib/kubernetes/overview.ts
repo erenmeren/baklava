@@ -111,7 +111,7 @@ const BAD_WAITING = new Set([
 ]);
 const PRESSURE = ["MemoryPressure", "DiskPressure", "PIDPressure"];
 
-function podAttention(p: PodLike, now: Date): AttentionItem | null {
+export function podAttention(p: PodLike, now: Date): AttentionItem | null {
   const base = { kind: "Pod" as const, namespace: p.metadata?.namespace, name: p.metadata?.name ?? "—" };
   const statuses = p.status?.containerStatuses ?? [];
   for (const cs of statuses) {

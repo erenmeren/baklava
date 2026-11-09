@@ -98,7 +98,10 @@ export function K8sSidebar({
 
   return (
     <div className="flex flex-col gap-3 font-mono text-[12px]">
-      <Link href={base} className={cn("rounded-sm px-2 py-1.5 transition-colors", pathname === base ? "bg-cyan-500/12 text-foreground" : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground")}>Overview</Link>
+      <div className="space-y-px">
+        <Link href={base} className={cn("block rounded-sm px-2 py-1.5 transition-colors", pathname === base ? "bg-cyan-500/12 text-foreground" : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground")}>Overview</Link>
+        <Link href={`${base}/topology`} className={cn("block rounded-sm px-2 py-1.5 transition-colors", isActive(`${base}/topology`) ? "bg-cyan-500/12 text-foreground" : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground")}>Topology</Link>
+      </div>
       {RESOURCE_GROUPS.map((group) => {
         const items = itemsFor(group);
         // The group holding the current page never folds away.
