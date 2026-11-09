@@ -141,7 +141,7 @@ shadcn wrappers in `src/components/ui/` re-export `@base-ui/react/*` primitives.
 
 ### Theme (neon glass, dark only)
 
-There is one theme — no light mode, no toggle. Tokens live in a single `:root` block in `src/app/globals.css`; `<html>` always carries `.dark` so existing `dark:` variants apply. Surfaces are translucent and blur the fixed body glow through one CSS rule (`[data-slot="card"], .bg-card, .bg-popover, .bg-sidebar, .glass`) — don't add per-component `backdrop-blur`. Dense data (tables, results, logs) stays on the more opaque `bg-background` tints for legibility. Headline numbers use `neon-text` plus a tone colour (`text-emerald-300` ok, `text-sky-300` neutral, amber/red/rose for warn/alert). Editors (CodeMirror) and toasts are hard-wired to dark.
+There is one theme — no light mode, no toggle. Tokens live in a single `:root` block in `src/app/globals.css`; `<html>` always carries `.dark` so existing `dark:` variants apply. The backdrop is a slowly drifting colour mesh on `body::before` plus vignette + grain on `body::after` (both `position: fixed; z-index: -1` — don't give `body` its own `background-image`). Surfaces are translucent and blur that backdrop through one CSS rule (`[data-slot="card"], .bg-card, .bg-popover, .bg-sidebar, .glass`) — don't add per-component `backdrop-blur`. Dense data (tables, results, logs) stays on the more opaque `bg-background` tints for legibility. Headline numbers use `neon-text` plus a tone colour (`text-emerald-300` ok, `text-sky-300` neutral, amber/red/rose for warn/alert). Editors (CodeMirror) and toasts are hard-wired to dark.
 
 ### Kubernetes workspace
 

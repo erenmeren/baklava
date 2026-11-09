@@ -153,9 +153,13 @@
   --sidebar-ring: oklch(0.84 0.19 160);
 
   /* The fixed glow behind everything. */
-  --glow-a: oklch(0.72 0.19 162 / 0.55);
-  --glow-b: oklch(0.68 0.18 238 / 0.50);
-  --glow-c: oklch(0.88 0.21 125 / 0.22);
+  --glow-a: oklch(0.70 0.19 162 / 0.70);
+  --glow-b: oklch(0.62 0.19 245 / 0.70);
+  --glow-c: oklch(0.78 0.15 180 / 0.32);
+  --glow-d: oklch(0.55 0.15 205 / 0.60);
+  --glow-e: oklch(0.50 0.20 285 / 0.40);
+  /* Film grain (SVG turbulence), shared by the backdrop and glass. */
+  --grain: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.07 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
 }
 
 @layer base {
@@ -171,11 +175,44 @@
   body {
     @apply bg-background text-foreground;
     font-feature-settings: "cv11", "ss01", "ss03";
-    background-image:
-      radial-gradient(ellipse 65% 60% at 0% 100%, var(--glow-a), transparent 72%),
-      radial-gradient(ellipse 60% 55% at 100% 0%, var(--glow-b), transparent 72%),
-      radial-gradient(ellipse 35% 35% at 60% 50%, var(--glow-c), transparent 72%);
-    background-attachment: fixed;
+  }
+  /* Backdrop: a slowly drifting mesh of large soft colour fields (no blur
+     filter — the gradients are pre-softened, so only a transform animates),
+     a vignette, and fine grain on top so the dark gradients never band. */
+  body::before,
+  body::after {
+    content: "";
+    position: fixed;
+    pointer-events: none;
+    z-index: -1;
+  }
+  body::before {
+    inset: -25%;
+    background:
+      radial-gradient(40% 35% at 18% 78%, var(--glow-a), transparent 70%),
+      radial-gradient(38% 34% at 85% 15%, var(--glow-b), transparent 70%),
+      radial-gradient(26% 24% at 58% 52%, var(--glow-c), transparent 70%),
+      radial-gradient(34% 30% at 40% 18%, var(--glow-d), transparent 70%),
+      radial-gradient(30% 28% at 82% 82%, var(--glow-e), transparent 70%);
+    animation: mesh-drift 48s ease-in-out infinite alternate;
+    will-change: transform;
+  }
+  body::after {
+    inset: 0;
+    background:
+      radial-gradient(120% 90% at 50% 40%, transparent 50%, oklch(0.07 0.012 240 / 0.85) 100%),
+      var(--grain);
+    background-size: auto, 160px 160px;
+    opacity: 1;
+    mix-blend-mode: normal;
+  }
+  @keyframes mesh-drift {
+    0% { transform: translate3d(0, 0, 0) rotate(0deg) scale(1); }
+    50% { transform: translate3d(4%, -3%, 0) rotate(8deg) scale(1.06); }
+    100% { transform: translate3d(-3%, 4%, 0) rotate(-6deg) scale(1.02); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    body::before { animation: none; }
   }
   /* Glass: every translucent surface blurs the glow behind it. Menus and
      dialogs are more opaque (--popover) so dense content stays legible. */
@@ -184,14 +221,16 @@
   .bg-popover,
   .bg-sidebar,
   .glass {
-    -webkit-backdrop-filter: blur(16px) saturate(150%);
-    backdrop-filter: blur(16px) saturate(150%);
+    -webkit-backdrop-filter: blur(28px) saturate(170%);
+    backdrop-filter: blur(28px) saturate(170%);
   }
-  /* A glass edge: a faint top highlight catches the "light". */
+  /* A glass edge: a hairline of light along the top, a darker one below. */
   .bg-card,
   .bg-popover,
   .glass {
-    box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.07);
+    box-shadow:
+      inset 0 1px 0 oklch(1 0 0 / 0.12),
+      inset 0 -1px 0 oklch(0 0 0 / 0.25);
   }
   /* Neon numbers: a soft halo in the text's own color. */
   .neon-text {
@@ -380,7 +419,6 @@
   }
   .tile-neon:hover {
     transform: translateY(-3px);
-    border-color: oklch(0.86 0.19 158 / 0.45);
     box-shadow:
       var(--glass-tile-edge),
       -18px 8px 40px -10px oklch(0.84 0.19 160 / 0.45),
@@ -394,34 +432,70 @@
      diagonal reflection. */
   .glass-tile {
     --glass-tile-edge:
-      inset 0 1px 0 oklch(1 0 0 / 0.28),
-      inset 0 -2px 0 oklch(0 0 0 / 0.45),
-      inset 1px 0 0 oklch(1 0 0 / 0.08),
-      inset -1px 0 0 oklch(1 0 0 / 0.05),
-      inset 0 0 24px oklch(1 0 0 / 0.05);
-    background: linear-gradient(
-      150deg,
-      oklch(1 0 0 / 0.11) 0%,
-      oklch(1 0 0 / 0.04) 45%,
-      oklch(1 0 0 / 0.02) 100%
-    );
-    border: 1px solid oklch(1 0 0 / 0.14);
-    -webkit-backdrop-filter: blur(22px) saturate(180%);
-    backdrop-filter: blur(22px) saturate(180%);
-    box-shadow: var(--glass-tile-edge), 0 14px 32px -14px oklch(0 0 0 / 0.65);
+      inset 0 1px 1px oklch(1 0 0 / 0.30),
+      inset 0 -1px 1px oklch(0 0 0 / 0.35),
+      inset 0 0 0 0.5px oklch(1 0 0 / 0.06),
+      inset 0 18px 30px -18px oklch(1 0 0 / 0.16);
+    background:
+      var(--grain) 0 0 / 160px 160px,
+      linear-gradient(
+        165deg,
+        oklch(1 0 0 / 0.075) 0%,
+        oklch(1 0 0 / 0.03) 45%,
+        oklch(1 0 0 / 0.015) 100%
+      );
+    background-blend-mode: overlay, normal;
+    border: 1px solid transparent;
+    -webkit-backdrop-filter: blur(30px) saturate(170%);
+    backdrop-filter: blur(30px) saturate(170%);
+    box-shadow:
+      var(--glass-tile-edge),
+      0 1px 2px oklch(0 0 0 / 0.35),
+      0 18px 40px -18px oklch(0 0 0 / 0.75);
     overflow: hidden;
   }
+  /* Specular: a soft light pooled at the top-left, like a lamp above. */
   .glass-tile::before {
     content: "";
     position: absolute;
     inset: 0;
     border-radius: inherit;
     pointer-events: none;
+    background:
+      radial-gradient(120% 70% at 15% -10%, oklch(1 0 0 / 0.16), transparent 55%),
+      radial-gradient(80% 50% at 100% 110%, oklch(0.85 0.15 200 / 0.08), transparent 60%);
+  }
+  /* Rim: a gradient hairline — bright where the light hits (top-left),
+     nearly gone on the sides, picking up again at the bottom-right. */
+  .glass-tile::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    pointer-events: none;
     background: linear-gradient(
-      125deg,
-      oklch(1 0 0 / 0.14) 0%,
-      oklch(1 0 0 / 0.03) 32%,
-      transparent 33%
+      150deg,
+      oklch(1 0 0 / 0.55) 0%,
+      oklch(1 0 0 / 0.12) 22%,
+      oklch(1 0 0 / 0.04) 50%,
+      oklch(1 0 0 / 0.10) 78%,
+      oklch(1 0 0 / 0.28) 100%
+    );
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    transition: opacity 240ms ease;
+  }
+  .glass-tile.tile-neon:hover::after {
+    background: linear-gradient(
+      150deg,
+      oklch(0.95 0.15 160 / 0.9) 0%,
+      oklch(0.86 0.19 158 / 0.25) 30%,
+      oklch(0.78 0.15 230 / 0.12) 60%,
+      oklch(0.80 0.15 230 / 0.6) 100%
     );
   }
 
