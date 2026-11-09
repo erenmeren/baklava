@@ -109,6 +109,10 @@ export default defineConfig({
               : [],
           testTimeout: 30_000,
           hookTimeout: 60_000,
+          // The files share one set of live services (e.g. several k8s
+          // suites scale/restart the same `storefront` deployment), so run
+          // them one file at a time.
+          fileParallelism: false,
         },
       },
     ],

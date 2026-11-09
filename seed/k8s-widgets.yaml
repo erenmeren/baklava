@@ -1,0 +1,10 @@
+# Instances of the demo CRD from k8s-extras.yaml — applied once it's Established.
+apiVersion: demo.baklava.dev/v1
+kind: Widget
+metadata: { name: small-blue, namespace: demo }
+spec: { color: blue, size: 1 }
+---
+apiVersion: demo.baklava.dev/v1
+kind: Widget
+metadata: { name: large-red, namespace: demo }
+spec: { color: red, size: 9 }

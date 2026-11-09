@@ -115,3 +115,26 @@ describe("K8sShell auto-refresh", () => {
     spy.mockRestore();
   });
 });
+
+describe("K8sShell apply entry points", () => {
+  beforeEach(() => {
+    search = new URLSearchParams("ns=billing");
+  });
+
+  it("the header button opens the apply overlay", () => {
+    renderShell();
+    fireEvent.click(screen.getByRole("button", { name: /\+\s*apply/ }));
+    expect(screen.getByRole("dialog", { name: "Apply YAML" })).toBeTruthy();
+    expect(screen.getByText("billing", { selector: "span.text-foreground" })).toBeTruthy();
+  });
+
+  it("`:apply` in the command palette opens it too", () => {
+    renderShell();
+    fireEvent.keyDown(window, { key: ":" });
+    const input = screen.getByPlaceholderText(/pods/);
+    fireEvent.change(input, { target: { value: "apply" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(screen.getByRole("dialog", { name: "Apply YAML" })).toBeTruthy();
+    expect(push).not.toHaveBeenCalled();
+  });
+});

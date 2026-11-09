@@ -1,10 +1,13 @@
+import { headers } from "next/headers";
 import { WorkspaceShell } from "@/components/workspace/workspace-shell";
 import { getTech } from "@/lib/tech-catalog";
 import { requireConnection } from "@/lib/connections/server";
 import type { KubernetesConfig } from "@/lib/connections/types";
-import { listNamespaces, probe } from "@/lib/connections/kubernetes";
+import { bundleFor, listNamespaces, probe } from "@/lib/connections/kubernetes";
+import { getCurrentUser } from "@/lib/auth/current-user";
 import { K8sSidebar } from "./k8s-sidebar";
 import { K8sShell } from "./k8s-shell";
+import { ContextSwitcher } from "./context-switcher";
 
 export const dynamic = "force-dynamic";
 
@@ -28,10 +31,18 @@ export default async function KubernetesWorkspaceLayout({
   // Probe + namespaces are best-effort. If the cluster is unreachable we still
   // render the shell so the user can navigate to /kubernetes and fix the
   // connection without a hard 500.
-  const [probeResult, nsRows] = await Promise.all([
+  const [probeResult, nsRows, contexts] = await Promise.all([
     probe(connectionId, cfg).catch(() => null),
     listNamespaces(connectionId, cfg).catch(() => null),
+    // Names only — the kubeconfig itself never goes to the browser.
+    bundleFor(connectionId, cfg).then(
+      (b) => b.kc.getContexts().map((c) => c.name),
+      () => [] as string[],
+    ),
   ]);
+  // `context` is a target key (target-keys.ts): the PATCH refuses anyone else.
+  const user = getCurrentUser({ headers: await headers() });
+  const canSwitchContext = user?.role === "admin" || (!!user && user.id === record.ownerId);
 
   const context = probeResult?.context || cfg.context || "current-context";
   const serverVersion = probeResult?.serverVersion || "unknown";
@@ -61,6 +72,14 @@ export default async function KubernetesWorkspaceLayout({
         defaultNamespace={cfg.namespace ?? ""}
         context={context}
         serverVersion={serverVersion}
+        contextSlot={
+          <ContextSwitcher
+            connectionId={connectionId}
+            current={context}
+            contexts={contexts}
+            canSwitch={canSwitchContext}
+          />
+        }
       >
         {children}
       </K8sShell>

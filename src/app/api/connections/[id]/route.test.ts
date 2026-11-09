@@ -180,6 +180,52 @@ describe("PATCH /api/connections/[id]", () => {
   });
 });
 
+describe("PATCH kubernetes context (workspace context switcher)", () => {
+  const KUBECONFIG = [
+    "apiVersion: v1",
+    "kind: Config",
+    "clusters: [{ name: c, cluster: { server: 'https://127.0.0.1:6443' } }]",
+    "users: [{ name: u, user: { token: t } }]",
+    "contexts: [{ name: one, context: { cluster: c, user: u } }, { name: two, context: { cluster: c, user: u } }]",
+    "current-context: one",
+  ].join("\n");
+
+  async function seedK8s() {
+    const ctx = await seed();
+    const writer = ctx.users.createUser({ username: "writer", password: "pw", role: "member" });
+    const k8s = ctx.store.saveConnection({
+      tech: "kubernetes",
+      name: "cluster",
+      config: { source: "inline", kubeconfigYaml: KUBECONFIG, context: "one" } as unknown as Record<string, unknown>,
+      status: "untested",
+      ownerId: ctx.owner.id,
+    });
+    ctx.access.setGrants(k8s.id, { [writer.id]: "write" });
+    return { ...ctx, k8s, writerToken: ctx.session.createSessionToken(writer.id) };
+  }
+
+  const patchContext = (id: string, token: string) =>
+    jsonReq(`http://localhost/api/connections/${id}`, "PATCH", { config: { context: "two" } }, token);
+
+  it("a write grantee cannot switch the context", async () => {
+    const ctx = await seedK8s();
+    const res = await ctx.route.PATCH(patchContext(ctx.k8s.id, ctx.writerToken), params(ctx.k8s.id));
+    expect(res.status).toBe(403);
+    expect((await res.json()).error).toMatch(/context/);
+    expect((ctx.store.getConnection(ctx.k8s.id)!.config as { context?: string }).context).toBe("one");
+  });
+
+  it("the owner can", async () => {
+    const ctx = await seedK8s();
+    const res = await ctx.route.PATCH(patchContext(ctx.k8s.id, ctx.ownerToken), params(ctx.k8s.id));
+    expect(res.status).toBe(200);
+    const cfg = ctx.store.getConnection(ctx.k8s.id)!.config as { context?: string; kubeconfigYaml?: string };
+    expect(cfg.context).toBe("two");
+    // The stored kubeconfig survives a context-only PATCH.
+    expect(cfg.kubeconfigYaml).toBe(KUBECONFIG);
+  });
+});
+
 describe("DELETE /api/connections/[id]", () => {
   it("owner can delete", async () => {
     const ctx = await seed();

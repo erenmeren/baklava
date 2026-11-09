@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { mockFetch } from "@/test/fetch-mock";
 import { K8sContextProvider, type K8sContextValue } from "./k8s-context";
 import { ResourceTable, type Column } from "./resource-table";
@@ -11,6 +11,7 @@ let selectParam: string | null = null;
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh, push: vi.fn(), replace: vi.fn() }),
   useSearchParams: () => new URLSearchParams(selectParam ? `select=${selectParam}` : ""),
+  usePathname: () => "/kubernetes/conn-1/pods",
 }));
 
 interface Row {
@@ -339,5 +340,53 @@ describe("ResourceTable yaml view", () => {
     fireEvent.keyDown(window, { key: "y" });
 
     expect(await screen.findByText(/name\s+: api-0/)).toBeTruthy();
+  });
+});
+
+describe("ResourceTable live updates", () => {
+  type Listener = (e: { data: string }) => void;
+  class FakeEventSource {
+    static last: FakeEventSource | null = null;
+    listeners = new Map<string, Listener>();
+    closed = false;
+    constructor(public url: string) {
+      FakeEventSource.last = this;
+    }
+    addEventListener(name: string, fn: Listener) {
+      this.listeners.set(name, fn);
+    }
+    close() {
+      this.closed = true;
+    }
+    emit(name: string, data: unknown) {
+      act(() => this.listeners.get(name)?.({ data: JSON.stringify(data) }));
+    }
+  }
+  beforeEach(() => vi.stubGlobal("EventSource", FakeEventSource));
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("subscribes to the resource from the URL and merges watch events", () => {
+    const { unmount } = renderTable();
+    const es = FakeEventSource.last!;
+    expect(es.url).toBe("/api/kubernetes/conn-1/watch/pods?ns=*");
+
+    es.emit("reset", { rows: ROWS, truncated: false, remaining: null, keep: [], newestFirst: false });
+    expect(screen.getByText("live")).toBeTruthy();
+
+    es.emit("upsert", { name: "api-2", namespace: "payments", status: "Pending" });
+    expect(screen.getByText("api-2")).toBeTruthy();
+    es.emit("upsert", { name: "api-0", namespace: "payments", status: "CrashLoopBackOff" });
+    expect(screen.getByText("CrashLoopBackOff")).toBeTruthy();
+    es.emit("delete", { key: "payments/api-1" });
+    expect(screen.queryByText("api-1")).toBeNull();
+
+    unmount();
+    expect(es.closed).toBe(true);
+  });
+
+  it("shows reconnecting after the stream drops", () => {
+    renderTable();
+    FakeEventSource.last!.emit("error", {});
+    expect(screen.getByText("reconnecting…")).toBeTruthy();
   });
 });

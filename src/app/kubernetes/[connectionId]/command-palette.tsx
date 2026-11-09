@@ -22,6 +22,12 @@ const RESOURCE_SUGGESTIONS: Suggestion[] = K8S_RESOURCES.map((r) => ({
   group: "resource" as const,
 }));
 
+const VERB_SUGGESTIONS: Suggestion[] = [
+  { cmd: "apply", hint: "create / apply resources from YAML", group: "verb" },
+];
+
+const ALL_SUGGESTIONS = [...RESOURCE_SUGGESTIONS, ...VERB_SUGGESTIONS];
+
 /**
  * `:`-triggered command palette in the k9s spirit. Accepts resource names
  * (po / pods / deploy / svc / cm / sec / ns) and namespace switches
@@ -53,8 +59,8 @@ export function CommandPalette({ namespaces, onRun, onClose }: Props) {
         group: "namespace" as const,
       }));
     }
-    if (!lower) return RESOURCE_SUGGESTIONS;
-    return RESOURCE_SUGGESTIONS.filter(
+    if (!lower) return ALL_SUGGESTIONS;
+    return ALL_SUGGESTIONS.filter(
       (s) => s.cmd.toLowerCase().includes(lower) || s.hint.toLowerCase().includes(lower),
     );
   })();
@@ -137,7 +143,7 @@ export function CommandPalette({ namespaces, onRun, onClose }: Props) {
                       : "text-muted-foreground",
                   )}
                 >
-                  {s.group === "namespace" ? "ns" : "go"}
+                  {s.group === "namespace" ? "ns" : s.group === "verb" ? "do" : "go"}
                 </span>
                 <span className="text-foreground flex-1 truncate">
                   {s.cmd}

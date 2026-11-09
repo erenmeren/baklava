@@ -1,0 +1,112 @@
+# Applied by seed/kubernetes.sh after the core demo objects: one of each kind
+# the workspace's newer screens list, plus a demo CRD. Everything targets the
+# dedicated `autoscaled` deployment so nothing here constrains storefront
+# (the scale / drain / proxy tests act on it).
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: autoscaled, namespace: demo }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: autoscaled } }
+  template:
+    metadata: { labels: { app: autoscaled } }
+    spec:
+      containers:
+        - name: idle
+          image: busybox:1.36
+          command: ["sh", "-c", "while true; do sleep 30; done"]
+          resources: { requests: { cpu: 5m, memory: 16Mi } }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: { name: autoscaled, namespace: demo }
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: autoscaled }
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+    - type: Resource
+      resource: { name: cpu, target: { type: Utilization, averageUtilization: 80 } }
+---
+# maxUnavailable 1 never blocks an eviction of the single replica.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: { name: autoscaled, namespace: demo }
+spec:
+  maxUnavailable: 1
+  selector: { matchLabels: { app: autoscaled } }
+---
+# Allows in-namespace ingress and all egress — documents shape, blocks nothing
+# the demo relies on.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: autoscaled-same-namespace, namespace: demo }
+spec:
+  podSelector: { matchLabels: { app: autoscaled } }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from: [{ podSelector: {} }]
+  egress:
+    - {}
+---
+# Object counts only: a cpu/memory quota would make every pod without
+# requests (broken-image, the Job) fail admission.
+apiVersion: v1
+kind: ResourceQuota
+metadata: { name: demo-counts, namespace: demo }
+spec:
+  hard: { pods: "100", services: "20", configmaps: "50" }
+---
+# PVC-only, so pod specs are never defaulted.
+apiVersion: v1
+kind: LimitRange
+metadata: { name: demo-pvc-size, namespace: demo }
+spec:
+  limits:
+    - type: PersistentVolumeClaim
+      max: { storage: 10Gi }
+      min: { storage: 1Mi }
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: { name: config-reader, namespace: demo }
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: { name: config-reader, namespace: demo }
+rules:
+  - apiGroups: [""]
+    resources: [configmaps]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: { name: config-reader, namespace: demo }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: config-reader }
+subjects:
+  - { kind: ServiceAccount, name: config-reader, namespace: demo }
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata: { name: widgets.demo.baklava.dev }
+spec:
+  group: demo.baklava.dev
+  scope: Namespaced
+  names: { plural: widgets, singular: widget, kind: Widget, shortNames: [wdg] }
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      additionalPrinterColumns:
+        - { name: Color, type: string, jsonPath: .spec.color }
+        - { name: Size, type: integer, jsonPath: .spec.size }
+        - { name: Age, type: date, jsonPath: .metadata.creationTimestamp }
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                color: { type: string }
+                size: { type: integer }

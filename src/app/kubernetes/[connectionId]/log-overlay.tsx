@@ -3,11 +3,18 @@
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { ContainerPicker } from "./container-picker";
+import type { WorkloadKind } from "@/lib/kubernetes/workload-ops";
 
 interface Props {
   connectionId: string;
   namespace: string;
+  /** The pod — or, with `workload`, the workload whose pods are followed. */
   pod: string;
+  /**
+   * Stern-style: follow every pod of this workload kind named `pod`, each line
+   * tagged with its pod in a stable colour.
+   */
+  workload?: WorkloadKind;
   /** Container names on the pod; a picker appears when there's more than one. */
   containers?: string[];
   onClose: () => void;
@@ -17,7 +24,21 @@ interface Line {
   id: number;
   text: string;
   level: "INFO" | "WARN" | "ERROR" | "DEBUG" | "RAW";
+  pod?: string;
+  color?: number;
 }
+
+/** One per podColor() slot (POD_COLOR_COUNT). */
+const POD_TAG_COLORS = [
+  "text-cyan-400",
+  "text-fuchsia-400",
+  "text-lime-400",
+  "text-amber-300",
+  "text-sky-400",
+  "text-rose-400",
+  "text-emerald-300",
+  "text-violet-400",
+];
 
 function inferLevel(text: string): Line["level"] {
   // Heuristic — most app logs prefix the level; we just colorize so the
@@ -42,9 +63,13 @@ export function LogOverlay({
   connectionId,
   namespace,
   pod,
+  workload,
   containers = [],
   onClose,
 }: Props) {
+  const [pods, setPods] = useState<{ count: number; truncated: boolean; max: number } | null>(
+    null,
+  );
   const [container, setContainer] = useState<string | null>(null);
   const [lines, setLines] = useState<Line[]>([]);
   const [follow, setFollow] = useState(true);
@@ -74,13 +99,30 @@ export function LogOverlay({
     // Switching container re-subscribes: the previous EventSource is closed by
     // this effect's own cleanup before the new one opens.
     const ctr = container ? `&container=${encodeURIComponent(container)}` : "";
-    const url = `/api/kubernetes/${connectionId}/pods/${encodeURIComponent(
-      namespace,
-    )}/${encodeURIComponent(pod)}/logs?tailLines=200${ctr}`;
+    const url = workload
+      ? `/api/kubernetes/${connectionId}/workloads/${workload}/${encodeURIComponent(
+          namespace,
+        )}/${encodeURIComponent(pod)}/logs?${ctr.slice(1)}`
+      : `/api/kubernetes/${connectionId}/pods/${encodeURIComponent(
+          namespace,
+        )}/${encodeURIComponent(pod)}/logs?tailLines=200${ctr}`;
     const es = new EventSource(url);
     sourceRef.current = es;
+    es.addEventListener("pods", (e) => {
+      const p = JSON.parse((e as MessageEvent).data) as {
+        pods: unknown[];
+        truncated: boolean;
+        max: number;
+      };
+      setPods({ count: p.pods.length, truncated: p.truncated, max: p.max });
+      setStatus("live");
+    });
     es.addEventListener("line", (e) => {
-      const payload = JSON.parse((e as MessageEvent).data) as { text: string };
+      const payload = JSON.parse((e as MessageEvent).data) as {
+        text: string;
+        pod?: string;
+        color?: number;
+      };
       setStatus("live");
       setLines((cur) => {
         const next = cur.slice(-(MAX_LINES - 1));
@@ -88,6 +130,8 @@ export function LogOverlay({
           id: idRef.current++,
           text: payload.text,
           level: inferLevel(payload.text),
+          pod: payload.pod,
+          color: payload.color,
         });
         return next;
       });
@@ -113,7 +157,7 @@ export function LogOverlay({
       es.close();
       sourceRef.current = null;
     };
-  }, [connectionId, namespace, pod, container]);
+  }, [connectionId, namespace, pod, container, workload]);
 
   useEffect(() => {
     if (!followRef.current) return;
@@ -126,7 +170,7 @@ export function LogOverlay({
     ? lines.filter((l) => l.text.toLowerCase().includes(grep.toLowerCase()))
     : lines;
 
-  const target = `${namespace}/${pod}`;
+  const target = workload ? `${workload}/${namespace}/${pod}` : `${namespace}/${pod}`;
   const statusLabel: Record<typeof status, { label: string; color: string }> = {
     connecting: { label: "connecting", color: "text-amber-600 dark:text-amber-400" },
     live: { label: follow ? "following" : "paused", color: follow ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground" },
@@ -135,7 +179,7 @@ export function LogOverlay({
   };
 
   function download() {
-    const text = lines.map((l) => l.text).join("\n") + "\n";
+    const text = lines.map((l) => (l.pod ? `${l.pod} ${l.text}` : l.text)).join("\n") + "\n";
     const blob = new Blob([text], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -180,6 +224,12 @@ export function LogOverlay({
               />
               {statusLabel[status].label}
             </span>
+            {pods ? (
+              <span className="text-[10px] text-muted-foreground">
+                {pods.count} pod{pods.count === 1 ? "" : "s"}
+                {pods.truncated ? ` · capped at the first ${pods.max}` : ""}
+              </span>
+            ) : null}
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <ContainerPicker
@@ -237,6 +287,17 @@ export function LogOverlay({
           ) : null}
           {filtered.map((l) => (
             <div key={l.id} className="px-4 py-px flex gap-3 hover:bg-white/[0.03]">
+              {l.pod ? (
+                <span
+                  className={cn(
+                    "shrink-0 max-w-56 truncate",
+                    POD_TAG_COLORS[(l.color ?? 0) % POD_TAG_COLORS.length],
+                  )}
+                  title={l.pod}
+                >
+                  {l.pod}
+                </span>
+              ) : null}
               <span
                 className={cn(
                   "shrink-0 w-12 uppercase tracking-[0.1em] text-[10px]",

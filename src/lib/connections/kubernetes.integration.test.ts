@@ -323,7 +323,7 @@ describe("kubernetes driver", async () => {
   it.skipIf(!up)("rejects an unsupported kind rather than guessing", async () => {
     const { readResourceYaml } = await import("./kubernetes");
     await expect(
-      readResourceYaml(ID, cfg, "customresourcedefinition", NS, "x"),
+      readResourceYaml(ID, cfg, "frobnicator", NS, "x"),
     ).rejects.toThrow(/Unsupported kind/);
   });
 });

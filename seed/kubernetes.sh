@@ -2,7 +2,8 @@
 # Seed the local k3s cluster with a demo workload the Kubernetes workspace can
 # browse: a namespace holding a Deployment (two replicas, two containers so the
 # container picker has something to pick), a Service, a ConfigMap, a Secret, a
-# StatefulSet, a DaemonSet, a Job, a CronJob, an Ingress and a PVC — plus one
+# StatefulSet, a DaemonSet, a Job, a CronJob, an Ingress and a PVC (plus the
+# k8s-extras.yaml kinds and a demo `widgets.demo.baklava.dev` CRD) — plus one
 # deliberately-crashing pod so the Events screen and `describe` have something
 # real to show.
 #
@@ -178,6 +179,13 @@ spec:
     - name: nope
       image: baklava.invalid/does-not-exist:1
 MANIFEST
+
+# The newer screens' kinds (HPA, PDB, NetworkPolicy, quota, RBAC) and a demo
+# CRD. Read through stdin so the in-container kubectl fallback works too.
+SEED_DIR="$(cd "$(dirname "$0")" && pwd)"
+kube apply -f - < "$SEED_DIR/k8s-extras.yaml"
+kube wait --for condition=established --timeout=60s crd/widgets.demo.baklava.dev
+kube apply -f - < "$SEED_DIR/k8s-widgets.yaml"
 
 echo "waiting for the storefront deployment to come up…"
 kube -n demo rollout status deployment/storefront --timeout=120s || true

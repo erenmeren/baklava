@@ -163,3 +163,101 @@ describe("k8s_scale_deployment escalation", () => {
     expect(scale().categoryFor?.({ replicas: 3 })).toBe("write");
   });
 });
+
+vi.mock("@/lib/connections/kubernetes/workload-ops", () => ({
+  getRollout: vi.fn(async () => ({ status: {}, history: [] })),
+  undoRollout: vi.fn(async () => undefined),
+  restartWorkload: vi.fn(async () => undefined),
+  scaleStatefulSet: vi.fn(async () => undefined),
+  triggerCronJob: vi.fn(async () => "nightly-report-manual-abc123"),
+  setCronJobSuspended: vi.fn(async () => undefined),
+}));
+
+describe("workload tools", async () => {
+  const w = await import("@/lib/connections/kubernetes/workload-ops");
+  const tool = (name: string) =>
+    kubernetesTools("c1", cfg as never, DEFAULT_POLICY).find((t) => t.name === name)!;
+  beforeEach(() => vi.clearAllMocks());
+
+  it("tags rollout history read, undo destructive, the rest writes", () => {
+    expect(tool("k8s_rollout_history").category).toBe("read");
+    expect(tool("k8s_rollout_undo").category).toBe("destructive");
+    for (const n of [
+      "k8s_restart_workload",
+      "k8s_scale_statefulset",
+      "k8s_trigger_cronjob",
+      "k8s_suspend_cronjob",
+    ]) {
+      expect(tool(n).category).toBe("write");
+    }
+  });
+
+  it("scaling a statefulset to 0 escalates to destructive", () => {
+    expect(tool("k8s_scale_statefulset").categoryFor?.({ replicas: 0 })).toBe("destructive");
+    expect(tool("k8s_scale_statefulset").categoryFor?.({ replicas: 2 })).toBe("write");
+  });
+
+  it("undo delegates with the revision and rejects revision 0", async () => {
+    await tool("k8s_rollout_undo").execute({ namespace: "demo", name: "api", revision: 2 });
+    expect(w.undoRollout).toHaveBeenCalledWith("c1", cfg, "demo", "api", 2);
+    expect(() =>
+      tool("k8s_rollout_undo").inputSchema.parse({ namespace: "d", name: "a", revision: 0 }),
+    ).toThrow();
+  });
+
+  it("restart_workload only names statefulsets and daemonsets", async () => {
+    await tool("k8s_restart_workload").execute({ kind: "daemonset", namespace: "d", name: "x" });
+    expect(w.restartWorkload).toHaveBeenCalledWith("c1", cfg, "daemonset", "d", "x");
+    expect(() =>
+      tool("k8s_restart_workload").inputSchema.parse({ kind: "deployment", namespace: "d", name: "x" }),
+    ).toThrow();
+  });
+
+  it("trigger returns the created job and suspend passes the flag", async () => {
+    const r = await tool("k8s_trigger_cronjob").execute({ namespace: "demo", name: "nightly-report" });
+    expect(r).toEqual({ ok: true, job: "nightly-report-manual-abc123" });
+    await tool("k8s_suspend_cronjob").execute({ namespace: "demo", name: "n", suspend: true });
+    expect(w.setCronJobSuspended).toHaveBeenCalledWith("c1", cfg, "demo", "n", true);
+  });
+});
+
+vi.mock("@/lib/connections/kubernetes/watch", () => ({
+  listResource: vi.fn(async () => ({ items: [], truncated: false })),
+}));
+vi.mock("@/lib/connections/kubernetes/crds", () => ({
+  listCustomResources: vi.fn(async () => ({ crd: {}, list: { items: [], truncated: false } })),
+}));
+
+describe("generic and custom-resource listing", () => {
+  beforeEach(() => vi.clearAllMocks());
+  const get = (n: string) => kubernetesTools("c1", cfg as never, DEFAULT_POLICY).find((t) => t.name === n)!;
+
+  it("k8s_list_resources is a read over the catalogue path", async () => {
+    const { listResource } = await import("@/lib/connections/kubernetes/watch");
+    expect(get("k8s_list_resources").category).toBe("read");
+    await get("k8s_list_resources").execute({ resource: "rolebindings", namespace: "demo" });
+    expect(listResource).toHaveBeenCalledWith("c1", cfg, "rolebindings", "demo");
+    expect(() => get("k8s_list_resources").inputSchema.parse({ resource: "secrets" })).toThrow();
+  });
+
+  it("k8s_list_custom_resources splits <plural>.<group> and rejects junk", async () => {
+    const { listCustomResources } = await import("@/lib/connections/kubernetes/crds");
+    await get("k8s_list_custom_resources").execute({ crd: "widgets.demo.baklava.dev" });
+    expect(listCustomResources).toHaveBeenCalledWith("c1", cfg, "demo.baklava.dev", "widgets", "");
+    for (const bad of ["widgets", "../x.y", "Widgets.demo.dev", "a/b.c"]) {
+      expect(() => get("k8s_list_custom_resources").inputSchema.parse({ crd: bad })).toThrow();
+    }
+  });
+
+  it("CRDs can be read but never deleted by the assistant; CR instances can", () => {
+    expect(() =>
+      get("k8s_get_yaml").inputSchema.parse({ kind: "customresourcedefinition", name: "widgets.demo.baklava.dev" }),
+    ).not.toThrow();
+    expect(() =>
+      get("k8s_delete_resource").inputSchema.parse({ kind: "customresourcedefinition", name: "x" }),
+    ).toThrow();
+    expect(() =>
+      get("k8s_delete_resource").inputSchema.parse({ kind: "widgets.demo.baklava.dev", namespace: "demo", name: "a" }),
+    ).not.toThrow();
+  });
+});

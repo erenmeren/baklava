@@ -29,6 +29,7 @@ import { withReplicas, withRestartedAt } from "@/lib/kubernetes/deployment-ops";
 import { describeObject } from "@/lib/kubernetes/describe";
 import { involvedObjectSelector } from "@/lib/kubernetes/field-selector";
 import { proxyTarget } from "@/lib/kubernetes/proxy-target";
+import { crdIdentity, parseCrdName, type CrdObject } from "@/lib/kubernetes/crd";
 import {
   formatCpu,
   formatMemory as formatMemUsage,
@@ -401,7 +402,7 @@ function formatMemory(bytes: number): string {
   return `${Math.round(bytes / 1024)}Ki`;
 }
 
-function mapPod(p: V1Pod, usage?: { cpu: string; mem: string }): PodRow {
+export function mapPod(p: V1Pod, usage?: { cpu: string; mem: string }): PodRow {
   const restarts = podRestarts(p);
   return {
     namespace: p.metadata?.namespace ?? "default",
@@ -426,7 +427,7 @@ function mapPod(p: V1Pod, usage?: { cpu: string; mem: string }): PodRow {
   };
 }
 
-function mapDeployment(d: V1Deployment): DeploymentRow {
+export function mapDeployment(d: V1Deployment): DeploymentRow {
   const desired = d.spec?.replicas ?? 0;
   const ready = d.status?.readyReplicas ?? 0;
   const containers = d.spec?.template?.spec?.containers ?? [];
@@ -442,7 +443,7 @@ function mapDeployment(d: V1Deployment): DeploymentRow {
   };
 }
 
-function mapService(s: V1Service): ServiceRow {
+export function mapService(s: V1Service): ServiceRow {
   const t = s.spec?.type ?? "ClusterIP";
   const isHeadless =
     t === "ClusterIP" && (s.spec?.clusterIP === "None" || !s.spec?.clusterIP);
@@ -477,7 +478,7 @@ function mapService(s: V1Service): ServiceRow {
   };
 }
 
-function mapConfigMap(c: V1ConfigMap): ConfigMapRow {
+export function mapConfigMap(c: V1ConfigMap): ConfigMapRow {
   const data = Object.keys(c.data ?? {}).length + Object.keys(c.binaryData ?? {}).length;
   return {
     namespace: c.metadata?.namespace ?? "default",
@@ -488,7 +489,7 @@ function mapConfigMap(c: V1ConfigMap): ConfigMapRow {
   };
 }
 
-function mapSecret(s: V1Secret): SecretRow {
+export function mapSecret(s: V1Secret): SecretRow {
   const data = Object.keys(s.data ?? {}).length + Object.keys(s.stringData ?? {}).length;
   return {
     namespace: s.metadata?.namespace ?? "default",
@@ -499,7 +500,7 @@ function mapSecret(s: V1Secret): SecretRow {
   };
 }
 
-function mapNamespace(n: V1Namespace, podCounts: Map<string, number>): NamespaceRow {
+export function mapNamespace(n: V1Namespace, podCounts: Map<string, number>): NamespaceRow {
   const name = n.metadata?.name ?? "";
   return {
     name,
@@ -1021,6 +1022,24 @@ const KIND_MAP: Record<
     namespaced: true,
   },
   event: { apiVersion: "v1", kind: "Event", namespaced: true },
+  horizontalpodautoscaler: { apiVersion: "autoscaling/v2", kind: "HorizontalPodAutoscaler", namespaced: true },
+  replicaset: { apiVersion: "apps/v1", kind: "ReplicaSet", namespaced: true },
+  serviceaccount: { apiVersion: "v1", kind: "ServiceAccount", namespaced: true },
+  role: { apiVersion: "rbac.authorization.k8s.io/v1", kind: "Role", namespaced: true },
+  rolebinding: { apiVersion: "rbac.authorization.k8s.io/v1", kind: "RoleBinding", namespaced: true },
+  clusterrole: { apiVersion: "rbac.authorization.k8s.io/v1", kind: "ClusterRole", namespaced: false },
+  clusterrolebinding: { apiVersion: "rbac.authorization.k8s.io/v1", kind: "ClusterRoleBinding", namespaced: false },
+  networkpolicy: { apiVersion: "networking.k8s.io/v1", kind: "NetworkPolicy", namespaced: true },
+  persistentvolume: { apiVersion: "v1", kind: "PersistentVolume", namespaced: false },
+  storageclass: { apiVersion: "storage.k8s.io/v1", kind: "StorageClass", namespaced: false },
+  poddisruptionbudget: { apiVersion: "policy/v1", kind: "PodDisruptionBudget", namespaced: true },
+  resourcequota: { apiVersion: "v1", kind: "ResourceQuota", namespaced: true },
+  limitrange: { apiVersion: "v1", kind: "LimitRange", namespaced: true },
+  customresourcedefinition: {
+    apiVersion: "apiextensions.k8s.io/v1",
+    kind: "CustomResourceDefinition",
+    namespaced: false,
+  },
 };
 
 export function resolveKind(kind: string): {
@@ -1031,6 +1050,34 @@ export function resolveKind(kind: string): {
   const k = KIND_MAP[kind.toLowerCase()];
   if (!k) throw new Error(`Unsupported kind: ${kind}`);
   return k;
+}
+
+/**
+ * A kind as the yaml/describe/delete routes name it: a KIND_MAP key, or an
+ * installed CRD's name (`<plural>.<group>`, see src/lib/kubernetes/crd.ts).
+ * The CRD name is shape-checked first, then read from the cluster — only an
+ * installed CRD resolves, and its apiVersion/kind come from the CRD itself,
+ * never from the request.
+ */
+export async function resolveObjectKind(
+  b: Pick<ClientBundle, "objects">,
+  kind: string,
+): Promise<{ apiVersion: string; kind: string; namespaced: boolean }> {
+  if (Object.hasOwn(KIND_MAP, kind.toLowerCase())) return resolveKind(kind);
+  if (!parseCrdName(kind)) throw new Error(`Unsupported kind: ${kind}`);
+  const crd = await readCrd(b, kind).catch(() => null);
+  const id = crd && crdIdentity(crd);
+  if (!id) throw new Error(`Unsupported kind: ${kind}`);
+  return { apiVersion: `${id.group}/${id.version}`, kind: id.kind, namespaced: id.namespaced };
+}
+
+/** Read one CRD by its (already validated) name. */
+export async function readCrd(b: Pick<ClientBundle, "objects">, name: string): Promise<CrdObject> {
+  return (await b.objects.read({
+    apiVersion: "apiextensions.k8s.io/v1",
+    kind: "CustomResourceDefinition",
+    metadata: { name },
+  })) as CrdObject;
 }
 
 /** Strip server-managed fields so the editable buffer is clean. */
@@ -1068,7 +1115,7 @@ export async function readResourceYaml(
 ): Promise<string> {
   const { dumpYaml } = await getK8s();
   const b = await bundleFor(connectionId, cfg);
-  const k = resolveKind(kind);
+  const k = await resolveObjectKind(b, kind);
   const spec = {
     apiVersion: k.apiVersion,
     kind: k.kind,
@@ -1106,7 +1153,7 @@ export async function describeResource(
   name: string,
 ): Promise<string> {
   const b = await bundleFor(connectionId, cfg);
-  const k = resolveKind(kind);
+  const k = await resolveObjectKind(b, kind);
   const obj = await b.objects.read({
     apiVersion: k.apiVersion,
     kind: k.kind,
@@ -1374,7 +1421,7 @@ export async function deleteResource(
   name: string,
 ): Promise<void> {
   const b = await bundleFor(connectionId, cfg);
-  const k = resolveKind(kind);
+  const k = await resolveObjectKind(b, kind);
   await b.objects.delete({
     apiVersion: k.apiVersion,
     kind: k.kind,

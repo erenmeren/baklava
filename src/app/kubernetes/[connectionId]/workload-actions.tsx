@@ -2,28 +2,43 @@
 
 import { useState } from "react";
 import { cn } from "@/lib/utils";
-import type { DeploymentRow } from "@/lib/kubernetes/row-types";
+import type { WorkloadKind } from "@/lib/kubernetes/workload-ops";
 
-interface Props {
+/**
+ * Scale / restart dialogs shared by the Deployment, StatefulSet and DaemonSet
+ * views. Deployments post to their own route; the other kinds share
+ * `/workloads/<kind>/…`.
+ */
+
+interface WorkloadRef {
+  namespace: string;
+  name: string;
+}
+
+interface Props<R extends WorkloadRef = WorkloadRef> {
   connectionId: string;
-  row: DeploymentRow;
+  row: R;
+  /** Defaults to "deployment". */
+  kind?: WorkloadKind;
   close: () => void;
   refresh: () => void;
 }
 
-/** `ready` is rendered as "<available>/<desired>" — the desired half is what we scale from. */
-function desiredReplicas(row: DeploymentRow): number {
-  const desired = Number(row.ready.split("/")[1]);
-  return Number.isFinite(desired) ? desired : row.available;
+/** `ready` is rendered as "<ready>/<desired>" — the desired half is what we scale from. */
+function desiredReplicas(row: WorkloadRef & { ready: string }): number {
+  const [ready, desired] = row.ready.split("/").map(Number);
+  return Number.isFinite(desired) ? desired : Number.isFinite(ready) ? ready : 0;
 }
 
 async function postAction(
   connectionId: string,
-  row: DeploymentRow,
+  kind: WorkloadKind,
+  row: WorkloadRef,
   body: Record<string, unknown>,
 ): Promise<void> {
+  const base = kind === "deployment" ? "deployments" : `workloads/${kind}`;
   const res = await fetch(
-    `/api/kubernetes/${connectionId}/deployments/${encodeURIComponent(
+    `/api/kubernetes/${connectionId}/${base}/${encodeURIComponent(
       row.namespace,
     )}/${encodeURIComponent(row.name)}`,
     {
@@ -39,8 +54,9 @@ async function postAction(
 }
 
 /** Shared chrome so both dialogs read as one family with ConfirmOverlay. */
-function Shell({
+export function Shell({
   tone,
+  tag,
   title,
   children,
   error,
@@ -48,6 +64,8 @@ function Shell({
   action,
 }: {
   tone: "amber" | "red";
+  /** Badge text; defaults to "rollout" (red) / "scale" (amber). */
+  tag?: string;
   title: string;
   children: React.ReactNode;
   error: string | null;
@@ -82,7 +100,7 @@ function Shell({
                 : "bg-amber-500/15 text-amber-700 dark:text-amber-300",
             )}
           >
-            {tone === "red" ? "rollout" : "scale"}
+            {tag ?? (tone === "red" ? "rollout" : "scale")}
           </span>
           <span className="text-sm font-semibold">{title}</span>
         </div>
@@ -108,7 +126,13 @@ function Shell({
   );
 }
 
-export function ScaleDialog({ connectionId, row, close, refresh }: Props) {
+export function ScaleDialog({
+  connectionId,
+  row,
+  kind = "deployment",
+  close,
+  refresh,
+}: Props<WorkloadRef & { ready: string }>) {
   const [replicas, setReplicas] = useState(() => desiredReplicas(row));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -118,7 +142,7 @@ export function ScaleDialog({ connectionId, row, close, refresh }: Props) {
     setBusy(true);
     setError(null);
     try {
-      await postAction(connectionId, row, { action: "scale", replicas });
+      await postAction(connectionId, kind, row, { action: "scale", replicas });
       refresh();
       close();
     } catch (err) {
@@ -131,7 +155,7 @@ export function ScaleDialog({ connectionId, row, close, refresh }: Props) {
   return (
     <Shell
       tone="amber"
-      title="Scale deployment"
+      title={`Scale ${kind}`}
       error={error}
       onClose={close}
       action={
@@ -165,14 +189,20 @@ export function ScaleDialog({ connectionId, row, close, refresh }: Props) {
       </label>
       {replicas === 0 ? (
         <span className="block text-xs text-amber-700 dark:text-amber-300">
-          Scaling to zero stops every pod in this deployment.
+          Scaling to zero stops every pod in this {kind}.
         </span>
       ) : null}
     </Shell>
   );
 }
 
-export function RestartDialog({ connectionId, row, close, refresh }: Props) {
+export function RestartDialog({
+  connectionId,
+  row,
+  kind = "deployment",
+  close,
+  refresh,
+}: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -181,7 +211,7 @@ export function RestartDialog({ connectionId, row, close, refresh }: Props) {
     setBusy(true);
     setError(null);
     try {
-      await postAction(connectionId, row, { action: "restart" });
+      await postAction(connectionId, kind, row, { action: "restart" });
       refresh();
       close();
     } catch (err) {
@@ -194,7 +224,7 @@ export function RestartDialog({ connectionId, row, close, refresh }: Props) {
   return (
     <Shell
       tone="red"
-      title="Restart deployment?"
+      title={`Restart ${kind}?`}
       error={error}
       onClose={close}
       action={

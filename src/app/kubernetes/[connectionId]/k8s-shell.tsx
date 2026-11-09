@@ -8,6 +8,7 @@ import { HOTKEYS, resolveCommand } from "@/lib/kubernetes/commands";
 import { K8sContextProvider } from "./k8s-context";
 import { CommandPalette } from "./command-palette";
 import { HelpOverlay } from "./help-overlay";
+import { ApplyOverlay } from "./apply-overlay";
 
 interface Props {
   connectionId: string;
@@ -16,6 +17,8 @@ interface Props {
   defaultNamespace: string;
   context: string;
   serverVersion: string;
+  /** Replaces the plain context name in the strip (the context switcher). */
+  contextSlot?: React.ReactNode;
   children: React.ReactNode;
 }
 
@@ -39,6 +42,7 @@ export function K8sShell({
   defaultNamespace,
   context,
   serverVersion,
+  contextSlot,
   children,
 }: Props) {
   const router = useRouter();
@@ -64,6 +68,7 @@ export function K8sShell({
   const [filterOpen, setFilterOpen] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [applyOpen, setApplyOpen] = useState(false);
 
   // Global key bindings — the soul of the k9s feel. We swallow them only
   // when no input/textarea/contenteditable is focused, so they never fight
@@ -79,6 +84,8 @@ export function K8sShell({
     }
 
     function onKey(e: KeyboardEvent) {
+      // The apply overlay owns the keyboard (its own Esc) while it is open.
+      if (applyOpen) return;
       // Esc closes whatever overlay is open + the filter
       if (e.key === "Escape") {
         if (commandOpen) { setCommandOpen(false); return; }
@@ -126,7 +133,7 @@ export function K8sShell({
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [connectionId, router, commandOpen, helpOpen, filterOpen]);
+  }, [connectionId, router, commandOpen, helpOpen, filterOpen, applyOpen]);
 
   // k9s keeps the table live; ours is server-rendered, so a periodic
   // router.refresh() is the equivalent. Skipped while the tab is hidden —
@@ -162,8 +169,12 @@ export function K8sShell({
   // any of it.
   const runCommand = useCallback(
     (cmd: string) => {
-      const resolved = resolveCommand(cmd);
       setCommandOpen(false);
+      if (cmd.trim().toLowerCase() === "apply") {
+        setApplyOpen(true);
+        return;
+      }
+      const resolved = resolveCommand(cmd);
       if (!resolved) return;
       if (resolved.kind === "namespace") {
         setNamespace(resolved.namespace);
@@ -180,6 +191,7 @@ export function K8sShell({
         {/* Top context strip */}
         <ContextStrip
           context={context}
+          contextSlot={contextSlot}
           serverVersion={serverVersion}
           namespace={namespace}
           namespaces={namespaces}
@@ -194,6 +206,7 @@ export function K8sShell({
           }}
           onCommand={() => setCommandOpen(true)}
           onHelp={() => setHelpOpen(true)}
+          onApply={() => setApplyOpen(true)}
           autoRefresh={autoRefresh}
           onAutoRefreshToggle={() => setAutoRefresh((a) => !a)}
         />
@@ -213,6 +226,14 @@ export function K8sShell({
         ) : null}
 
         {helpOpen ? <HelpOverlay onClose={() => setHelpOpen(false)} /> : null}
+
+        {applyOpen ? (
+          <ApplyOverlay
+            connectionId={connectionId}
+            namespace={namespace}
+            onClose={() => setApplyOpen(false)}
+          />
+        ) : null}
       </div>
     </K8sContextProvider>
   );
@@ -220,6 +241,7 @@ export function K8sShell({
 
 function ContextStrip(props: {
   context: string;
+  contextSlot?: React.ReactNode;
   serverVersion: string;
   namespace: string;
   namespaces: string[];
@@ -231,6 +253,7 @@ function ContextStrip(props: {
   onFilterClose: () => void;
   onCommand: () => void;
   onHelp: () => void;
+  onApply: () => void;
   autoRefresh: boolean;
   onAutoRefreshToggle: () => void;
 }) {
@@ -247,7 +270,7 @@ function ContextStrip(props: {
         <span className="inline-flex items-center gap-1.5 text-muted-foreground">
           <span className="size-1.5 rounded-full bg-emerald-500 status-pulse" />
           <span className="uppercase tracking-[0.22em] text-[9px]">cluster</span>
-          <span className="text-foreground">{props.context}</span>
+          {props.contextSlot ?? <span className="text-foreground">{props.context}</span>}
         </span>
         <Separator />
         <span className="inline-flex items-center gap-1.5 text-muted-foreground">
@@ -274,6 +297,14 @@ function ContextStrip(props: {
         >
           <kbd className="text-[10px]">/</kbd>
           <span>filter</span>
+        </button>
+        <button
+          onClick={props.onApply}
+          title="Create or apply resources from YAML (:apply)"
+          className="inline-flex items-center gap-1.5 rounded border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/20"
+        >
+          <span className="text-[10px]">+</span>
+          <span>apply</span>
         </button>
         <button
           onClick={props.onCommand}
