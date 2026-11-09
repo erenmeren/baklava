@@ -27,7 +27,6 @@ import {
   Trash,
 } from "lucide-react";
 import { toast } from "sonner";
-import { useTheme } from "@/components/theme-provider";
 import { FunctionEditorDialog } from "../../../../../../function-editor-dialog";
 
 interface FunctionInfo {
@@ -54,7 +53,6 @@ export function FunctionDetailClient({
   argSignature,
 }: Props) {
   const router = useRouter();
-  const { resolvedTheme } = useTheme();
 
   const [meta, setMeta] = useState<FunctionInfo | null>(null);
   const [definition, setDefinition] = useState<string | null>(null);
@@ -241,7 +239,7 @@ export function FunctionDetailClient({
             <CodeMirror
               value={definition}
               extensions={extensions}
-              theme={resolvedTheme === "dark" ? "dark" : "light"}
+              theme="dark"
               basicSetup={{
                 lineNumbers: true,
                 foldGutter: true,

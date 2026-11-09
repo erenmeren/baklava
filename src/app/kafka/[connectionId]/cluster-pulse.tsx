@@ -177,8 +177,8 @@ function PulseTile({
       </div>
       <div
         className={cn(
-          "mt-1 font-mono text-2xl tabular-nums",
-          tone === "ok" && "text-foreground/90",
+          "mt-1 font-mono text-2xl tabular-nums neon-text",
+          tone === "ok" && "text-emerald-300",
           tone === "warn" && "text-amber-700 dark:text-amber-400",
           tone === "danger" && "text-rose-700 dark:text-rose-400",
         )}
@@ -218,10 +218,10 @@ function ControllerTile({
       </div>
       <div
         className={cn(
-          "mt-1 font-mono text-2xl tabular-nums",
+          "mt-1 font-mono text-2xl tabular-nums neon-text",
           flipping
             ? "text-rose-700 dark:text-rose-400"
-            : "text-foreground/90",
+            : "text-sky-300",
         )}
       >
         {controllerId == null ? "—" : `#${controllerId}`}

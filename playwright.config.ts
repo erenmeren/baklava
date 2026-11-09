@@ -4,8 +4,6 @@ import os from "node:os";
 import path from "node:path";
 import { STORAGE_STATE } from "./e2e/global-setup";
 
-// Single dev server boots once; light/dark are two projects that share it,
-// each setting the baklava-theme cookie via storageState in their fixtures.
 // Default to the standard dev port so we reuse a developer's running
 // `npm run dev`. CI overrides to a dedicated port.
 const PORT = Number(process.env.PORT ?? (process.env.CI ? 3100 : 3000));
@@ -47,14 +45,7 @@ export default defineConfig({
 
   projects: [
     {
-      name: "chromium-light",
-      use: {
-        ...devices["Desktop Chrome"],
-        colorScheme: "light",
-      },
-    },
-    {
-      name: "chromium-dark",
+      name: "chromium",
       use: {
         ...devices["Desktop Chrome"],
         colorScheme: "dark",

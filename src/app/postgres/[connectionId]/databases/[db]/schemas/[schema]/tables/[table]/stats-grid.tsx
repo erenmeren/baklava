@@ -156,7 +156,7 @@ export function StatsGrid({
                 <div className="text-[10.5px] font-mono uppercase tracking-wider text-muted-foreground/80">
                   {item.label}
                 </div>
-                <div className="mt-1 text-[18px] font-mono text-foreground tabular-nums">
+                <div className="mt-1 text-[18px] font-mono text-sky-300 tabular-nums neon-text">
                   {item.value}
                 </div>
                 {item.hint ? (
@@ -211,7 +211,7 @@ function UnsupportedKind({
                 <div className="text-[10.5px] font-mono uppercase tracking-wider text-muted-foreground/80">
                   {label}
                 </div>
-                <div className="mt-1 text-[18px] font-mono text-foreground tabular-nums">
+                <div className="mt-1 text-[18px] font-mono text-sky-300 tabular-nums neon-text">
                   {value}
                 </div>
               </div>

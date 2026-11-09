@@ -286,8 +286,8 @@ function StatTile({
       <div className="mt-2 flex items-baseline gap-2">
         <span
           className={cn(
-            "text-3xl font-semibold tabular-nums tracking-tight",
-            tone === "warn" && "text-amber-600 dark:text-amber-400"
+            "text-3xl font-semibold tabular-nums tracking-tight neon-text",
+            tone === "warn" ? "text-amber-600 dark:text-amber-400" : "text-sky-300"
           )}
         >
           {valueCompact ? formatCompact(value) : fmt.format(value)}

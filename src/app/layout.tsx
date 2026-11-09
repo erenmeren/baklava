@@ -4,9 +4,6 @@ import { cookies } from "next/headers";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { ThemeProvider } from "@/components/theme-provider";
-import { ThemeToggle } from "@/components/theme-toggle";
-import { THEME_COOKIE, readTheme } from "@/lib/theme";
 import { BrandMark } from "@/components/brand-mark";
 import { ConnectionTabs } from "@/components/connection-tabs";
 import { GlobalCommandPalette } from "@/components/command-palette/global-command-palette";
@@ -63,9 +60,6 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const cookieStore = await cookies();
-  const theme = readTheme(cookieStore.get(THEME_COOKIE)?.value);
-  const themeClass =
-    theme === "dark" ? "dark" : theme === "light" ? "light" : "";
 
   // App chrome (tabs, palette, settings…) renders when the gate is off, or for
   // an authenticated session on a configured console — the /login screen and the
@@ -79,13 +73,12 @@ export default async function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${jetbrainsMono.variable} ${themeClass} h-full antialiased`}
+      className={`${geistSans.variable} ${jetbrainsMono.variable} dark h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-background text-foreground">
-        <ThemeProvider initialTheme={theme}>
           <TooltipProvider delay={150}>
             {showChrome ? (
-            <header className="sticky top-0 z-30 border-b border-border/60 bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/65">
+            <header className="glass sticky top-0 z-30 border-b border-border/60 bg-background/55">
               <div className="flex items-stretch h-12 pr-3">
                 <Link
                   href="/"
@@ -115,10 +108,6 @@ export default async function RootLayout({
                     <SettingsTrigger />
                     {authEnabled ? <LockButton /> : null}
                   </div>
-                  {/* Appearance is a preference, not a destination — detached */}
-                  <div className="ml-1.5">
-                    <ThemeToggle />
-                  </div>
                 </div>
               </div>
             </header>
@@ -129,7 +118,6 @@ export default async function RootLayout({
                 mount) — keep it off the bare login/setup screen. */}
             {showChrome ? <GlobalCommandPalette /> : null}
           </TooltipProvider>
-        </ThemeProvider>
       </body>
     </html>
   );

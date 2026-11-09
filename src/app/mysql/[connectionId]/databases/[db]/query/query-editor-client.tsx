@@ -25,7 +25,6 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { useTheme } from "@/components/theme-provider";
 import { formatSql } from "@/lib/sql/format";
 import { editorTheme } from "@/lib/sql/editor-theme";
 import { smartSqlCompletions } from "@/lib/sql/editor-completions";
@@ -196,7 +195,6 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
   const [tab, setTab] = useState<ResultTab>("data");
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [hydrated, setHydrated] = useState(false);
-  const { resolvedTheme } = useTheme();
   const isMac = useIsMac();
   const kbd = runHint(isMac);
 
@@ -558,7 +556,7 @@ export function QueryEditorClient({ connectionId, db, queryId }: Props) {
             value={sqlText}
             onChange={setSqlText}
             extensions={extensions}
-            theme={resolvedTheme === "dark" ? "dark" : "light"}
+            theme="dark"
             basicSetup={{
               lineNumbers: true,
               highlightActiveLine: true,

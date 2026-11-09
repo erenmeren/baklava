@@ -139,6 +139,10 @@ shadcn wrappers in `src/components/ui/` re-export `@base-ui/react/*` primitives.
 - **Dialogs use imperative open state** — keep a `[open, setOpen]` and bind it to the `<Dialog open onOpenChange>` props. Don't reach for the (nonexistent) `DialogClose asChild` pattern.
 - Add new shadcn components via `npx shadcn@latest add <component> --yes`. They drop into `src/components/ui/` and need no further wiring.
 
+### Theme (neon glass, dark only)
+
+There is one theme — no light mode, no toggle. Tokens live in a single `:root` block in `src/app/globals.css`; `<html>` always carries `.dark` so existing `dark:` variants apply. Surfaces are translucent and blur the fixed body glow through one CSS rule (`[data-slot="card"], .bg-card, .bg-popover, .bg-sidebar, .glass`) — don't add per-component `backdrop-blur`. Dense data (tables, results, logs) stays on the more opaque `bg-background` tints for legibility. Headline numbers use `neon-text` plus a tone colour (`text-emerald-300` ok, `text-sky-300` neutral, amber/red/rose for warn/alert). Editors (CodeMirror) and toasts are hard-wired to dark.
+
 ### Kubernetes workspace
 
 - **One catalogue** (`src/lib/kubernetes/commands.ts`) drives the sidebar groups, the `:` command vocabulary, the palette suggestions and the digit hotkeys. Adding a resource means adding a `K8S_RESOURCES` entry (+ driver list, page, view) — not editing four lists.

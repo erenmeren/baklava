@@ -41,7 +41,7 @@ And the **PostgreSQL** workspace feels like pgAdmin — a live health dashboard,
 
 ![PostgreSQL workspace — live dashboard and schema tree](docs/images/05-postgres.png)
 
-**3. Jump anywhere with ⌘K.** Press **⌘K / Ctrl+K** (or the search pill in the header) to hop to any connection, section, or object, or to run quick actions like adding a connection or toggling the theme.
+**3. Jump anywhere with ⌘K.** Press **⌘K / Ctrl+K** (or the search pill in the header) to hop to any connection, section, or object, or to run quick actions like adding a connection.
 
 ![The ⌘K command palette](docs/images/03-palette.png)
 

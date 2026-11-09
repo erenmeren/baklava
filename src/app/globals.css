@@ -107,130 +107,55 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-/* ─── Light: warm cream-white surfaces, honey accent ──────────────────── */
+/* ─── Neon glass (the only theme) ────────────────────────────────────────
+   Near-black blue base; surfaces are translucent so the fixed neon glow on
+   <body> shows through, and `.glass` surfaces (below) blur it. Brand is
+   neon green, with sky / lime as the supporting accents.                 */
 :root {
-  --background: oklch(0.992 0.006 80);
-  --foreground: oklch(0.16 0.012 60);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.16 0.012 60);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.16 0.012 60);
-  --primary: oklch(0.205 0.012 60);
-  --primary-foreground: oklch(0.99 0.006 80);
-  --secondary: oklch(0.96 0.008 80);
-  --secondary-foreground: oklch(0.205 0.012 60);
-  --muted: oklch(0.96 0.008 80);
-  --muted-foreground: oklch(0.50 0.012 60);
-  --accent: oklch(0.96 0.008 80);
-  --accent-foreground: oklch(0.205 0.012 60);
-  --destructive: oklch(0.60 0.22 26);
-  --border: oklch(0.92 0.01 80);
-  --input: oklch(0.92 0.01 80);
-  --ring: oklch(0.78 0.16 75);
-  --chart-1: oklch(0.78 0.16 75);
-  --chart-2: oklch(0.65 0.18 50);
-  --chart-3: oklch(0.55 0.15 30);
-  --chart-4: oklch(0.45 0.12 25);
-  --chart-5: oklch(0.35 0.10 20);
+  color-scheme: dark;
+  --background: oklch(0.135 0.014 235);
+  --foreground: oklch(0.96 0.012 200);
+  --card: oklch(0.22 0.025 228 / 0.45);
+  --card-foreground: oklch(0.96 0.012 200);
+  --popover: oklch(0.19 0.022 232 / 0.88);
+  --popover-foreground: oklch(0.96 0.012 200);
+  --primary: oklch(0.84 0.19 160);
+  --primary-foreground: oklch(0.17 0.04 170);
+  --secondary: oklch(1 0 0 / 0.08);
+  --secondary-foreground: oklch(0.96 0.012 200);
+  --muted: oklch(1 0 0 / 0.06);
+  --muted-foreground: oklch(0.72 0.025 225);
+  --accent: oklch(0.78 0.15 230 / 0.16);
+  --accent-foreground: oklch(0.97 0.012 200);
+  --destructive: oklch(0.70 0.22 20);
+  --border: oklch(1 0 0 / 0.11);
+  --input: oklch(1 0 0 / 0.14);
+  --ring: oklch(0.84 0.19 160);
+  --chart-1: oklch(0.84 0.19 160);
+  --chart-2: oklch(0.78 0.15 230);
+  --chart-3: oklch(0.90 0.20 125);
+  --chart-4: oklch(0.72 0.19 300);
+  --chart-5: oklch(0.76 0.19 350);
   --radius: 0.7rem;
 
-  /* Brand: honey amber. The signature Baklava color. */
-  --brand: oklch(0.78 0.16 75);
-  --brand-foreground: oklch(0.16 0.06 60);
-  --brand-muted: oklch(0.93 0.05 80);
+  /* Brand: neon green. */
+  --brand: oklch(0.86 0.19 158);
+  --brand-foreground: oklch(0.17 0.04 170);
+  --brand-muted: oklch(0.86 0.19 158 / 0.18);
 
-  --sidebar: oklch(0.975 0.008 80);
-  --sidebar-foreground: oklch(0.16 0.012 60);
-  --sidebar-primary: oklch(0.205 0.012 60);
-  --sidebar-primary-foreground: oklch(0.99 0.006 80);
-  --sidebar-accent: oklch(0.94 0.012 80);
-  --sidebar-accent-foreground: oklch(0.205 0.012 60);
-  --sidebar-border: oklch(0.92 0.01 80);
-  --sidebar-ring: oklch(0.78 0.16 75);
-}
+  --sidebar: oklch(0.18 0.02 232 / 0.55);
+  --sidebar-foreground: oklch(0.96 0.012 200);
+  --sidebar-primary: oklch(0.86 0.19 158);
+  --sidebar-primary-foreground: oklch(0.17 0.04 170);
+  --sidebar-accent: oklch(0.78 0.15 230 / 0.16);
+  --sidebar-accent-foreground: oklch(0.97 0.012 200);
+  --sidebar-border: oklch(1 0 0 / 0.09);
+  --sidebar-ring: oklch(0.84 0.19 160);
 
-/* ─── Dark token block ───────────────────────────────────────────────────
-   Used in two places below (one explicit selector + one media query) to
-   keep the variable list in one place via a CSS custom-property style.    */
-
-/* ─── Dark: explicit (user picked dark) ──────────────────────────────── */
-.dark {
-  --background: oklch(0.138 0.006 60);
-  --foreground: oklch(0.97 0.006 80);
-  --card: oklch(0.168 0.006 60);
-  --card-foreground: oklch(0.97 0.006 80);
-  --popover: oklch(0.168 0.006 60);
-  --popover-foreground: oklch(0.97 0.006 80);
-  --primary: oklch(0.97 0.006 80);
-  --primary-foreground: oklch(0.168 0.006 60);
-  --secondary: oklch(0.22 0.008 60);
-  --secondary-foreground: oklch(0.97 0.006 80);
-  --muted: oklch(0.20 0.008 60);
-  --muted-foreground: oklch(0.65 0.012 60);
-  --accent: oklch(0.22 0.008 60);
-  --accent-foreground: oklch(0.97 0.006 80);
-  --destructive: oklch(0.70 0.20 25);
-  --border: oklch(1 0 0 / 8%);
-  --input: oklch(1 0 0 / 12%);
-  --ring: oklch(0.80 0.17 80);
-  --chart-1: oklch(0.80 0.17 80);
-  --chart-2: oklch(0.70 0.18 55);
-  --chart-3: oklch(0.60 0.16 30);
-  --chart-4: oklch(0.50 0.14 25);
-  --chart-5: oklch(0.40 0.12 20);
-
-  --brand: oklch(0.82 0.17 82);
-  --brand-foreground: oklch(0.135 0.012 60);
-  --brand-muted: oklch(0.30 0.08 75);
-
-  --sidebar: oklch(0.158 0.006 60);
-  --sidebar-foreground: oklch(0.97 0.006 80);
-  --sidebar-primary: oklch(0.82 0.17 82);
-  --sidebar-primary-foreground: oklch(0.135 0.012 60);
-  --sidebar-accent: oklch(0.22 0.008 60);
-  --sidebar-accent-foreground: oklch(0.97 0.006 80);
-  --sidebar-border: oklch(1 0 0 / 7%);
-  --sidebar-ring: oklch(0.80 0.17 80);
-}
-
-/* ─── Dark: system preference, unless the user explicitly picked light ── */
-@media (prefers-color-scheme: dark) {
-  :root:not(.light):not(.dark) {
-    --background: oklch(0.138 0.006 60);
-    --foreground: oklch(0.97 0.006 80);
-    --card: oklch(0.168 0.006 60);
-    --card-foreground: oklch(0.97 0.006 80);
-    --popover: oklch(0.168 0.006 60);
-    --popover-foreground: oklch(0.97 0.006 80);
-    --primary: oklch(0.97 0.006 80);
-    --primary-foreground: oklch(0.168 0.006 60);
-    --secondary: oklch(0.22 0.008 60);
-    --secondary-foreground: oklch(0.97 0.006 80);
-    --muted: oklch(0.20 0.008 60);
-    --muted-foreground: oklch(0.65 0.012 60);
-    --accent: oklch(0.22 0.008 60);
-    --accent-foreground: oklch(0.97 0.006 80);
-    --destructive: oklch(0.70 0.20 25);
-    --border: oklch(1 0 0 / 8%);
-    --input: oklch(1 0 0 / 12%);
-    --ring: oklch(0.80 0.17 80);
-    --chart-1: oklch(0.80 0.17 80);
-    --chart-2: oklch(0.70 0.18 55);
-    --chart-3: oklch(0.60 0.16 30);
-    --chart-4: oklch(0.50 0.14 25);
-    --chart-5: oklch(0.40 0.12 20);
-    --brand: oklch(0.82 0.17 82);
-    --brand-foreground: oklch(0.135 0.012 60);
-    --brand-muted: oklch(0.30 0.08 75);
-    --sidebar: oklch(0.158 0.006 60);
-    --sidebar-foreground: oklch(0.97 0.006 80);
-    --sidebar-primary: oklch(0.82 0.17 82);
-    --sidebar-primary-foreground: oklch(0.135 0.012 60);
-    --sidebar-accent: oklch(0.22 0.008 60);
-    --sidebar-accent-foreground: oklch(0.97 0.006 80);
-    --sidebar-border: oklch(1 0 0 / 7%);
-    --sidebar-ring: oklch(0.80 0.17 80);
-  }
+  /* The fixed glow behind everything. */
+  --glow-a: oklch(0.72 0.19 162 / 0.55);
+  --glow-b: oklch(0.68 0.18 238 / 0.50);
+  --glow-c: oklch(0.88 0.21 125 / 0.22);
 }
 
 @layer base {
@@ -246,6 +171,35 @@
   body {
     @apply bg-background text-foreground;
     font-feature-settings: "cv11", "ss01", "ss03";
+    background-image:
+      radial-gradient(ellipse 65% 60% at 0% 100%, var(--glow-a), transparent 72%),
+      radial-gradient(ellipse 60% 55% at 100% 0%, var(--glow-b), transparent 72%),
+      radial-gradient(ellipse 35% 35% at 60% 50%, var(--glow-c), transparent 72%);
+    background-attachment: fixed;
+  }
+  /* Glass: every translucent surface blurs the glow behind it. Menus and
+     dialogs are more opaque (--popover) so dense content stays legible. */
+  [data-slot="card"],
+  .bg-card,
+  .bg-popover,
+  .bg-sidebar,
+  .glass {
+    -webkit-backdrop-filter: blur(16px) saturate(150%);
+    backdrop-filter: blur(16px) saturate(150%);
+  }
+  /* A glass edge: a faint top highlight catches the "light". */
+  .bg-card,
+  .bg-popover,
+  .glass {
+    box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.07);
+  }
+  /* Neon numbers: a soft halo in the text's own color. */
+  .neon-text {
+    text-shadow: 0 0 14px color-mix(in oklch, currentColor 55%, transparent);
+  }
+  /* Primary buttons glow faintly in the brand color. */
+  [data-slot="button"].bg-primary {
+    box-shadow: 0 0 18px -4px color-mix(in oklch, var(--primary) 70%, transparent);
   }
   ::selection {
     background-color: var(--brand);
@@ -255,21 +209,21 @@
   :focus-visible {
     outline-color: var(--brand);
   }
-  /* Refined scrollbars in dark mode */
-  .dark ::-webkit-scrollbar {
+  /* Refined scrollbars */
+  ::-webkit-scrollbar {
     width: 10px;
     height: 10px;
   }
-  .dark ::-webkit-scrollbar-track {
+  ::-webkit-scrollbar-track {
     background: transparent;
   }
-  .dark ::-webkit-scrollbar-thumb {
+  ::-webkit-scrollbar-thumb {
     background: oklch(1 0 0 / 8%);
     border-radius: 8px;
     border: 2px solid transparent;
     background-clip: padding-box;
   }
-  .dark ::-webkit-scrollbar-thumb:hover {
+  ::-webkit-scrollbar-thumb:hover {
     background: oklch(1 0 0 / 14%);
     background-clip: padding-box;
   }

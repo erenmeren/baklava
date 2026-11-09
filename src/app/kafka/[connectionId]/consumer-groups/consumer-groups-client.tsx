@@ -853,8 +853,8 @@ function KpiStrip({
             </div>
             <div
               className={cn(
-                "mt-1.5 font-semibold tabular-nums text-2xl tracking-tight",
-                it.tone === "alert" && "text-red-600 dark:text-red-400",
+                "mt-1.5 font-semibold tabular-nums text-2xl tracking-tight neon-text",
+                it.tone === "alert" ? "text-red-600 dark:text-red-400" : "text-sky-300",
               )}
               style={{
                 fontFamily:

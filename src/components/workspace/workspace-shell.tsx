@@ -56,7 +56,7 @@ export function WorkspaceShell({
           </span>
         </div>
       </aside>
-      <section className="flex-1 min-w-0 overflow-hidden bg-background">
+      <section className="flex-1 min-w-0 overflow-hidden bg-background/35">
         {children}
       </section>
     </div>

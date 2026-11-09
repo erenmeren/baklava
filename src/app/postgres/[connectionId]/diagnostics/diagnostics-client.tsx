@@ -555,7 +555,17 @@ function KpiCard({
         {icon}
         {label}
       </div>
-      <div className="text-2xl font-medium font-mono mt-1">{value}</div>
+      <div
+        className={cn(
+          "text-2xl font-medium font-mono mt-1 neon-text",
+          tone === "rose" && "text-rose-300",
+          (tone === "amber" || tone === "warn") && "text-amber-300",
+          tone === "ok" && "text-emerald-300",
+          tone === "neutral" && "text-sky-300",
+        )}
+      >
+        {value}
+      </div>
       {sub ? (
         <div className="text-[10px] font-mono text-muted-foreground mt-0.5 truncate">
           {sub}
