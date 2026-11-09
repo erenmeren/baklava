@@ -505,6 +505,8 @@
      three different corners at once. */
   .etch {
     position: relative;
+    /* A faint neon seeps out of the frosted cut even at rest. */
+    filter: drop-shadow(0 0 6px oklch(0.84 0.19 160 / 0.22));
   }
   .etch > span,
   .etch-neon > span {
@@ -513,20 +515,21 @@
     -webkit-mask: var(--icon) center / contain no-repeat;
     mask: var(--icon) center / contain no-repeat;
   }
+  /* Frosted (sandblasted) cut: etched glass scatters light, so the cut
+     reads as bright frosted white, not a dark hole. A thin shadow on the
+     top edge and a cool rim below keep the sense of depth. */
   .etch-shade {
-    background: oklch(0 0 0 / 0.55);
+    background: oklch(0 0 0 / 0.45);
     transform: translateY(-1px);
   }
   .etch-rim {
-    background: oklch(1 0 0 / 0.30);
-    transform: translateY(1.2px);
+    background: oklch(0.85 0.08 200 / 0.35);
+    transform: translateY(1px);
   }
   .etch-cut {
-    background: linear-gradient(
-      180deg,
-      oklch(0.12 0.02 230 / 0.85),
-      oklch(0.22 0.03 225 / 0.6)
-    );
+    background:
+      var(--grain) 0 0 / 80px 80px,
+      linear-gradient(180deg, oklch(0.97 0.01 200 / 0.86), oklch(0.90 0.03 190 / 0.72));
   }
   /* The glow sits on an unmasked wrapper so drop-shadow can spill past the
      etched shape; the inner span carries the masked, moving light. */
@@ -556,14 +559,14 @@
   .group:hover .etch-neon > span {
     animation-play-state: running;
   }
-  /* Etched label: same recess as the icon — dark glass with a shadowed
-     top edge and a lit bottom edge. On hover the same three neon lights
+  /* Etched label: same frosted cut as the icon — light frosted text, a
+     shadowed top edge and a faint neon seep. On hover the same three neon lights
      run through the letters. */
   .etch-text {
-    color: oklch(0.13 0.02 230 / 0.88);
+    color: oklch(0.96 0.012 200 / 0.88);
     text-shadow:
-      0 1px 0 oklch(1 0 0 / 0.38),
-      0 -1px 0 oklch(0 0 0 / 0.55);
+      0 -1px 0 oklch(0 0 0 / 0.45),
+      0 0 10px oklch(0.84 0.19 160 / 0.25);
     transition: color 280ms ease, text-shadow 280ms ease;
   }
   .group:hover .etch-text {
