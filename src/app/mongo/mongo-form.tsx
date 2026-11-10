@@ -142,7 +142,7 @@ export function MongoForm({ onSaved, initial }: Props) {
           }
         />
         <p className="text-[11px] text-muted-foreground">
-          Stored encrypted-at-rest as a secret — credentials are never returned
+          Stored as a secret — credentials are never returned
           over the API.
         </p>
       </div>

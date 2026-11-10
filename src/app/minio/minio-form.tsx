@@ -88,7 +88,7 @@ export function MinioForm({ onSaved, initial }: Props) {
         <Input id="minio-secret" type="password" value={secretKey} onChange={(e) => setSecretKey(e.target.value)}
           spellCheck={false} autoComplete="off"
           placeholder={editing ? "(unchanged — leave blank to keep)" : "secret key"} />
-        <p className="text-[11px] text-muted-foreground">Stored encrypted-at-rest as a secret — never returned over the API.</p>
+        <p className="text-[11px] text-muted-foreground">Stored as a secret — never returned over the API.</p>
       </div>
 
       <div className="space-y-2">

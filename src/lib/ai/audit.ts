@@ -2,8 +2,7 @@ import "server-only";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { decryptEnvelope, encryptEnvelope, isEnvelope } from "@/lib/crypto/envelope";
-import { getInstallSalt, resolveKeyMaterial } from "@/lib/crypto/master-key";
+import { isLegacyEncrypted } from "@/lib/crypto/secret-file";
 
 export interface AuditEntry {
   tool: string;
@@ -27,19 +26,18 @@ export function auditPath(sessionId: string): string {
 }
 
 // Entries carry tool arguments — SQL text, keys, manifests — so, like every
-// other file under ~/.baklava, they're encrypted at rest: one compact
-// envelope per line keeps the log append-only.
+// other file under ~/.baklava, the log is 0600: one JSON line per entry keeps
+// it append-only.
 export function appendAudit(sessionId: string, entry: AuditEntry): void {
   try {
     fs.mkdirSync(dir(), { recursive: true, mode: 0o700 });
-    const sealed = encryptEnvelope(JSON.stringify(entry), resolveKeyMaterial().material, getInstallSalt());
-    fs.appendFileSync(auditPath(sessionId), JSON.stringify(JSON.parse(sealed)) + "\n", { mode: 0o600 });
+    fs.appendFileSync(auditPath(sessionId), JSON.stringify(entry) + "\n", { mode: 0o600 });
   } catch (err) {
     console.error("[baklava] audit append failed:", err);
   }
 }
 
-/** Decrypted entries of one session's log (plaintext lines from older versions pass through). */
+/** Entries of one session's log (lines encrypted by older versions can't be read and are skipped). */
 export function readAudit(sessionId: string): AuditEntry[] {
   let text: string;
   try {
@@ -47,9 +45,8 @@ export function readAudit(sessionId: string): AuditEntry[] {
   } catch {
     return [];
   }
-  const material = resolveKeyMaterial().material;
   return text
     .split("\n")
-    .filter((l) => l.trim())
-    .map((l) => JSON.parse(isEnvelope(l) ? decryptEnvelope(l, material) : l) as AuditEntry);
+    .filter((l) => l.trim() && !isLegacyEncrypted(l))
+    .map((l) => JSON.parse(l) as AuditEntry);
 }

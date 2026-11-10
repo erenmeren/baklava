@@ -73,9 +73,8 @@ function freshState(): AuthState {
 const CACHE_KEY = Symbol.for("baklava.authState");
 
 function persist(state: AuthState): void {
-  // writeSecretFileSync encrypts to an envelope, writes 0o600 atomically
-  // (temp + rename), creates the data dir, and backs up any legacy plaintext /
-  // unreadable file before overwriting.
+  // writeSecretFileSync writes 0o600 atomically (temp + rename), creates the
+  // data dir, and backs up a legacy encrypted file before overwriting.
   writeSecretFileSync(FILE, JSON.stringify(state, null, 2));
   (globalThis as Record<symbol, AuthState | undefined>)[CACHE_KEY] = state;
 }

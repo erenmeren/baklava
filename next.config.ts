@@ -4,7 +4,7 @@ import { SERVER_EXTERNAL_PACKAGES } from "./src/techs/server-packages.generated"
 // Non-tech server externals: native/asset-bearing packages used outside the
 // tech registry. pdfkit reads its own font-metric files at runtime, so it must
 // not be bundled by Turbopack.
-const EXTRA_SERVER_PACKAGES = ["pdfkit", "@napi-rs/keyring"];
+const EXTRA_SERVER_PACKAGES = ["pdfkit"];
 
 // An ops console holding database credentials: never framed (clickjacking the
 // destructive confirm dialogs), never MIME-sniffed, never leaking its URLs —

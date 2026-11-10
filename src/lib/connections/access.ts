@@ -9,7 +9,7 @@ import { getConnection } from "./store";
 // Per-user connection access grants (RBAC).
 //
 // A connection's owner and admins always get "write". Everyone else gets the
-// explicit grant recorded here, or "none". Grants live in an encrypted file
+// explicit grant recorded here, or "none". Grants live in a 0600 file
 // under DATA_DIR and are cached on globalThis so they survive Next dev HMR.
 // ─────────────────────────────────────────────────────────────────────────────
 

@@ -4,7 +4,6 @@ import fs from "node:fs";
 import path from "node:path";
 import { readSecretFileSync } from "@/lib/crypto/secret-file";
 
-// ai.json is encrypted at rest; decrypt it to assert on persisted contents.
 function readAiJson(dir: string) {
   return JSON.parse(readSecretFileSync(path.join(dir, "ai.json"))!);
 }

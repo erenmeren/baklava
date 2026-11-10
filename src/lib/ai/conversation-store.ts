@@ -66,9 +66,8 @@ function loadAll(): Map<string, Conversation> {
   return byId;
 }
 
-// Conversations hold query results and tool output, so they're encrypted at
-// rest like the rest of ~/.baklava (plaintext files from older versions still
-// load, and are sealed on their next write).
+// Conversations hold query results and tool output, so they're written 0600
+// like the rest of ~/.baklava.
 function persist(c: Conversation): void {
   try {
     writeSecretFileSync(file(c.id), JSON.stringify(c, null, 2));

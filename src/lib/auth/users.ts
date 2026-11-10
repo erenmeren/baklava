@@ -15,8 +15,8 @@ import { revokeAllExcept } from "./sessions";
 // deployer's existing password keeps working — then revoke all live sessions so
 // every device re-authenticates against the new model.
 //
-// Passwords/hashes never leave the server. users.json is encrypted at rest via
-// the secret-file envelope helpers and written 0600.
+// Passwords/hashes never leave the server. users.json is written 0600 via the
+// secret-file helpers.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const SCRYPT_KEYLEN = 64;

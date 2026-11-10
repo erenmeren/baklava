@@ -21,7 +21,6 @@ export default defineConfig({
   test: {
     setupFiles: ["./src/test/setup.ts"],
     globals: false,
-    env: { BAKLAVA_MASTER_KEY: "vitest-master-key" },
     coverage: {
       provider: "v8",
       reporter: ["text", "lcov", "html"],

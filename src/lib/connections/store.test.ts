@@ -12,7 +12,6 @@ async function freshStore(dataDir: string) {
   process.env.BAKLAVA_DATA_DIR = dataDir;
   const sym = Symbol.for("baklava.connectionStore");
   delete (globalThis as Record<symbol, unknown>)[sym];
-  delete (globalThis as Record<symbol, unknown>)[Symbol.for("baklava.masterKeyMaterial")];
   vi.resetModules();
   return import("./store");
 }
