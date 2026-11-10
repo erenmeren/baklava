@@ -3,7 +3,8 @@
 Goal: one ops console covering twelve technologies — Docker, PostgreSQL, MySQL, SQL Server, MongoDB, Kafka, Kubernetes, Redis, Qdrant, Cloudflare R2, MinIO and Amazon S3 — each workspace modelled on the dedicated tool people already use (Portainer-grade Docker, pgAdmin-grade Postgres, kafka-ui-grade Kafka, and so on). One console, all the layers.
 
 ## Done
-- Connection management for all twelve techs. Connections live in a `globalThis` store mirrored to `~/.baklava/connections.json`, **encrypted at rest** (AES-256-GCM envelope). Server-side auth sessions, multi-user accounts and per-connection RBAC (`admin` / `member`) sit on top, enforced in `src/proxy.ts` as defense-in-depth.
+- Connection management for all twelve techs. Connections live in a `globalThis` store mirrored to `~/.baklava/connections.json` (plain JSON, `0600`). Server-side auth sessions, multi-user accounts and per-connection RBAC (`admin` / `member`) sit on top, enforced in `src/proxy.ts` as defense-in-depth.
+- Docker image: `erenmeren/baklava` on Docker Hub (`linux/amd64`), with a host-network run recipe so the container reaches the host's Docker, Postgres and Kubernetes like a native run.
 - Docker workspace: containers (list, start/stop/restart/remove, logs, inspect, env, mounts), images (list, pull, remove), volumes (list, create, remove), networks (list, remove).
 - Postgres workspace: tree (db→schema→tables/views), table tabs (Data/Structure/Indexes/Constraints/FKs), SQL editor.
 - Kafka workspace: topics (list, create, delete, partitions, configs, messages, produce), consumer groups (list+detail with lag), brokers.

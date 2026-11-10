@@ -103,14 +103,11 @@ describe("grants round-trip", () => {
     expect(getGrants("c1")).toEqual({ [member.id]: "read" });
   });
 
-  it("persists encrypted at rest, 0600", () => {
+  it("persists to disk, 0600", () => {
     setGrants("c1", { [member.id]: "read" });
     const file = path.join(dir, "connection-access.json");
     expect(fs.existsSync(file)).toBe(true);
     expect(fs.statSync(file).mode & 0o777).toBe(0o600);
-    const raw = fs.readFileSync(file, "utf8");
-    // encrypted envelope — must not contain plaintext userId
-    expect(raw).not.toContain(member.id);
   });
 
   it("survives a cache reset (reads back from disk)", () => {

@@ -1,7 +1,16 @@
 import fs from "node:fs";
 import path from "node:path";
-import { decryptEnvelope, encryptEnvelope, isEnvelope } from "./envelope";
-import { getInstallSalt, resolveKeyMaterial } from "./master-key";
+
+// Older versions encrypted these files under a master key. That is gone, so
+// such a file can't be read any more — but it must never be mistaken for an
+// empty store and silently overwritten either.
+export function isLegacyEncrypted(text: string): boolean {
+  try {
+    return (JSON.parse(text) as { magic?: unknown } | null)?.magic === "baklava-enc";
+  } catch {
+    return false;
+  }
+}
 
 export function readSecretFileSync(file: string): string | null {
   let text: string;
@@ -11,15 +20,20 @@ export function readSecretFileSync(file: string): string | null {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
     throw err;
   }
-  if (!isEnvelope(text)) return text; // legacy plaintext — pass through
-  return decryptEnvelope(text, resolveKeyMaterial().material);
+  if (isLegacyEncrypted(text)) {
+    throw new Error(
+      `${file} was encrypted by an older Baklava version and can't be read by this one. ` +
+        "Move it aside to start fresh.",
+    );
+  }
+  return text;
 }
 
+/** Atomic 0600 write: the file holds credentials in plain JSON. */
 export function writeSecretFileSync(file: string, plaintext: string): void {
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
 
-  // Never overwrite an existing file we cannot reproduce. Back it up once:
-  // legacy plaintext, or an envelope we can't decrypt (lost/changed key).
+  // Never overwrite a file we cannot reproduce: keep a legacy encrypted one.
   // Only the read may be absent (ENOENT); a backup-write failure must NOT be
   // swallowed — let it throw so we never overwrite without having backed up.
   let existing: string | undefined;
@@ -28,36 +42,12 @@ export function writeSecretFileSync(file: string, plaintext: string): void {
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
   }
-  if (existing !== undefined) {
-    if (!isEnvelope(existing)) {
-      backupOnce(`${file}.pre-encryption.bak`, existing);
-    } else if (!canDecrypt(existing)) {
-      backupOnce(`${file}.unreadable.bak`, existing);
-    }
+  const bak = `${file}.unreadable.bak`;
+  if (existing !== undefined && isLegacyEncrypted(existing) && !fs.existsSync(bak)) {
+    fs.writeFileSync(bak, existing, { mode: 0o600 });
   }
 
-  const envelope = encryptEnvelope(plaintext, resolveKeyMaterial().material, getInstallSalt());
   const tmp = `${file}.tmp`;
-  fs.writeFileSync(tmp, envelope, { mode: 0o600 });
+  fs.writeFileSync(tmp, plaintext, { mode: 0o600 });
   fs.renameSync(tmp, file);
-
-  // The pre-encryption backup is a plaintext copy of the very secrets this
-  // file now encrypts. Keep it only until the encrypted file is proven
-  // readable; then remove it (also sweeps one left by an older version).
-  const plainBak = `${file}.pre-encryption.bak`;
-  if (fs.existsSync(plainBak) && canDecrypt(envelope)) fs.rmSync(plainBak, { force: true });
-}
-
-function backupOnce(bakPath: string, content: string): void {
-  if (fs.existsSync(bakPath)) return; // don't clobber an earlier backup
-  fs.writeFileSync(bakPath, content, { mode: 0o600 });
-}
-
-function canDecrypt(envelopeText: string): boolean {
-  try {
-    decryptEnvelope(envelopeText, resolveKeyMaterial().material);
-    return true;
-  } catch {
-    return false;
-  }
 }

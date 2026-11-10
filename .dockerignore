@@ -1,0 +1,11 @@
+# Allowlist: the build context holds only what `next build` needs, so local
+# secrets (.kube/, .env*, test artifacts) can never end up in a pushed image.
+*
+!package.json
+!package-lock.json
+!next.config.ts
+!tsconfig.json
+!postcss.config.mjs
+!public
+!scripts
+!src

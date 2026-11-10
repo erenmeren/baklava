@@ -19,11 +19,44 @@ npm run dev
 
 Open **http://localhost:3000**.
 
-The first time you open Baklava, it asks you to **create a password**. There's no default — you pick one, and it's stored (hashed) only on your machine. Any password works; there are no length rules.
+The first time you open Baklava, it asks you to **create the admin account**: enter the one-time setup token printed in the terminal, then pick a password of at least 12 characters. There's no default — it's stored (hashed) only on your machine.
 
 ![Create a password on first run](docs/images/01-setup.png)
 
 That's it. Docker works immediately. For everything else, you add a connection in the UI.
+
+### Or run it in Docker
+
+The image is published as [`erenmeren/baklava`](https://hub.docker.com/r/erenmeren/baklava) (`linux/amd64`; tags `latest` and the version, e.g. `0.1.0`). To build it yourself instead: `docker build -t erenmeren/baklava .`
+
+A container on Docker's default network can't see your machine: `localhost` is the container itself, and the Docker socket and your kubeconfig aren't in its filesystem. On Linux, give it the host's network and the same files, and it behaves like `npm start`:
+
+```bash
+mkdir -p ~/.baklava
+docker run -d --name baklava --network host \
+  --user "$(id -u):$(id -g)" --group-add "$(stat -c %g /var/run/docker.sock)" \
+  -e HOME="$HOME" \
+  -v "$HOME/.baklava:$HOME/.baklava" \
+  -v "$HOME/.kube:$HOME/.kube:ro" \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v /tmp:/tmp \
+  erenmeren/baklava
+docker logs baklava   # first run: prints the setup token
+```
+
+- `--network host`: `localhost:5432`, a kubeconfig's `127.0.0.1:6443` and so on are the host's. The console listens on `127.0.0.1:3000` only (`-e PORT=…` to move it).
+- Files are mounted at the same path as on the host, so `~/.kube/config` and any saved kubeconfig path keep working. Add a `-v` for a kubeconfig kept elsewhere; drop the `.kube` line if you have none.
+- The socket mount makes whoever can sign in root on the host — keep the sign-in on.
+- `/tmp` is only for load tests: k6 runs through the host's Docker daemon and reads its script from there.
+- Every driver is preinstalled; installing or removing drivers from the UI is switched off in the image.
+- A kubeconfig that signs in through an `exec` plugin (`aws`, `gcloud`, …) needs that binary; the image doesn't carry it.
+
+On Docker Desktop (macOS / Windows) host networking doesn't reach the machine's own services. Publish the port instead and use `host.docker.internal` as the host in your connections:
+
+```bash
+docker run -d --name baklava -p 127.0.0.1:3000:3000 \
+  -v baklava-data:/home/node/.baklava erenmeren/baklava -H 0.0.0.0
+```
 
 ---
 
@@ -67,17 +100,11 @@ Each workspace gives you the everyday operations you'd expect: browse and edit d
 
 Baklava has no cloud, no account, and no telemetry. Connections are saved to `~/.baklava/connections.json` (readable only by you) so they survive restarts. Set `BAKLAVA_DATA_DIR` to store them somewhere else.
 
-### Credential encryption at rest
+### Credentials on disk
 
-Connection and load-test secrets in `~/.baklava/*.json` are encrypted with **AES-256-GCM** before being written to disk. The master key is resolved in this order:
+Connection, AI-provider and load-test secrets in `~/.baklava/*.json` are stored as **plain JSON**, in files only your OS user can read (`0600`, directory `0700`). Anyone who can read that directory — a backup, another process running as you — can read the credentials, so keep it on an encrypted disk and treat its backups as secrets.
 
-- `BAKLAVA_MASTER_KEY` env var — recommended for Docker or headless deployments; set it and you control the key.
-- OS keychain (`@napi-rs/keyring`, installed automatically if supported) — the key is stored in your system credential store.
-- `~/.baklava/master.key` (0600, auto-generated) — used as a fallback; provides no real protection on its own if the file is accessible. Set the env var or use a keychain for stronger guarantees.
-
-On first save after upgrading, any existing plaintext file is backed up to `<file>.pre-encryption.bak`. Verify your connections still work, then delete the backup.
-
-Run `npm run baklava:show-key` to display the active master key for safekeeping. **Losing the key means re-entering all connections** — credentials cannot be recovered without it.
+Files written by an older version that encrypted them can't be read any more: Baklava refuses them instead of starting empty, and keeps one as `<file>.unreadable.bak` before overwriting it.
 
 ### The password gate
 
@@ -105,7 +132,7 @@ Baklava supports **multiple users**. Each user has a username, a password, and a
 
 **Upgrading from a single-password install.** The first time a console with an existing password starts on this version, it **auto-migrates** to an admin user named **`admin`** that reuses your existing password — so your current password keeps working, you just sign in as `admin`. (All devices are signed out once during the migration; just sign in again.) Add and manage more users under **Settings → Users** (admins only).
 
-User records live in `~/.baklava/users.json` and access grants in `~/.baklava/connection-access.json`, both **encrypted at rest** like the rest of `~/.baklava`. Passwords are scrypt-hashed and never leave the server.
+User records live in `~/.baklava/users.json` and access grants in `~/.baklava/connection-access.json`, both `0600` like the rest of `~/.baklava`. Passwords are scrypt-hashed and never leave the server.
 
 ### AI assistant safety controls
 
@@ -146,7 +173,7 @@ If the proxy terminates TLS but doesn't send `X-Forwarded-Proto`, set `BAKLAVA_S
 For anything beyond your own laptop:
 
 - **Keep the sign-in on**, and serve Baklava only over TLS (reverse proxy + HSTS). It binds `127.0.0.1` unless you tell it otherwise.
-- **Set `BAKLAVA_MASTER_KEY`** (or use an OS keychain) instead of relying on `~/.baklava/master.key`, and back up `~/.baklava` together with that key.
+- **Keep `~/.baklava` on an encrypted disk** — it holds credentials in plain JSON — and guard its backups the same way.
 - **Give each connection a least-privilege database user.** The assistant's read-only SQL tools screen out statements that write, but the database role is the real boundary: no superuser / `pg_execute_server_program` on Postgres, no `FILE` / `SUPER` on MySQL, no `sysadmin` on SQL Server for connections the assistant or read-only members use.
 - **Grant members only the connections they need**, and `read` unless they must change things. Only admins can use the host's Docker socket or kubeconfig files.
 - Leave the **AI kill switch** within reach (assistant header) and review a connection's assistant policy before switching it to autonomous.

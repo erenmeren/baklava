@@ -47,7 +47,7 @@ function load(): Store {
 
 function persist(store: Store): void {
   try {
-    // Encrypted like the other stores: session ids + user ids + devices.
+    // 0600 like the other stores: session ids + user ids + devices.
     writeSecretFileSync(getFile(), JSON.stringify([...store.byId.values()], null, 2));
   } catch (err) {
     console.error(`[baklava] could not persist ${getFile()}:`, err);

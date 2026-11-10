@@ -114,7 +114,7 @@ export function R2Form({ onSaved, initial }: Props) {
           }
         />
         <p className="text-[11px] text-muted-foreground">
-          Stored encrypted-at-rest as a secret — never returned over the API.
+          Stored as a secret — never returned over the API.
         </p>
       </div>
 
